@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "patent-filewrapper-mcp"
+version = "0.1.0"
+description = "MCP server for USPTO Patent File Wrapper API"
+authors = [
+    {name = "John Walkoe"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx[http2]>=0.25.0",
+    "aiofiles>=0.8.0",
+    "PyYAML>=6.0",
+    "PyPDF2>=3.0.1",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "starlette>=0.38.0",
+    "cryptography>=41.0.0",
+]
+
+[project.scripts]
+patent-filewrapper-mcp = "patent_filewrapper_mcp.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patent_filewrapper_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/patent_filewrapper_mcp",
+    "/README.md",
+    "/pyproject.toml"
+]

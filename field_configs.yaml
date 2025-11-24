@@ -1,0 +1,389 @@
+# Patent File Wrapper MCP Field Configuration
+# Progressive Workflow: Minimal → User Selection → Balanced → Content Analysis
+# Customize field sets by uncommenting fields you want (remove the # symbol)
+#
+# ⚠️ IMPORTANT: After editing this file, you MUST restart the MCP server for changes to take effect.
+# In Claude Desktop: Close Claude completely and reopen it. The new field configuration will be loaded on startup.
+# The search tools will then use your updated field sets.
+
+version: "2.1"
+description: "Patent File Wrapper MCP Field Configuration - Progressive workflow with no duplicate fields"
+
+predefined_sets:
+  applications_minimal:
+    description: "Ultra-minimal fields for application searches (95-99% context reduction)"
+    fields:
+      # === MOST USED FIELDS ===
+      - applicationNumberText                           # Application number (required)
+      - applicationMetaData.inventionTitle              # Patent title (required)
+      - applicationMetaData.inventorBag                 # All inventors (array)
+      - applicationMetaData.firstApplicantName          # First applicant (often company/organization)
+      - applicationMetaData.uspcSymbolText              # US Patent Classification (combined)
+      - applicationMetaData.cpcClassificationBag        # Cooperative Patent Classification
+      - applicationMetaData.patentNumber                # Patent number (if granted)
+      - parentPatentNumber                              # Parent patent numbers (short form)
+      - associatedDocuments                             # XML files metadata
+      - applicationMetaData.examinerNameText            # Assigned examiner
+      - applicationMetaData.groupArtUnitNumber          # Art unit number
+      - applicationMetaData.filingDate                  # Original filing date
+      - applicationMetaData.grantDate                   # Grant date (if granted)
+      - applicationMetaData.customerNumber              # Customer number
+      - applicationMetaData.applicationStatusCode       # Status code
+      # - applicationMetaData.applicantBag              # All applicants (array) - BALANCED ONLY
+      # - assignmentBag                                 # Assignment records - BALANCED ONLY
+      # - applicationMetaData.applicationStatusDescriptionText  # Human-readable status - BALANCED ONLY
+
+      # IMPORTANT: Keep documentBag functionality available but commented out
+      # Users can uncomment this line if they need documentBag in search results
+      # WARNING: Including documentBag can cause massive token usage (100,000+ characters for patents with extensive prosecution history)
+      # Use pfw_get_application_documents for targeted document access instead
+
+      # Uncomment the line below ONLY if you need prosecution documents in search results:
+      # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
+
+      
+      # === DOCKET DATA ===
+      # - applicationMetaData.applicationConfirmationNumber  # Confirmation number
+      # - applicationMetaData.docketNumber              # Attorney/agent docket number
+      # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
+      
+      # === DATES ===
+      # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
+      # - applicationMetaData.applicationStatusDate     # When status was last updated
+      # - applicationMetaData.publicationDateBag        # Publication dates
+      # - applicationMetaData.earliestPublicationNumber # Publication number
+      # - applicationMetaData.earliestPublicationDate   # Earliest publication date (specific)
+      # - applicationMetaData.pctPublicationDate        # PCT publication date
+      
+      # === INVENTORS & APPLICANTS ===
+      # - applicationMetaData.firstInventorName         # First named inventor
+      # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
+      # - applicationMetaData.assigneeBag               # Current assignees (array)
+      
+      # === APPLICATION TYPE & ENTITY ===
+      # - applicationMetaData.applicationTypeCode       # Application type code
+      # - applicationMetaData.applicationTypeLabelName  # Application type description
+      # - applicationMetaData.applicationTypeCategory   # Additional application categorization
+      # - applicationMetaData.entityStatusData          # Entity status (large/small/micro)
+      # - applicationMetaData.entityStatusData.businessEntityStatusCategory  # Entity category
+      
+      # === CLASSIFICATION ===
+      # - applicationMetaData.class                     # USPC Class (first level)
+      # - applicationMetaData.subclass                  # USPC Subclass (second level)
+      # - applicationMetaData.ipcClassificationBag      # International Patent Classification
+      # - applicationMetaData.locarnoClassificationBag  # Locarno Classification (design)
+      
+      # === FAMILY & CONTINUITY ===
+      # - parentContinuityBag                           # Parent application data (full)
+      # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
+      # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
+      # - childContinuityBag                            # Child application data (full)
+      # - childContinuityBag.childApplicationNumberText # Child application numbers
+      
+      # === INTERNATIONAL & PRIORITY ===
+      # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
+      # - applicationMetaData.pctBag                    # PCT application data
+      # - applicationMetaData.pctPublicationNumber      # PCT publication number (e.g., WO 2009/064413)
+      # - applicationMetaData.internationalRegistrationNumber  # International registration number
+      # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
+      # - applicationMetaData.priorityClaimBag          # Priority claims
+      # - applicationMetaData.foreignPriorityBag        # Foreign priority data
+      
+      # === PUBLICATIONS & RELATED DOCS ===
+      # - applicationMetaData.relatedPublicationBag     # Related publications
+      # - applicationMetaData.publicationSequenceNumberBag  # Publication sequence numbers
+      # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
+      
+      # === ADVANCED DATA ===
+      # - termAdjustmentBag                             # Patent term adjustments
+      # - transactionBag                                # Transaction history
+
+  applications_balanced:
+    description: "Key fields for application searches (85-95% context reduction)"
+    fields:
+      # === BALANCED FIELDS FOR ADDITIONAL INFO AND CROSS REFRENCE WITH OTHER USPTO MCPs ===
+      - applicationNumberText                           # Application number (required)
+      - applicationMetaData.inventionTitle              # Patent title (required)
+      - applicationMetaData.inventorBag                 # All inventors (array)
+      - applicationMetaData.firstApplicantName          # First applicant (often company/organization)
+      - applicationMetaData.uspcSymbolText              # US Patent Classification (combined)
+      - applicationMetaData.cpcClassificationBag        # Cooperative Patent Classification
+      - applicationMetaData.patentNumber                # Patent number (if granted)
+      - parentPatentNumber                              # Parent patent numbers (short form)
+      - associatedDocuments                             # XML files metadata
+      - applicationMetaData.examinerNameText            # Assigned examiner
+      - applicationMetaData.groupArtUnitNumber          # Art unit number
+      - applicationMetaData.filingDate                  # Original filing date
+      - applicationMetaData.grantDate                   # Grant date (if granted)
+      - applicationMetaData.customerNumber              # Customer number
+      - applicationMetaData.applicationStatusCode       # Status code
+      - applicationMetaData.applicantBag                # All applicants (array)
+      - assignmentBag                                   # Assignment records
+      - applicationMetaData.applicationStatusDescriptionText  # Human-readable status
+
+      # IMPORTANT: Keep documentBag functionality available but commented out
+      # Users can uncomment this line if they need documentBag in search results
+      # WARNING: Including documentBag can cause massive token usage (100,000+ characters for patents with extensive prosecution history)
+      # Use pfw_get_application_documents for targeted document access instead
+
+      # Uncomment the line below ONLY if you need prosecution documents in search results:
+      # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
+
+      
+      # === DOCKET DATA ===
+      # - applicationMetaData.applicationConfirmationNumber  # Confirmation number
+      # - applicationMetaData.docketNumber              # Attorney/agent docket number
+      # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
+      
+      # === DATES ===
+      # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
+      # - applicationMetaData.applicationStatusDate     # When status was last updated
+      # - applicationMetaData.publicationDateBag        # Publication dates
+      # - applicationMetaData.earliestPublicationNumber # Publication number
+      # - applicationMetaData.earliestPublicationDate   # Earliest publication date (specific)
+      # - applicationMetaData.pctPublicationDate        # PCT publication date
+      
+      # === INVENTORS & APPLICANTS ===
+      # - applicationMetaData.firstInventorName         # First named inventor
+      # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
+      # - applicationMetaData.assigneeBag               # Current assignees (array)
+      
+      # === APPLICATION TYPE & ENTITY ===
+      # - applicationMetaData.applicationTypeCode       # Application type code
+      # - applicationMetaData.applicationTypeLabelName  # Application type description
+      # - applicationMetaData.applicationTypeCategory   # Additional application categorization
+      # - applicationMetaData.entityStatusData          # Entity status (large/small/micro)
+      # - applicationMetaData.entityStatusData.businessEntityStatusCategory  # Entity category
+      
+      # === CLASSIFICATION ===
+      # - applicationMetaData.class                     # USPC Class (first level)
+      # - applicationMetaData.subclass                  # USPC Subclass (second level)
+      # - applicationMetaData.ipcClassificationBag      # International Patent Classification
+      # - applicationMetaData.locarnoClassificationBag  # Locarno Classification (design)
+      
+      # === FAMILY & CONTINUITY ===
+      # - parentContinuityBag                           # Parent application data (full)
+      # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
+      # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
+      # - childContinuityBag                            # Child application data (full)
+      # - childContinuityBag.childApplicationNumberText # Child application numbers
+      
+      # === INTERNATIONAL & PRIORITY ===
+      # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
+      # - applicationMetaData.pctBag                    # PCT application data
+      # - applicationMetaData.pctPublicationNumber      # PCT publication number (e.g., WO 2009/064413)
+      # - applicationMetaData.internationalRegistrationNumber  # International registration number
+      # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
+      # - applicationMetaData.priorityClaimBag          # Priority claims
+      # - applicationMetaData.foreignPriorityBag        # Foreign priority data
+      
+      # === PUBLICATIONS & RELATED DOCS ===
+      # - applicationMetaData.relatedPublicationBag     # Related publications
+      # - applicationMetaData.publicationSequenceNumberBag  # Publication sequence numbers
+      # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
+      
+      # === ADVANCED DATA ===
+      # - termAdjustmentBag                             # Patent term adjustments
+      # - transactionBag                                # Transaction history
+
+  inventor_minimal:
+    description: "Ultra-minimal fields for inventor searches (95-99% context reduction, focus on inventor details)"
+    fields:
+      # === MOST USED FIELDS ===
+      - applicationNumberText                           # Application number (required)
+      - applicationMetaData.inventionTitle              # Patent title (required)
+      - applicationMetaData.inventorBag                 # All inventors (array)
+      - applicationMetaData.firstApplicantName          # First applicant (often company/organization)
+      - applicationMetaData.uspcSymbolText              # US Patent Classification (combined)
+      - applicationMetaData.cpcClassificationBag        # Cooperative Patent Classification
+      - applicationMetaData.patentNumber                # Patent number (if granted)
+      - parentPatentNumber                              # Parent patent numbers (short form)
+      - associatedDocuments                             # XML files metadata
+      - applicationMetaData.examinerNameText            # Assigned examiner
+      - applicationMetaData.groupArtUnitNumber          # Art unit number
+      - applicationMetaData.filingDate                  # Original filing date
+      - applicationMetaData.grantDate                   # Grant date (if granted)
+      - applicationMetaData.customerNumber              # Customer number
+      - applicationMetaData.applicationStatusCode       # Status code
+      # - applicationMetaData.applicantBag              # All applicants (array) - BALANCED ONLY
+      # - assignmentBag                                 # Assignment records - BALANCED ONLY
+      # - applicationMetaData.applicationStatusDescriptionText  # Human-readable status - BALANCED ONLY
+
+      # IMPORTANT: Keep documentBag functionality available but commented out
+      # Users can uncomment this line if they need documentBag in search results
+      # WARNING: Including documentBag can cause massive token usage (100,000+ characters for patents with extensive prosecution history)
+      # Use pfw_get_application_documents for targeted document access instead
+
+      # Uncomment the line below ONLY if you need prosecution documents in search results:
+      # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
+
+      
+      # === DOCKET DATA ===
+      # - applicationMetaData.applicationConfirmationNumber  # Confirmation number
+      # - applicationMetaData.docketNumber              # Attorney/agent docket number
+      # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
+      
+      # === DATES ===
+      # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
+      # - applicationMetaData.applicationStatusDate     # When status was last updated
+      # - applicationMetaData.publicationDateBag        # Publication dates
+      # - applicationMetaData.earliestPublicationNumber # Publication number
+      # - applicationMetaData.earliestPublicationDate   # Earliest publication date (specific)
+      # - applicationMetaData.pctPublicationDate        # PCT publication date
+      
+      # === INVENTORS & APPLICANTS ===
+      # - applicationMetaData.firstInventorName         # First named inventor
+      # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
+      # - applicationMetaData.assigneeBag               # Current assignees (array)
+      
+      # === APPLICATION TYPE & ENTITY ===
+      # - applicationMetaData.applicationTypeCode       # Application type code
+      # - applicationMetaData.applicationTypeLabelName  # Application type description
+      # - applicationMetaData.applicationTypeCategory   # Additional application categorization
+      # - applicationMetaData.entityStatusData          # Entity status (large/small/micro)
+      # - applicationMetaData.entityStatusData.businessEntityStatusCategory  # Entity category
+      
+      # === CLASSIFICATION ===
+      # - applicationMetaData.class                     # USPC Class (first level)
+      # - applicationMetaData.subclass                  # USPC Subclass (second level)
+      # - applicationMetaData.ipcClassificationBag      # International Patent Classification
+      # - applicationMetaData.locarnoClassificationBag  # Locarno Classification (design)
+      
+      # === FAMILY & CONTINUITY ===
+      # - parentContinuityBag                           # Parent application data (full)
+      # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
+      # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
+      # - childContinuityBag                            # Child application data (full)
+      # - childContinuityBag.childApplicationNumberText # Child application numbers
+      
+      # === INTERNATIONAL & PRIORITY ===
+      # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
+      # - applicationMetaData.pctBag                    # PCT application data
+      # - applicationMetaData.pctPublicationNumber      # PCT publication number (e.g., WO 2009/064413)
+      # - applicationMetaData.internationalRegistrationNumber  # International registration number
+      # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
+      # - applicationMetaData.priorityClaimBag          # Priority claims
+      # - applicationMetaData.foreignPriorityBag        # Foreign priority data
+      
+      # === PUBLICATIONS & RELATED DOCS ===
+      # - applicationMetaData.relatedPublicationBag     # Related publications
+      # - applicationMetaData.publicationSequenceNumberBag  # Publication sequence numbers
+      # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
+      
+      # === ADVANCED DATA ===
+      # - termAdjustmentBag                             # Patent term adjustments
+      # - transactionBag                                # Transaction history
+
+  inventor_balanced:
+    description: "Key fields for inventor searches (85-95% context reduction, inventor-focused)"
+    fields:
+      # === BALANCED FIELDS FOR ADDITIONAL INFO AND CROSS REFRENCE WITH OTHER USPTO MCPs ===
+      # === BALANCED FIELDS FOR ADDITIONAL INFO AND CROSS REFRENCE WITH OTHER USPTO MCPs ===
+      - applicationNumberText                           # Application number (required)
+      - applicationMetaData.inventionTitle              # Patent title (required)
+      - applicationMetaData.inventorBag                 # All inventors (array)
+      - applicationMetaData.firstApplicantName          # First applicant (often company/organization)
+      - applicationMetaData.uspcSymbolText              # US Patent Classification (combined)
+      - applicationMetaData.cpcClassificationBag        # Cooperative Patent Classification
+      - applicationMetaData.patentNumber                # Patent number (if granted)
+      - parentPatentNumber                              # Parent patent numbers (short form)
+      - associatedDocuments                             # XML files metadata
+      - applicationMetaData.examinerNameText            # Assigned examiner
+      - applicationMetaData.groupArtUnitNumber          # Art unit number
+      - applicationMetaData.filingDate                  # Original filing date
+      - applicationMetaData.grantDate                   # Grant date (if granted)
+      - applicationMetaData.customerNumber              # Customer number
+      - applicationMetaData.applicationStatusCode       # Status code
+      - applicationMetaData.applicantBag                # All applicants (array)
+      - assignmentBag                                   # Assignment records
+      - applicationMetaData.applicationStatusDescriptionText  # Human-readable status
+
+      # IMPORTANT: Keep documentBag functionality available but commented out
+      # Users can uncomment this line if they need documentBag in search results
+      # WARNING: Including documentBag can cause massive token usage (100,000+ characters for patents with extensive prosecution history)
+      # Use pfw_get_application_documents for targeted document access instead
+
+      # Uncomment the line below ONLY if you need prosecution documents in search results:
+      # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
+
+      
+      # === DOCKET DATA ===
+      # - applicationMetaData.applicationConfirmationNumber  # Confirmation number
+      # - applicationMetaData.docketNumber              # Attorney/agent docket number
+      # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
+      
+      # === DATES ===
+      # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
+      # - applicationMetaData.applicationStatusDate     # When status was last updated
+      # - applicationMetaData.publicationDateBag        # Publication dates
+      # - applicationMetaData.earliestPublicationNumber # Publication number
+      # - applicationMetaData.earliestPublicationDate   # Earliest publication date (specific)
+      # - applicationMetaData.pctPublicationDate        # PCT publication date
+      
+      # === INVENTORS & APPLICANTS ===
+      # - applicationMetaData.firstInventorName         # First named inventor
+      # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
+      # - applicationMetaData.assigneeBag               # Current assignees (array)
+      
+      # === APPLICATION TYPE & ENTITY ===
+      # - applicationMetaData.applicationTypeCode       # Application type code
+      # - applicationMetaData.applicationTypeLabelName  # Application type description
+      # - applicationMetaData.applicationTypeCategory   # Additional application categorization
+      # - applicationMetaData.entityStatusData          # Entity status (large/small/micro)
+      # - applicationMetaData.entityStatusData.businessEntityStatusCategory  # Entity category
+      
+      # === CLASSIFICATION ===
+      # - applicationMetaData.class                     # USPC Class (first level)
+      # - applicationMetaData.subclass                  # USPC Subclass (second level)
+      # - applicationMetaData.ipcClassificationBag      # International Patent Classification
+      # - applicationMetaData.locarnoClassificationBag  # Locarno Classification (design)
+      
+      # === FAMILY & CONTINUITY ===
+      # - parentContinuityBag                           # Parent application data (full)
+      # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
+      # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
+      # - childContinuityBag                            # Child application data (full)
+      # - childContinuityBag.childApplicationNumberText # Child application numbers
+      
+      # === INTERNATIONAL & PRIORITY ===
+      # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
+      # - applicationMetaData.pctBag                    # PCT application data
+      # - applicationMetaData.pctPublicationNumber      # PCT publication number (e.g., WO 2009/064413)
+      # - applicationMetaData.internationalRegistrationNumber  # International registration number
+      # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
+      # - applicationMetaData.priorityClaimBag          # Priority claims
+      # - applicationMetaData.foreignPriorityBag        # Foreign priority data
+      
+      # === PUBLICATIONS & RELATED DOCS ===
+      # - applicationMetaData.relatedPublicationBag     # Related publications
+      # - applicationMetaData.publicationSequenceNumberBag  # Publication sequence numbers
+      # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
+      
+      # === ADVANCED DATA ===
+      # - termAdjustmentBag                             # Patent term adjustments
+      # - transactionBag                                # Transaction history
+
+# Usage Instructions:
+# 1. APPLICATION SEARCHES:
+#    - Edit 'applications_minimal' section for pfw_search_applications_minimal
+#    - Edit 'applications_balanced' section for pfw_search_applications_balanced
+# 2. INVENTOR SEARCHES:
+#    - Edit 'inventor_minimal' section for pfw_search_inventor_minimal  
+#    - Edit 'inventor_balanced' section for pfw_search_inventor_balanced
+# 3. Uncomment fields you want by removing the # symbol
+# 4. After editing, restart Claude Desktop to reload the configuration
+
+# Field Optimization Notes:
+# - Minimal searches: Optimized for high-volume discovery (20-50 results with preset fields OR 50-200 results with ultra-minimal mode)
+# - Balanced searches: Optimized for detailed analysis after user selection (10-20 results)
+# - Required fields (applicationNumberText, inventionTitle) should always remain uncommented
+# - Document fields (documentBag, associatedDocuments) enable content analysis workflow
+
+# IMPORTANT FIELD DISTINCTIONS:
+# - patentNumber: Granted patent number (7-8 digits, e.g., '7123456') - USE WITH ppubs_get_patent_by_number
+# - parentPatentNumber: Parent patent number (use with ppubs_get_patent_by_number)
+# - applicationNumberText: Application number (longer with slashes, e.g., '16/123,456') - DO NOT use with ppubs_get_patent_by_number
+#
+# DOCUMENT FIELDS FOR DOWNLOADS:
+# - documentBag: Include this to get document lists for pfw_get_document/pfw_get_document_content/pfw_get_document_download tools
+# - associatedDocuments: Include this to get XML file metadata for pfw_get_patent_or_application_xml tool
