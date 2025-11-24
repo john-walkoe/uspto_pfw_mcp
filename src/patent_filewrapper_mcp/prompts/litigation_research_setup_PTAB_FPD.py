@@ -13,19 +13,19 @@ async def litigation_research_setup_PTAB_FPD_prompt(
 ) -> str:
     """
     Enhanced litigation research with flexible identifier input.
-    
+
     Identifier fields (at least ONE required):
     - patent_number: US patent number (e.g., "7971071", "7,971,071")
     - application_number: Application number (e.g., "11752072", "11/752,072")
     - title_keywords: Keywords from patent title (e.g., "digital rights management")
-    
+
     The workflow will:
     1. Resolve the identifier to the correct application
     2. Retrieve complete litigation package (full tier with all documents)
     3. Provide organized document hierarchy for litigation analysis
     4. Generate strategic litigation insights with cross-MCP integration
     5. Include PTAB and FPD cross-references when available
-    
+
     Returns comprehensive litigation-ready package with strategic recommendations.
     """
     return f"""️ Litigation Research Setup
@@ -115,6 +115,3 @@ Organize and present:
 - Strategic Insights: Strengths, vulnerabilities, recommendations
 
 For complex workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
-
-
-

@@ -39,7 +39,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ## 🎯 Legal & Patent Analysis Templates
 
 ### `/patent_search` - Find Patents with Partial Information
-**Purpose**: Intelligent patent discovery when you have incomplete information  
+**Purpose**: Intelligent patent discovery when you have incomplete information
 **Key Features**:
 - **Multi-strategy search**: Fuzzy matching, title keyword search, inventor variations
 - **Flexible input**: Accepts patent numbers, application numbers, or title keywords
@@ -56,7 +56,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ---
 
 ### `/patent_explanation_for_attorneys` - Technical-to-Legal Translation
-**Purpose**: Generate clear layperson explanations for legal professionals  
+**Purpose**: Generate clear layperson explanations for legal professionals
 **Key Features**:
 
 - **Technical translation**: Converts complex engineering concepts to accessible language
@@ -75,7 +75,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ---
 
 ### `/patent_invalidity_analysis_defense_pinecone_PTAB` - Comprehensive Defense Analysis
-**Purpose**: Advanced invalidity analysis for defensive patent litigation  
+**Purpose**: Advanced invalidity analysis for defensive patent litigation
 **Key Features**:
 - **§ 112 indefiniteness analysis**: Systematic claim construction review
 - **Multi-database integration**: Combines PFW + PTAB + FPD + Citations + Pinecone
@@ -94,7 +94,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ## 📊 Prosecution & Research Templates
 
 ### `/art_unit_quality_assessment_FPD` - Examiner Pattern Analysis
-**Purpose**: Analyze art unit prosecution patterns and examiner behavior  
+**Purpose**: Analyze art unit prosecution patterns and examiner behavior
 **Key Features**:
 - **Grant rate analysis**: Statistical assessment of art unit performance
 - **Examiner pattern recognition**: Individual examiner granting/rejection trends
@@ -112,7 +112,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ---
 
 ### `/litigation_research_setup_PTAB_FPD` - Multi-Database Litigation Prep
-**Purpose**: Comprehensive litigation preparation workflow  
+**Purpose**: Comprehensive litigation preparation workflow
 **Key Features**:
 - **Multi-database integration**: Orchestrates PFW + PTAB + FPD searches
 - **Strategic analysis framework**: Identifies strengths and vulnerabilities
@@ -130,7 +130,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ---
 
 ### `/technology_landscape_mapping_PTAB` - Competitive Intelligence
-**Purpose**: Technology sector analysis with PTAB risk assessment  
+**Purpose**: Technology sector analysis with PTAB risk assessment
 **Key Features**:
 - **Market analysis**: Competitive patent landscape mapping
 - **PTAB risk assessment**: Identifies patents vulnerable to challenges
@@ -148,7 +148,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ## 📁 Document Management Templates
 
 ### `/complete_patent_package` - Comprehensive Document Retrieval
-**Purpose**: Systematically retrieve complete patent documentation  
+**Purpose**: Systematically retrieve complete patent documentation
 **Key Features**:
 - **Organized downloads**: Structured metadata with proxy download URLs
 - **Intelligent component selection**: Auto-selects optimal document versions
@@ -166,7 +166,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ---
 
 ### `/document_filtering_assistant` - Smart Document Selection
-**Purpose**: Context-aware document filtering for targeted analysis  
+**Purpose**: Context-aware document filtering for targeted analysis
 **Key Features**:
 - **Purpose-driven selection**: Filters documents based on analysis goals
 - **Context reduction**: Achieves 98.6% token reduction for heavily-prosecuted applications
@@ -184,7 +184,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 ---
 
 ### `/inventor_portfolio_analysis` - Inventor Tracking & Analysis
-**Purpose**: Comprehensive inventor patent portfolio mapping  
+**Purpose**: Comprehensive inventor patent portfolio mapping
 **Key Features**:
 - **Technology tracking**: Maps inventor expertise across patent families
 - **Career progression analysis**: Tracks inventor movement and technology evolution

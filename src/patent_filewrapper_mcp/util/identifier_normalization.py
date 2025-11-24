@@ -35,18 +35,18 @@ class IdentifierInfo:
 def normalize_identifier(user_input: str) -> IdentifierInfo:
     """
     Smart identifier normalization for USPTO API
-    
+
     Critical fix for the bug where "11752072" could be interpreted as:
     - Application number format (post-2001): 16816197
     - Patent number format: 11752072
-    
+
     When collision exists, USPTO API may return patent number match instead
     of intended application number search.
-    
+
     Args:
-        user_input: Various formats like "11752072", "11/752,072", "7971071", 
+        user_input: Various formats like "11752072", "11/752,072", "7971071",
                    "US 7,971,071", "20080141381", etc.
-    
+
     Returns:
         IdentifierInfo with normalized search query and metadata
     """
@@ -63,9 +63,9 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
 
     # Additional cleaning for patent numbers with formatting
     cleaned = cleaned.replace(',', '')  # Remove commas from patent numbers like "7,971,071"
-    
+
     # Pattern matching for different identifier types
-    
+
     # 1. Pre-2001 application format with slash: "11/752,072" or "11/752072"
     if '/' in cleaned:
         # This is definitely an application number
@@ -81,7 +81,7 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
             confidence="high",
             notes="Pre-2001 application format with slash - unambiguous (slashes removed for API)"
         )
-    
+
     # 2. Publication number format: Usually 8-11 digits starting with 2
     elif cleaned.startswith('2') and len(cleaned) in [8, 9, 10, 11]:
         return IdentifierInfo(
@@ -93,7 +93,7 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
             confidence="high",
             notes="Publication number format detected"
         )
-    
+
     # 3. Clear patent number: 7 digits or less, typically < 12000000
     elif cleaned.isdigit() and len(cleaned) <= 7:
         return IdentifierInfo(
@@ -105,7 +105,7 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
             confidence="high",
             notes="Patent number format (7 digits or less)"
         )
-    
+
     # 4. AMBIGUOUS CASE: 8 digits in the danger zone (could be either)
     elif cleaned.isdigit() and len(cleaned) == 8:
         # This is the critical bug case!
@@ -138,7 +138,7 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
                 confidence="high",
                 notes="8-digit number >= 8M - likely application number (series 08-17+)"
             )
-    
+
     # 6. Long numbers: Likely application numbers
     elif cleaned.isdigit() and len(cleaned) > 8:
         return IdentifierInfo(
@@ -150,7 +150,7 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
             confidence="medium",
             notes="Long number format - likely application number"
         )
-    
+
     # 7. Fallback: Unknown format
     else:
         return IdentifierInfo(
@@ -170,40 +170,40 @@ async def resolve_identifier_to_application_number(
 ) -> Tuple[Optional[str], str]:
     """
     Resolve any identifier type to an application number for document access
-    
+
     Args:
         identifier_info: Result from normalize_identifier()
         search_function: The pfw_search_applications_minimal function
-        
+
     Returns:
         Tuple of (application_number, status_message)
     """
     if identifier_info.identifier_type == IdentifierType.APPLICATION and identifier_info.app_number_for_docs:
         # Already have application number
         return identifier_info.app_number_for_docs, "Direct application number"
-    
+
     try:
         # Need to search to find application number
         search_result = await search_function(
             query=identifier_info.search_query,
             limit=1
         )
-        
+
         if not search_result.get('success') or not search_result.get('applications'):
             return None, f"No results found for {identifier_info.original_input}"
-        
+
         # Extract application number from first result
         app_data = search_result['applications'][0]
         app_number = app_data.get('applicationNumberText')
-        
+
         if not app_number:
             return None, "Application number not found in search result"
-        
+
         # Log the resolution for debugging
         logger.info(f"Resolved {identifier_info.original_input} -> {app_number}")
-        
+
         return app_number, f"Resolved {identifier_info.identifier_type} to application number"
-        
+
     except Exception as e:
         logger.error(f"Failed to resolve identifier {identifier_info.original_input}: {e}")
         return None, f"Search failed: {str(e)}"
@@ -218,19 +218,19 @@ def create_identifier_guidance(identifier_info: IdentifierInfo) -> Dict[str, str
         "confidence": identifier_info.confidence,
         "notes": identifier_info.notes
     }
-    
+
     if identifier_info.confidence == "medium":
         guidance["recommendation"] = (
             "If results don't match what you expected, try the /patent_search template "
             "with additional information like inventor name or technology keywords"
         )
-    
+
     if identifier_info.identifier_type == "unknown":
         guidance["recommendation"] = (
             "Unknown identifier format. Consider using /patent_search template "
             "for fuzzy search with partial information"
         )
-    
+
     return guidance
 
 
@@ -263,15 +263,15 @@ TEST_CASES = [
 def run_identifier_tests() -> bool:
     """
     Run test cases to validate identifier normalization
-    
+
     Returns:
         True if all tests pass
     """
     all_passed = True
-    
+
     for test_input, expected_type, expected_confidence in TEST_CASES:
         result = normalize_identifier(test_input)
-        
+
         if result.identifier_type != expected_type:
             logger.error(f"FAIL: {test_input} -> expected {expected_type}, got {result.identifier_type}")
             all_passed = False
@@ -279,5 +279,5 @@ def run_identifier_tests() -> bool:
             logger.warning(f"CONFIDENCE DIFF: {test_input} -> expected {expected_confidence}, got {result.confidence}")
         else:
             logger.info(f"PASS: {test_input} -> {result.identifier_type} ({result.confidence})")
-    
+
     return all_passed

@@ -110,14 +110,14 @@ def create_proxy_app() -> FastAPI:
         allow_methods=["GET", "POST"],  # Allow GET for downloads, POST for FPD registration
         allow_headers=["Accept", "User-Agent", "Content-Type"],
     )
-    
+
     # Add IP whitelist middleware for additional security
     @app.middleware("http")
     async def add_ip_access_control(request: Request, call_next):
         """Restrict access to localhost IPs only"""
         client_ip = request.client.host if request.client else "unknown"
         allowed_ips = ["127.0.0.1", "::1"]  # IPv4 and IPv6 localhost
-        
+
         if client_ip not in allowed_ips:
             request_id = generate_request_id()
             logger.warning(f"[{request_id}] Access denied from IP: {client_ip}")
@@ -132,10 +132,10 @@ def create_proxy_app() -> FastAPI:
                 status_code=403,
                 content={"error": "Access denied from this IP address"}
             )
-        
+
         response = await call_next(request)
         return response
-    
+
     # Add security headers middleware
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next):
@@ -773,50 +773,50 @@ def create_proxy_app() -> FastAPI:
                     request_id
                 )
                 raise HTTPException(status_code=400, detail=f"Invalid application number: {e}")
-            
+
             # Get document metadata and download URL
             logger.info(f"Proxying download for app {app_number}, doc {document_identifier}, IP {client_ip}")
-            
+
             # Get documents to find the specific document
             docs_result = await api_client.get_documents(app_number)
             if docs_result.get('error'):
                 raise HTTPException(status_code=404, detail=docs_result.get('message', 'Document not found'))
-                
+
             documents = docs_result.get('documentBag', [])
-            
+
             # Find the target document
             target_doc = None
             for doc in documents:
                 if doc.get('documentIdentifier') == document_identifier:
                     target_doc = doc
                     break
-                    
+
             if not target_doc:
                 raise HTTPException(
-                    status_code=404, 
+                    status_code=404,
                     detail=f"Document with identifier '{document_identifier}' not found"
                 )
-                
+
             # Find PDF download option
             download_options = target_doc.get('downloadOptionBag', [])
             pdf_option = None
-            
+
             for option in download_options:
                 if option.get('mimeTypeIdentifier') == 'PDF':
                     pdf_option = option
                     break
-                    
+
             if not pdf_option:
                 raise HTTPException(status_code=404, detail="PDF not available for this document")
-                
+
             download_url = pdf_option.get('downloadUrl')
             if not download_url:
                 raise HTTPException(status_code=404, detail="Download URL not available")
-            
+
             # Get document metadata for response headers
             doc_code = target_doc.get('documentCode', 'UNKNOWN')
             page_count = pdf_option.get('pageTotalQuantity', 0)
-            
+
             # Get invention title and patent number for better filename
             invention_title = None
             patent_number = None
@@ -838,7 +838,7 @@ def create_proxy_app() -> FastAPI:
                         patent_number = extract_patent_number(app_data)
             except Exception as e:
                 logger.warning(f"Could not fetch application metadata for {app_number}: {e}")
-            
+
             # Generate filename using invention title and patent number if available
             if invention_title:
                 from ..api.helpers import generate_safe_filename
@@ -846,7 +846,7 @@ def create_proxy_app() -> FastAPI:
             else:
                 # Fallback to old format if no title available
                 filename = f"{app_number}_{document_identifier}_{doc_code}.pdf"
-            
+
             # Stream the PDF from USPTO API
             async def stream_pdf():
                 async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
@@ -854,7 +854,7 @@ def create_proxy_app() -> FastAPI:
                         response.raise_for_status()
                         async for chunk in response.aiter_bytes(chunk_size=8192):
                             yield chunk
-            
+
             # Set appropriate headers for PDF download
             headers = {
                 "Content-Type": "application/pdf",
@@ -864,12 +864,12 @@ def create_proxy_app() -> FastAPI:
                 "X-Application-Number": app_number,
                 "X-Document-Identifier": document_identifier
             }
-            
+
             logger.info(f"Streaming PDF: {filename} ({page_count} pages)")
-            
+
             # Log successful download access
             security_logger.log_download_access(app_number, document_identifier, client_ip, True, request_id)
-            
+
             return StreamingResponse(
                 stream_pdf(),
                 media_type="application/pdf",
@@ -878,19 +878,19 @@ def create_proxy_app() -> FastAPI:
                     lambda: logger.info(f"Download completed: {filename}")
                 )
             )
-            
+
         except HTTPException:
             raise
         except httpx.HTTPStatusError as e:
             # Log failed download access
             security_logger.log_download_access(app_number, document_identifier, client_ip, False, request_id)
-            
+
             if e.response.status_code == 403:
                 logger.error(f"USPTO API authentication failed for {app_number}/{document_identifier}")
                 security_logger.log_auth_failure(
-                    f"/download/{app_number}/{document_identifier}", 
-                    client_ip, 
-                    "USPTO API 403 response", 
+                    f"/download/{app_number}/{document_identifier}",
+                    client_ip,
+                    "USPTO API 403 response",
                     request_id
                 )
                 raise HTTPException(status_code=502, detail="Authentication failed with USPTO API")
@@ -904,30 +904,30 @@ def create_proxy_app() -> FastAPI:
             security_logger.log_download_access(app_number, document_identifier, client_ip, False, request_id)
             logger.error(f"Proxy download failed for {app_number}/{document_identifier}: {e}")
             raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
-    
+
     @app.get("/document/persistent/{link_hash}")
     async def download_document_persistent(link_hash: str, request: Request):
         """
         Download document via persistent encrypted link
-        
+
         This endpoint resolves opaque persistent links and streams the document
         while maintaining security and rate limiting.
         """
         try:
             from .secure_link_cache import get_link_cache
-            
+
             # Get client IP for rate limiting
             client_ip = request.client.host if request.client else "unknown"
             request_id = generate_request_id()
-            
+
             # Apply rate limiting
             if not rate_limiter.is_allowed(client_ip):
                 import time
                 remaining_time = max(1, int(rate_limiter.get_reset_time(client_ip) - time.time()))
-                
+
                 # Log rate limit violation
                 security_logger.log_rate_limit_violation(client_ip, f"/document/persistent/{link_hash}", request_id)
-                
+
                 return JSONResponse(
                     status_code=429,
                     content={
@@ -939,11 +939,11 @@ def create_proxy_app() -> FastAPI:
                     },
                     headers={"Retry-After": str(int(remaining_time))}
                 )
-            
+
             # Resolve persistent link
             link_cache = get_link_cache()
             link_info = link_cache.resolve_persistent_link(link_hash)
-            
+
             if not link_info:
                 security_logger.log_validation_error(
                     f"/document/persistent/{link_hash}",
@@ -953,24 +953,24 @@ def create_proxy_app() -> FastAPI:
                     request_id
                 )
                 raise HTTPException(
-                    status_code=404, 
+                    status_code=404,
                     detail="Persistent link expired or invalid. Please request a new download link."
                 )
-            
+
             app_number = link_info['app_number']
             document_identifier = link_info['doc_id']
-            
+
             logger.info(f"Resolving persistent link {link_hash} for app {app_number}, doc {document_identifier} (access #{link_info['access_count']})")
-            
+
             # Continue with standard download logic
             return await download_document(app_number, document_identifier, request)
-            
+
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Persistent link download failed for {link_hash}: {e}")
             raise HTTPException(status_code=500, detail=f"Persistent download failed: {str(e)}")
-    
+
     @app.get("/cache/stats")
     async def get_cache_stats():
         """Get persistent link cache statistics for monitoring"""
@@ -981,7 +981,7 @@ def create_proxy_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Error getting cache stats: {e}")
             return {"error": str(e)}
-    
+
     @app.post("/cache/cleanup")
     async def cleanup_expired_links():
         """Clean up expired persistent links"""
@@ -997,27 +997,27 @@ def create_proxy_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Error during cache cleanup: {e}")
             return {"error": str(e)}
-    
+
     @app.get("/reflections")
     async def list_reflections(mcp_type: Optional[str] = None, tags: Optional[str] = None):
         """
         List available reflection resources for MCP Resources capability
-        
+
         Query Parameters:
             mcp_type: Filter by MCP type (pfw, fpd, ptab)
             tags: Comma-separated list of tags to filter by
         """
         try:
             from ..reflections.reflection_manager import get_reflection_manager
-            
+
             # Parse tags parameter
             tag_list = None
             if tags:
                 tag_list = [tag.strip() for tag in tags.split(',') if tag.strip()]
-            
+
             reflection_manager = get_reflection_manager()
             resources = reflection_manager.list_resources(mcp_type=mcp_type, tags=tag_list)
-            
+
             return {
                 "success": True,
                 "resources": resources,
@@ -1027,29 +1027,29 @@ def create_proxy_app() -> FastAPI:
                     "tags": tag_list
                 }
             }
-            
+
         except Exception as e:
             logger.error(f"Error listing reflections: {e}")
             return {"success": False, "error": str(e)}
-    
+
     @app.get("/reflections/{mcp_type}/{resource_name}")
     async def get_reflection_resource(mcp_type: str, resource_name: str, format: str = "markdown"):
         """
         Get specific reflection resource content
-        
+
         Path Parameters:
             mcp_type: MCP type (pfw, fpd, ptab)
             resource_name: Resource name identifier
-            
+
         Query Parameters:
             format: Response format (markdown, json, summary)
         """
         try:
             from ..reflections.reflection_manager import get_reflection_manager
-            
+
             resource_path = f"/reflections/{mcp_type}/{resource_name}"
             reflection_manager = get_reflection_manager()
-            
+
             if format == "summary":
                 # Get resource metadata and summary
                 resources = reflection_manager.list_resources(mcp_type=mcp_type)
@@ -1058,10 +1058,10 @@ def create_proxy_app() -> FastAPI:
                     if resource['uri'] == resource_path:
                         matching_resource = resource
                         break
-                
+
                 if not matching_resource:
                     raise HTTPException(status_code=404, detail="Resource not found")
-                
+
                 reflection = reflection_manager.get_reflection_by_name(resource_name)
                 if reflection:
                     return {
@@ -1070,7 +1070,7 @@ def create_proxy_app() -> FastAPI:
                         "summary": reflection.get_summary(),
                         "format": "summary"
                     }
-            
+
             elif format == "json":
                 # Get resource as JSON metadata
                 reflection = reflection_manager.get_reflection_by_name(resource_name)
@@ -1081,7 +1081,7 @@ def create_proxy_app() -> FastAPI:
                         "content_available": True,
                         "format": "json"
                     }
-            
+
             else:
                 # Get full content as markdown (default)
                 content = reflection_manager.get_resource(resource_path)
@@ -1096,24 +1096,24 @@ def create_proxy_app() -> FastAPI:
                             "X-Resource-Name": resource_name
                         }
                     )
-            
+
             raise HTTPException(status_code=404, detail="Resource not found")
-            
+
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error getting reflection resource {resource_path}: {e}")
             raise HTTPException(status_code=500, detail=f"Resource access failed: {str(e)}")
-    
+
     @app.get("/reflections/stats")
     async def get_reflection_stats():
         """Get reflection statistics for monitoring"""
         try:
             from ..reflections.reflection_manager import get_reflection_manager
-            
+
             reflection_manager = get_reflection_manager()
             stats = reflection_manager.get_statistics()
-            
+
             return {
                 "success": True,
                 "stats": stats,
@@ -1123,11 +1123,11 @@ def create_proxy_app() -> FastAPI:
                     "statistics": "/reflections/stats"
                 }
             }
-            
+
         except Exception as e:
             logger.error(f"Error getting reflection stats: {e}")
             return {"success": False, "error": str(e)}
-    
+
     @app.get("/rate-limit/{client_ip}")
     async def check_rate_limit(client_ip: str):
         """Check rate limit status for a client IP"""
@@ -1163,7 +1163,7 @@ def create_proxy_app() -> FastAPI:
 
             # Validate the access token from FPD MCP
             is_valid, token_payload = pfw_auth.validate_incoming_token(registration.access_token)
-            
+
             if not is_valid:
                 logger.warning(f"[{request_id}] Invalid access token from FPD MCP")
                 raise HTTPException(
@@ -1183,8 +1183,8 @@ def create_proxy_app() -> FastAPI:
             # Verify token metadata matches request
             token_petition_id = metadata.get("petition_id")
             token_doc_id = metadata.get("document_identifier")
-            
-            if (token_petition_id != registration.petition_id or 
+
+            if (token_petition_id != registration.petition_id or
                 token_doc_id != registration.document_identifier):
                 logger.warning(
                     f"[{request_id}] Token metadata mismatch: "
@@ -1205,16 +1205,16 @@ def create_proxy_app() -> FastAPI:
                     # Fall back to environment variable
                     import os
                     pfw_uspto_api_key = os.getenv("USPTO_API_KEY")
-                    
+
                 if not pfw_uspto_api_key:
                     logger.error(f"[{request_id}] No USPTO API key available in PFW")
                     raise HTTPException(
                         status_code=500,
                         detail="Configuration error: No USPTO API key available"
                     )
-                
+
                 logger.info(f"[{request_id}] Using PFW's secure USPTO API key for document registration")
-                    
+
             except Exception as e:
                 logger.error(f"[{request_id}] Failed to get PFW USPTO API key: {e}")
                 raise HTTPException(
@@ -1277,7 +1277,7 @@ def create_proxy_app() -> FastAPI:
         Register PTAB proceeding document for centralized proxy downloads
 
         This endpoint allows future PTAB MCP to register documents with the PFW centralized
-        proxy when PTAB moves to USPTO Open Data Portal, enabling unified download 
+        proxy when PTAB moves to USPTO Open Data Portal, enabling unified download
         experience across USPTO MCPs.
 
         Args:
@@ -1297,7 +1297,7 @@ def create_proxy_app() -> FastAPI:
 
             # Validate the access token from PTAB MCP
             is_valid, token_payload = pfw_auth.validate_incoming_token(registration.access_token)
-            
+
             if not is_valid:
                 logger.warning(f"[{request_id}] Invalid access token from PTAB MCP")
                 raise HTTPException(
@@ -1315,14 +1315,14 @@ def create_proxy_app() -> FastAPI:
                     # Fall back to environment variable
                     import os
                     pfw_uspto_api_key = os.getenv("USPTO_API_KEY")
-                    
+
                 if not pfw_uspto_api_key:
                     logger.error(f"[{request_id}] No USPTO API key available in PFW")
                     raise HTTPException(
                         status_code=500,
                         detail="Configuration error: No USPTO API key available"
                     )
-                    
+
             except Exception as e:
                 logger.error(f"[{request_id}] Failed to get PFW USPTO API key: {e}")
                 raise HTTPException(
@@ -1406,25 +1406,25 @@ def create_proxy_app() -> FastAPI:
     async def get_doc_codes():
         """
         Serve USPTO Document Code Decoder Table
-        
+
         This endpoint provides a formatted markdown table of USPTO document codes
         for patent prosecution, PTAB proceedings, and FPD petitions.
-        
+
         Source: https://www.uspto.gov/patents/apply/filing-online/efs-info-document-description
         """
         try:
             import csv
             import os
-            
+
             # Find the CSV file relative to project root
             # Get project root (go up from src/patent_filewrapper_mcp/proxy/)
             current_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.join(current_dir, "..", "..", "..")
             csv_path = os.path.join(project_root, "reference", "Document_Descriptions_List.csv")
-            
+
             if not os.path.exists(csv_path):
                 raise FileNotFoundError(f"Document_Descriptions_List.csv not found at {csv_path}")
-            
+
             # Parse CSV and format as markdown
             output = []
             output.append("# USPTO Document Code Decoder Table")
@@ -1434,68 +1434,68 @@ def create_proxy_app() -> FastAPI:
             output.append("")
             output.append("This table provides document codes used in USPTO patent prosecution, PTAB proceedings, and FPD petitions.")
             output.append("")
-            
+
             prosecution_codes = []
             ptab_codes = []
             fpd_codes = []
-            
+
             # Try multiple encodings to handle the CSV file
             encodings_to_try = ['utf-8', 'utf-8-sig', 'latin1', 'cp1252', 'iso-8859-1']
-            
+
             for encoding in encodings_to_try:
                 try:
                     logger.info(f"Trying to read CSV with encoding: {encoding}")
                     with open(csv_path, 'r', encoding=encoding) as file:
                         csv_reader = csv.reader(file)
                         headers = None
-                        
+
                         for row in csv_reader:
                             if not headers:
                                 headers = row
                                 continue
-                                
+
                             if len(row) >= 4:
                                 category = row[0].strip()
                                 description = row[1].strip()
                                 business_process = row[2].strip()
                                 doc_code = row[3].strip()
-                                
+
                                 if doc_code and doc_code != "DOC CODE":
                                     # Clean up description and business process
                                     description = description.replace('\n', ' ').replace('\r', ' ')
                                     business_process = business_process.replace('\n', ' ').replace('\r', ' ')
-                                    
+
                                     # Remove any problematic characters
                                     description = ''.join(char if ord(char) < 128 else '?' for char in description)
                                     business_process = ''.join(char if ord(char) < 128 else '?' for char in business_process)
-                                    
+
                                     # Limit lengths for readability
                                     if len(description) > 120:
                                         description = description[:117] + "..."
                                     if len(business_process) > 100:
                                         business_process = business_process[:97] + "..."
-                                    
+
                                     # Escape pipe characters for markdown table
                                     description = description.replace('|', '\\|')
                                     business_process = business_process.replace('|', '\\|')
-                                    
+
                                     code_entry = {
                                         'code': doc_code,
                                         'description': description,
                                         'process': business_process,
                                         'category': category
                                     }
-                                    
+
                                     if 'PTAB' in category:
                                         ptab_codes.append(code_entry)
                                     elif 'FPD' in category or 'Final Petition Decision' in category:
                                         fpd_codes.append(code_entry)
                                     else:
                                         prosecution_codes.append(code_entry)
-                    
+
                     logger.info(f"Successfully read CSV with {encoding} encoding")
                     break  # Success - exit the encoding loop
-                    
+
                 except UnicodeDecodeError as e:
                     logger.warning(f"Failed to read CSV with {encoding} encoding: {e}")
                     continue
@@ -1505,19 +1505,19 @@ def create_proxy_app() -> FastAPI:
             else:
                 # If we get here, all encodings failed
                 raise FileNotFoundError(f"Unable to read CSV file with any of the attempted encodings: {encodings_to_try}")
-            
+
             # Add common prosecution codes section
             output.append("## Common Prosecution Document Codes")
             output.append("")
             output.append("| Code | Description | Business Process |")
             output.append("|------|-------------|------------------|")
-            
+
             # Sort prosecution codes by code for better organization
             prosecution_codes.sort(key=lambda x: x['code'])
-            
+
             for code_info in prosecution_codes[:60]:  # Limit to first 60 for readability
                 output.append(f"| `{code_info['code']}` | {code_info['description']} | {code_info['process']} |")
-            
+
             # Add PTAB codes section if available
             if ptab_codes:
                 output.append("")
@@ -1525,12 +1525,12 @@ def create_proxy_app() -> FastAPI:
                 output.append("")
                 output.append("| Code | Description | Business Process |")
                 output.append("|------|-------------|------------------|")
-                
+
                 ptab_codes.sort(key=lambda x: x['code'])
-                
+
                 for code_info in ptab_codes:
                     output.append(f"| `{code_info['code']}` | {code_info['description']} | {code_info['process']} |")
-            
+
             # Add FPD codes section if available
             if fpd_codes:
                 output.append("")
@@ -1538,12 +1538,12 @@ def create_proxy_app() -> FastAPI:
                 output.append("")
                 output.append("| Code | Description | Business Process |")
                 output.append("|------|-------------|------------------|")
-                
+
                 fpd_codes.sort(key=lambda x: x['code'])
-                
+
                 for code_info in fpd_codes:
                     output.append(f"| `{code_info['code']}` | {code_info['description']} | {code_info['process']} |")
-            
+
             # Add common codes reference
             output.append("")
             output.append("## Quick Reference - Most Common Codes")
@@ -1566,10 +1566,10 @@ def create_proxy_app() -> FastAPI:
             output.append("*This table is generated from the USPTO EFS-Web Document Description List and includes document codes used in patent prosecution, PTAB proceedings, and FPD petitions.*")
             output.append("")
             output.append(f"**Generated**: {import_time().strftime('%Y-%m-%d %H:%M:%S UTC', import_time().gmtime())}")
-            
+
             result = "\n".join(output)
             logger.info(f"Generated document codes table ({len(result)} characters)")
-            
+
             return Response(
                 content=result,
                 media_type="text/markdown",
@@ -1580,7 +1580,7 @@ def create_proxy_app() -> FastAPI:
                     "Cache-Control": "public, max-age=3600"  # Cache for 1 hour
                 }
             )
-            
+
         except Exception as e:
             logger.error(f"Error generating document codes table: {e}")
             return JSONResponse(

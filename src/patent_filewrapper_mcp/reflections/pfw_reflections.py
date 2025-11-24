@@ -12,7 +12,7 @@ from .base_reflection import BaseReflection
 class PFWReflection(BaseReflection):
     """
     Patent File Wrapper MCP guidance reflection
-    
+
     Provides comprehensive guidance for PFW tools including:
     - Progressive disclosure workflow (minimal → balanced → detailed)
     - Field customization and context reduction strategies
@@ -20,19 +20,19 @@ class PFWReflection(BaseReflection):
     - Cross-MCP integration workflows
     - Attorney-specific use cases and cost optimization
     """
-    
+
     def __init__(self):
         super().__init__(
             name="USPTO PFW Tool Guidance",
             description="Comprehensive Patent File Wrapper MCP guidance covering progressive workflows, field customization, document extraction, and cross-MCP integration patterns",
             version="3.0"
         )
-    
+
     def _get_tags(self) -> List[str]:
         """Get PFW-specific tags for categorization"""
         return [
             'patent-prosecution',
-            'document-extraction', 
+            'document-extraction',
             'field-customization',
             'progressive-disclosure',
             'context-reduction',
@@ -42,15 +42,15 @@ class PFWReflection(BaseReflection):
             'cross-mcp-integration',
             'cost-optimization'
         ]
-    
+
     def _get_mcp_type(self) -> str:
         """Get MCP type identifier"""
         return 'pfw'
-    
+
     def get_content(self) -> str:
         """
         Get the complete PFW guidance content
-        
+
         Returns:
             Full PFW guidance as markdown (61K+ characters)
         """
@@ -58,11 +58,11 @@ class PFWReflection(BaseReflection):
         # This provides the complete guidance that was previously in get_all_tool_reflections()
         # but now sourced from the sectioned guidance system
         return self._get_comprehensive_guidance()
-    
+
     def get_quick_reference(self) -> str:
         """
         Get a quick reference version for resource-constrained clients
-        
+
         Returns:
             Condensed guidance focusing on essential workflows
         """
@@ -99,18 +99,18 @@ class PFWReflection(BaseReflection):
 - **Pinecone RAG MCP**: Access MPEP knowledge base with custom embeddings (`semantic_search`, `strategic_semantic_search`)
 
 For complete guidance, use the full tool reflections resource."""
-    
+
     def _get_comprehensive_guidance(self) -> str:
         """
         Get comprehensive guidance content from all sections combined
-        
+
         Returns:
             Complete PFW guidance combining all sections
         """
         # This reconstructs the comprehensive guidance by combining all sections
         # from the new pfw_get_guidance system
         sections_content = []
-        
+
         # Add header
         sections_content.append("# USPTO Patent File Wrapper MCP Server - Complete Tool Guidance")
         sections_content.append("")
@@ -119,7 +119,7 @@ For complete guidance, use the full tool reflections resource."""
         sections_content.append("")
         sections_content.append("Comprehensive guidance for Patent File Wrapper, cross-MCP workflows, and patent attorney use cases.")
         sections_content.append("")
-        
+
         # Note: The full content is now delivered through pfw_get_guidance() sections
         # for context efficiency. This method provides a comprehensive overview.
         overview_content = """
@@ -130,7 +130,7 @@ This comprehensive guidance has been migrated to a context-efficient sectioned a
 ### Available Sections:
 - **overview**: Available sections and tool summary
 - **workflows_pfw**: PFW-only workflows (litigation, due diligence, prior art)
-- **workflows_ptab**: PFW + PTAB integration workflows  
+- **workflows_ptab**: PFW + PTAB integration workflows
 - **workflows_fpd**: PFW + FPD integration workflows
 - **workflows_citations**: PFW + Citations integration workflows
 - **workflows_complete**: Four-MCP complete lifecycle analysis
@@ -158,17 +158,17 @@ guidance = pfw_get_guidance(section='overview')
 
 For complete guidance access, use the `pfw_get_guidance(section='...')` function with specific section names listed above.
 """
-        
+
         sections_content.append(overview_content)
         return '\n'.join(sections_content)
-    
+
     def get_tool_specific_guidance(self, tool_name: str) -> str:
         """
         Get guidance for a specific tool
-        
+
         Args:
             tool_name: Name of the specific tool
-            
+
         Returns:
             Tool-specific guidance or general guidance if tool not found
         """
@@ -184,7 +184,7 @@ Tool-specific guidance has been migrated to the new sectioned approach.
 # Get comprehensive tool guidance
 guidance = pfw_get_guidance(section='tools')
 
-# Get workflow guidance  
+# Get workflow guidance
 guidance = pfw_get_guidance(section='workflows_pfw')
 
 # Get field strategies

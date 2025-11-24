@@ -522,6 +522,3 @@ if search_strategy == "fuzzy_search" and results['count'] > 1:
 ---
 
 **Ready to retrieve complete patent package? The system handles identifier resolution, package assembly, cross-MCP intelligence, and presentation automatically.**"""
-
-
-

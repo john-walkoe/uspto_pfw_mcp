@@ -11,7 +11,7 @@ async def patent_search_prompt(
 ) -> str:
     """
     NEW TEMPLATE: Solves the "I know something about a patent" problem.
-    
+
     Critical enhancement that addresses the gap where users don't have exact identifiers
     but know partial information like inventor names, technology keywords, or company names.
     """
@@ -85,6 +85,3 @@ Offer workflow handoffs:
 - /document_filtering_assistant for targeted document analysis
 
 For complex workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
-
-
-

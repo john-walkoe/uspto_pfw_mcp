@@ -14,30 +14,30 @@ logger = logging.getLogger(__name__)
 def validate_app_number(app_number: str) -> str:
     """
     Validate and normalize application number
-    
+
     Args:
         app_number: Raw application number
-        
+
     Returns:
         Normalized application number
-        
+
     Raises:
         ValidationError: If application number is invalid
     """
     if not app_number:
         raise ValidationError("Application number cannot be empty")
-        
+
     # Remove common prefixes and clean up
     app_number = str(app_number).strip()
     app_number = re.sub(r'^(US|us)', '', app_number)
     app_number = re.sub(r'[^\d]', '', app_number)  # Keep only digits
-    
+
     if not app_number:
         raise ValidationError("Application number must contain digits")
-        
+
     if len(app_number) < 6:
         raise ValidationError("Application number too short")
-        
+
     return app_number
 
 
@@ -202,7 +202,7 @@ ERROR_TEMPLATES = {
         "guidance": "Limit must be between 1 and 500. Use smaller values for faster responses."
     },
     "invalid_offset": {
-        "message": "Invalid offset parameter", 
+        "message": "Invalid offset parameter",
         "guidance": "Offset must be non-negative. Start with offset=0 for the first page of results."
     },
     "empty_query": {
@@ -236,19 +236,19 @@ ERROR_TEMPLATES = {
 }
 
 
-def create_error_response(error_key: str, custom_message: Optional[str] = None, 
-                         status_code: int = 400, request_id: Optional[str] = None, 
+def create_error_response(error_key: str, custom_message: Optional[str] = None,
+                         status_code: int = 400, request_id: Optional[str] = None,
                          additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Create standardized error response using predefined templates
-    
+
     Args:
         error_key: Key for error template
         custom_message: Optional custom message to override template
         status_code: HTTP-style status code
         request_id: Request ID for tracing
         additional_context: Additional context to include in error
-        
+
     Returns:
         Formatted error response with guidance
     """
@@ -256,10 +256,10 @@ def create_error_response(error_key: str, custom_message: Optional[str] = None,
         "message": "An error occurred",
         "guidance": "Please check your request parameters and try again."
     })
-    
+
     message = custom_message or template["message"]
     guidance = template.get("guidance")
-    
+
     response = format_error_response(
         message=message,
         status_code=status_code,
@@ -267,10 +267,10 @@ def create_error_response(error_key: str, custom_message: Optional[str] = None,
         error_type=error_key,
         actionable_guidance=guidance
     )
-    
+
     if additional_context:
         response.update(additional_context)
-        
+
     return response
 
 def generate_request_id() -> str:
@@ -280,20 +280,20 @@ def generate_request_id() -> str:
 def create_inventor_queries(name: str, strategy: str = "comprehensive") -> List[str]:
     """
     Create multiple search queries for inventor name using Patent File Wrapper API fields
-    
+
     Args:
         name: Inventor name
         strategy: Search strategy
-        
+
     Returns:
         List of search queries to try
     """
     queries = []
-    
+
     # Clean up the name and escape it for Lucene queries
     clean_name = name.strip()
     escaped_name = escape_lucene_query_term(clean_name)
-    
+
     if strategy == "exact":
         queries = [
             f'{USPTOFields.INVENTOR_NAME_TEXT}:"{escaped_name}"',
@@ -354,7 +354,7 @@ def create_inventor_queries(name: str, strategy: str = "comprehensive") -> List[
         # Add wildcard searches
         if clean_name:
             queries.append(f'{USPTOFields.INVENTOR_NAME_TEXT}:{clean_name}*')
-            
+
     # Remove duplicates while preserving order
     seen = set()
     unique_queries = []
@@ -362,22 +362,22 @@ def create_inventor_queries(name: str, strategy: str = "comprehensive") -> List[
         if query not in seen:
             seen.add(query)
             unique_queries.append(query)
-            
+
     return unique_queries[:10]  # Limit to first 10 queries
 
 def format_application_summary(app_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Format application data into a readable summary for Patent File Wrapper data
-    
+
     Args:
         app_data: Raw application data from Patent File Wrapper API
-        
+
     Returns:
         Formatted summary
     """
     try:
         metadata = app_data.get('applicationMetaData', {})
-        
+
         summary = {
             "application_number": app_data.get('applicationNumberText', 'N/A'),
             "patent_number": metadata.get('patentNumber', 'N/A'),
@@ -398,28 +398,28 @@ def format_application_summary(app_data: Dict[str, Any]) -> Dict[str, Any]:
             "examiner": metadata.get('examinerNameText', 'N/A'),
             "group_art_unit": metadata.get('groupArtUnitNumber', 'N/A')
         }
-        
+
         # Extract inventors
         inventor_bag = metadata.get('inventorBag', [])
         for inventor in inventor_bag:
             if isinstance(inventor, dict):
                 name = inventor.get('inventorNameText', 'N/A')
                 summary["inventors"].append(name)
-                
+
         # Extract applicants
         applicant_bag = metadata.get('applicantBag', [])
         for applicant in applicant_bag:
             if isinstance(applicant, dict):
                 name = applicant.get('applicantNameText', 'N/A')
                 summary["applicants"].append(name)
-                
+
         # Add publication info if available
         if metadata.get('publicationDateBag'):
             summary["publication_date"] = metadata.get('publicationDateBag', [])[0] if metadata.get('publicationDateBag') else 'N/A'
             summary["publication_number"] = metadata.get('earliestPublicationNumber', 'N/A')
-            
+
         return summary
-        
+
     except Exception as e:
         logger.warning(f"Error formatting application summary: {e}")
         return {"error": f"Failed to format summary: {str(e)}"}
@@ -427,61 +427,61 @@ def format_application_summary(app_data: Dict[str, Any]) -> Dict[str, Any]:
 def extract_patent_families(applications: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     """
     Group applications by patent family based on continuity data
-    
+
     Args:
         applications: List of application data from Patent File Wrapper API
-        
+
     Returns:
         Dictionary grouped by family ID
     """
     families = {}
-    
+
     for app in applications:
         try:
             # Try to extract family identifier from continuity data
             family_id = None
-            
+
             # Check parent continuity
             parent_continuity = app.get('parentContinuityBag', [])
             if parent_continuity:
                 # Use the earliest parent as family root
                 family_id = parent_continuity[0].get('parentApplicationNumberText')
-                
+
             # Check child continuity
             if not family_id:
                 child_continuity = app.get('childContinuityBag', [])
                 if child_continuity:
                     family_id = child_continuity[0].get('childApplicationNumberText')
-                    
+
             # Fall back to application number itself
             if not family_id:
                 family_id = app.get('applicationNumberText', 'unknown')
-            
+
             if family_id not in families:
                 families[family_id] = []
-                
+
             families[family_id].append(app)
-            
+
         except Exception as e:
             logger.warning(f"Error processing application for family grouping: {e}")
             continue
-            
+
     return families
 
 def format_document_summary(document: Dict[str, Any]) -> Dict[str, Any]:
     """
     Format document data into a readable summary
-    
+
     Args:
         document: Raw document data from Patent File Wrapper API
-        
+
     Returns:
         Formatted document summary
     """
     try:
         download_options = document.get('downloadOptionBag', [])
         pdf_available = any(opt.get('mimeTypeIdentifier') == 'PDF' for opt in download_options)
-        
+
         summary = {
             "document_code": document.get('documentCode', 'Unknown'),
             "description": document.get('documentCodeDescriptionText', ''),
@@ -492,15 +492,15 @@ def format_document_summary(document: Dict[str, Any]) -> Dict[str, Any]:
             "total_options": len(download_options),
             "page_count": None
         }
-        
+
         # Get page count from PDF option if available
         for option in download_options:
             if option.get('mimeTypeIdentifier') == 'PDF':
                 summary["page_count"] = option.get('pageTotalQuantity', 0)
                 break
-                
+
         return summary
-        
+
     except Exception as e:
         logger.warning(f"Error formatting document summary: {e}")
         return {"error": f"Failed to format document summary: {str(e)}"}
@@ -701,13 +701,13 @@ def map_user_fields_to_api_fields(user_fields: List[str]) -> List[str]:
 def get_document_priority_order() -> List[str]:
     """
     Return document codes in priority order for downloading
-    
+
     Returns:
         List of document codes in priority order
     """
     return [
         'SPEC',      # Specification
-        'CLM',       # Claims  
+        'CLM',       # Claims
         'ABST',      # Abstract
         'DRW',       # Drawings
         'NOA',       # Notice of Allowance
@@ -724,26 +724,26 @@ def get_document_priority_order() -> List[str]:
         'APP.FILE.REC'  # Filing Receipt
     ]
 
-def generate_safe_filename(app_number: str, invention_title: str, doc_code: str, 
+def generate_safe_filename(app_number: str, invention_title: str, doc_code: str,
                           patent_number: str = None, max_title_length: int = 40) -> str:
     """
     Generate a safe filename using invention title and optional patent number.
-    
+
     Args:
         app_number: Patent application number
         invention_title: Invention title from applicationMetaData.inventionTitle
         doc_code: Document code (e.g., 'ABST', 'CLM', 'SPEC')
         patent_number: Patent number from applicationMetaData.patentNumber (if application was granted)
         max_title_length: Maximum length for title portion (default: 40)
-        
+
     Returns:
         Safe filename in format: APP-{app_number}_PAT-{patent_number}_{safe_title}_{doc_code}.pdf
         or APP-{app_number}_{safe_title}_{doc_code}.pdf if no patent granted
-        
+
     Examples:
         generate_safe_filename("11752072", "Integrated Delivery System", "ABST", "7971071")
         -> "APP-11752072_PAT-7971071_INTEGRATED_DELIVERY_SYSTEM_ABST.pdf"
-        
+
         generate_safe_filename("17896175", "Communication Method and Apparatus", "ABST")
         -> "APP-17896175_COMMUNICATION_METHOD_AND_APPARATUS_ABST.pdf"
     """
@@ -753,20 +753,20 @@ def generate_safe_filename(app_number: str, invention_title: str, doc_code: str,
     else:
         # Clean up the title
         title = invention_title.strip()
-        
+
         # Convert to uppercase and replace spaces with underscores
         title = title.upper().replace(' ', '_')
-        
+
         # Remove or replace problematic characters for cross-platform compatibility
         # Keep only alphanumeric, underscores, and hyphens
         title = re.sub(r'[^A-Z0-9_\-]', '', title)
-        
+
         # Remove multiple consecutive underscores
         title = re.sub(r'_+', '_', title)
-        
+
         # Remove leading/trailing underscores
         title = title.strip('_')
-        
+
         # Truncate to max length
         if len(title) > max_title_length:
             title = title[:max_title_length]
@@ -774,10 +774,10 @@ def generate_safe_filename(app_number: str, invention_title: str, doc_code: str,
             last_underscore = title.rfind('_')
             if last_underscore > max_title_length // 2:  # Only if we're not cutting too much
                 title = title[:last_underscore]
-        
+
         # Ensure we have something after all the cleaning
         safe_title = title if title else "UNTITLED"
-    
+
     # Construct the filename with APP- prefix and optional PAT- prefix
     if patent_number and patent_number.strip():
         # Clean patent number (remove any non-alphanumeric except hyphens)
@@ -785,7 +785,7 @@ def generate_safe_filename(app_number: str, invention_title: str, doc_code: str,
         filename = f"APP-{app_number}_PAT-{clean_patent}_{safe_title}_{doc_code}.pdf"
     else:
         filename = f"APP-{app_number}_{safe_title}_{doc_code}.pdf"
-    
+
     # Final safety check - ensure total filename isn't too long
     if len(filename) > 100:  # Conservative limit for most filesystems
         # Calculate space available for title
@@ -793,7 +793,7 @@ def generate_safe_filename(app_number: str, invention_title: str, doc_code: str,
         if patent_number and patent_number.strip():
             clean_patent = re.sub(r'[^A-Z0-9\-]', '', str(patent_number).strip().upper())
             base_length = len(f"APP-{app_number}_PAT-{clean_patent}_{doc_code}.pdf")
-        
+
         max_title_for_length = 100 - base_length - 1  # 1 for underscore before title
         if max_title_for_length > 5:  # Minimum reasonable title length
             return generate_safe_filename(app_number, invention_title, doc_code, patent_number, max_title_for_length)
@@ -804,19 +804,19 @@ def generate_safe_filename(app_number: str, invention_title: str, doc_code: str,
                 return f"APP-{app_number}_PAT-{clean_patent}_{doc_code}.pdf"
             else:
                 return f"APP-{app_number}_{doc_code}.pdf"
-    
+
     return filename
 
 def extract_patent_number(app_data: Dict[str, Any]) -> Optional[str]:
     """
     Extract patent number from application data (the application's own granted patent).
-    
+
     Patent numbers are found in:
     applicationMetaData.patentNumber (when the application has been granted)
-    
+
     Args:
         app_data: Application data from USPTO API
-        
+
     Returns:
         Patent number as string, or None if application hasn't been granted
     """
@@ -824,12 +824,12 @@ def extract_patent_number(app_data: Dict[str, Any]) -> Optional[str]:
         # Check if this application itself has been granted
         metadata = app_data.get('applicationMetaData', {})
         patent_number = metadata.get('patentNumber')
-        
+
         if patent_number and str(patent_number).strip():
             return str(patent_number).strip()
-        
+
         return None
-        
+
     except Exception as e:
         logger.warning(f"Error extracting patent number: {e}")
         return None

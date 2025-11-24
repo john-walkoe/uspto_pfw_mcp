@@ -195,15 +195,15 @@ NEW
 FOLLOWON
 NEW
 FOLLOWON",,,,,,
-Amendment,Electronic Record Correction,"The USPTO has established a retention period of one year for patent-related papers 
-that have been scanned into the Image File Wrapper system (IFW) or the 
-Supplemental Complex Repository for Examiners (SCORE). 
-After the expiration of the one-year retention period (after September 1, 2012, or later), 
-the USPTO will dispose of the paper unless, within sufficient time 
-prior to disposal of the paper, the relevant patent applicant, patent 
-owner, or reexamination party files a bona fide request to correct the 
-electronic record of the paper in IFW or SCORE, and the request remains 
-outstanding at the time disposal of the paper would have otherwise 
+Amendment,Electronic Record Correction,"The USPTO has established a retention period of one year for patent-related papers
+that have been scanned into the Image File Wrapper system (IFW) or the
+Supplemental Complex Repository for Examiners (SCORE).
+After the expiration of the one-year retention period (after September 1, 2012, or later),
+the USPTO will dispose of the paper unless, within sufficient time
+prior to disposal of the paper, the relevant patent applicant, patent
+owner, or reexamination party files a bona fide request to correct the
+electronic record of the paper in IFW or SCORE, and the request remains
+outstanding at the time disposal of the paper would have otherwise
 occurred. ",E.RECORD.COR,"
 DESIGN
 ","
@@ -680,7 +680,7 @@ NEW
 FOLLOWON
 FOLLOWON
 NEW
-NEW 
+NEW
 NEW
 FOLLOWON
 FOLLOWON",,,,,,
@@ -905,7 +905,7 @@ NEW
 NEW
 NEW
 FOLLOWON",,,,,,
-Application Part,Affidavit-Rule 131-pre-America Invents Act (First to Invent) ONLY,"When a reference applied by the Examiner has a patent or publication date less than 1 year before the U.S. filing date of the application being examined, applicant may file an affidavit or declaration under Rule 131(a) (Pre-AIA (FTI) Rule 131) to show prior inventorship to overcome the rejection.  
+Application Part,Affidavit-Rule 131-pre-America Invents Act (First to Invent) ONLY,"When a reference applied by the Examiner has a patent or publication date less than 1 year before the U.S. filing date of the application being examined, applicant may file an affidavit or declaration under Rule 131(a) (Pre-AIA (FTI) Rule 131) to show prior inventorship to overcome the rejection.
 When any claim of an application or a patent under reexamination is rejected under 35 U.S.C. 103 on a U.S. patent or U.S. patent application publication which is not prior art under 35 U.S.C. 102(b), and the inventions defined by the claims in the application or patent under reexamination and by the claims in the patent or published application are not identical but are not patentably distinct, and the inventions are owned by the same party, the applicant or owner of the patent under reexamination may disqualify the patent or patent application publication as prior art by submission of an affidavit or declaration under Rule 131(c) (pre-AIA(FTI) Rule 130) stating common ownership and stating that the inventor named is the prior inventor.",AF/D.131       ,"371
 371
 AE_UTILITY
@@ -1106,15 +1106,15 @@ FOLLOWON",,,,,,
 Change Requests - Supp Exam,Change of Address.,"Where an attorney or agent of record (or applicant, if he or she is prosecuting the application pro se) changes his or her correspondence address, he or she is responsible for promptly notifying the USPTO of the new correspondence address (including ZIP Code). The notification should also include his or her telephone number. A change of correspondence address must be signed by an attorney or agent of record.",C.AD        ,SUPP EXAM (SE),"NEW
 FOLLOWON
 ",,,,,,
-Change Requests - Supp Exam,Electronic Record Correction,"The USPTO has established a retention period of one year for patent-related papers 
-that have been scanned into the Image File Wrapper system (IFW) or the 
-Supplemental Complex Repository for Examiners (SCORE). 
-After the expiration of the one-year retention period (after September 1, 2012, or later), 
-the USPTO will dispose of the paper unless, within sufficient time 
-prior to disposal of the paper, the relevant patent applicant, patent 
-owner, or reexamination party files a bona fide request to correct the 
-electronic record of the paper in IFW or SCORE, and the request remains 
-outstanding at the time disposal of the paper would have otherwise 
+Change Requests - Supp Exam,Electronic Record Correction,"The USPTO has established a retention period of one year for patent-related papers
+that have been scanned into the Image File Wrapper system (IFW) or the
+Supplemental Complex Repository for Examiners (SCORE).
+After the expiration of the one-year retention period (after September 1, 2012, or later),
+the USPTO will dispose of the paper unless, within sufficient time
+prior to disposal of the paper, the relevant patent applicant, patent
+owner, or reexamination party files a bona fide request to correct the
+electronic record of the paper in IFW or SCORE, and the request remains
+outstanding at the time disposal of the paper would have otherwise
 occurred. ",E.RECORD.COR,SUPP EXAM (SE),"NEW
 FOLLOWON
 ",,,,,,
@@ -2413,7 +2413,7 @@ REISSUE_UTILITY
 TRACK 1","NEW
 FOLLOWON
 NEW
-NEW 
+NEW
 FOLLOWON
 NEW
 FOLLOWON
@@ -2425,15 +2425,15 @@ FOLLOWON
 NEW
 NEW",,,,,,
 Petition,Petition auto-grant letter from EFS,A petition automatically granted in EFS-Web as long as the customer conforms to certain rules for the auto-grant,PET.DEC.AUTO,DESIGN,FOLLOWON,,,,,,
-Petition,Electronic Record Correction,"The USPTO has established a retention period of one year for patent-related papers 
-that have been scanned into the Image File Wrapper system (IFW) or the 
-Supplemental Complex Repository for Examiners (SCORE). 
-After the expiration of the one-year retention period (after September 1, 2012, or later), 
-the USPTO will dispose of the paper unless, within sufficient time 
-prior to disposal of the paper, the relevant patent applicant, patent 
-owner, or reexamination party files a bona fide request to correct the 
-electronic record of the paper in IFW or SCORE, and the request remains 
-outstanding at the time disposal of the paper would have otherwise 
+Petition,Electronic Record Correction,"The USPTO has established a retention period of one year for patent-related papers
+that have been scanned into the Image File Wrapper system (IFW) or the
+Supplemental Complex Repository for Examiners (SCORE).
+After the expiration of the one-year retention period (after September 1, 2012, or later),
+the USPTO will dispose of the paper unless, within sufficient time
+prior to disposal of the paper, the relevant patent applicant, patent
+owner, or reexamination party files a bona fide request to correct the
+electronic record of the paper in IFW or SCORE, and the request remains
+outstanding at the time disposal of the paper would have otherwise
 occurred. ",E.RECORD.COR,"371
 DESIGN
 PROVSNL
@@ -2640,8 +2640,8 @@ FOLLOWON",,,,,,
 Pilot Programs,Request for Peer Review,The patent owner/assignee/applicant presents the form according to the provisions of the Peer to patent pilot to allow the application to be apart of the program.,PEER.CONSENT,"371
 UTILITY","FOLLOWON
 FOLLOWON",,,,,,
-Pilot Programs," 
-COVID-19 Prioritized Examination Request"," 
+Pilot Programs,"
+COVID-19 Prioritized Examination Request","
 Allows an applicant that qualifies for small or micro entity status to file a request for prioritized examination in certain applications with a certification that the claimed invention covers a product or process related to COVID-19 and that the product or process is subject to an approval by the FDA.",TRACK1.COVID,"TRACK1
 371
 UTILITY","NEW
@@ -3044,8 +3044,8 @@ Supplemental Examination,Receipt of Original Supplemental Examination Request,"A
 SUPP EXAM (SE)","NEW
 FOLLOWON
 ",,,,,,
-Track I - Prioritized Examination," 
-COVID-19 Prioritized Examination Request"," 
+Track I - Prioritized Examination,"
+COVID-19 Prioritized Examination Request","
 Allows an applicant that qualifies for small or micro entity status to file a request for prioritized examination in certain applications with a certification that the claimed invention covers a product or process related to COVID-19 and that the product or process is subject to an approval by the FDA.",TRACK1.COVID,"TRACK1
 371
 UTILITY","NEW

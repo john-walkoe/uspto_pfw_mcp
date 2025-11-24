@@ -211,7 +211,7 @@ def test_no_hardcoded_secrets():
     """Ensure no hardcoded API keys in codebase"""
     import subprocess
     import os
-    
+
     # Search for potential hardcoded keys (example pattern)
     result = subprocess.run([
         'grep', '-rE', 'API_KEY.*=.*"[A-Za-z0-9]{20,}"',
@@ -227,7 +227,7 @@ def test_no_hardcoded_secrets():
 
 **Immediate Actions (within 1 hour):**
 1. **Invalidate the exposed key** at USPTO developer portal
-2. **Generate new API key** 
+2. **Generate new API key**
 3. **Update production environment** with new key
 4. **Scan for unauthorized usage** in API logs
 
@@ -262,7 +262,7 @@ logger.error(f"[{request_id}] Authentication failed - invalid key")
 
 **Monthly Checklist:**
 - [ ] Scan codebase for hardcoded secrets
-- [ ] Review API key rotation schedule  
+- [ ] Review API key rotation schedule
 - [ ] Check .gitignore effectiveness
 - [ ] Verify test environment security
 - [ ] Review error message exposure

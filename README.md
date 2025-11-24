@@ -179,10 +179,10 @@ This MCP server includes sophisticated AI-optimized prompt templates for complex
 # Exact strategy
 "applicationMetaData.inventorBag.inventorNameText:\"John Smith\""
 
-# Comprehensive strategy  
+# Comprehensive strategy
 [
   "applicationMetaData.inventorBag.inventorNameText:\"John Smith\"",
-  "applicationMetaData.inventorBag.inventorNameText:\"Smith, John\"", 
+  "applicationMetaData.inventorBag.inventorNameText:\"Smith, John\"",
   "applicationMetaData.inventorBag.inventorNameText:Smith*",
   "applicationMetaData.inventorBag.inventorNameText:*Smith*"
 ]
@@ -198,7 +198,6 @@ This MCP server includes sophisticated AI-optimized prompt templates for complex
 | `pfw_get_document_content` (PFW get document content with mistral ocr) | For LLM readability of non ORC scanned prosecution documents uses intelligent document extraction with cost transparency | USPTO_API_KEY (+ MISTRAL_API_KEY for OCR fallback) |
 | `pfw_get_document_download` (PFW get document download)      | Secure browser-accessible download URLs                      | USPTO_API_KEY                                      |
 | `pfw_get_guidance` (PFW get guidance)                        | **RECOMMENDED**: Context-efficient selective guidance sections (95-99% token reduction) | None                                               |
-| ~~`pfw_get_tool_reflections`~~ (deprecated)        | **REMOVED:** Use `pfw_get_guidance` for context-efficient guidance | None                                               |
 
 ### Document Processing Capabilities
 
@@ -294,7 +293,7 @@ PET-2024-05-15_APP-17414168_REVIVAL_PETITION_DECISION.pdf
 
 🎯 **Quick Reference Chart** - Know exactly which section to call:
 - 🔍 "Find patents by inventor/company/art unit" → `pfw_get_guidance("fields")`
-- 📄 "Get complete patent package/documents" → `pfw_get_guidance("documents")`  
+- 📄 "Get complete patent package/documents" → `pfw_get_guidance("documents")`
 - 🔖 "Decode document codes (NOA, CTFR, 892, etc.)" → `pfw_get_guidance("document_codes")`
 - 🤝 "Research IPR vs prosecution patterns" → `pfw_get_guidance("workflows_ptab")`
 - 🚩 "Analyze petition red flags + prosecution" → `pfw_get_guidance("workflows_fpd")`
@@ -315,7 +314,7 @@ Transform complex API field names into user-friendly alternatives:
 #  User-friendly (automatically mapped)
 fields = [
     "applicationNumberText",    # Direct passthrough
-    "inventionTitle",           # applicationMetaData.inventionTitle  
+    "inventionTitle",           # applicationMetaData.inventionTitle
     "patentNumber",             # applicationMetaData.patentNumber
     "filingDate",               # applicationMetaData.filingDate
     "parentPatentNumber"        # parentContinuityBag.parentPatentNumber
@@ -550,7 +549,7 @@ uspto_pfw_mcp/
 - **Linux/macOS:** `export USPTO_API_KEY=your_key`
 
 **Setting Mistral API Key (for OCR):**
-- **Windows Command Prompt:** `set MISTRAL_API_KEY=your_key`  
+- **Windows Command Prompt:** `set MISTRAL_API_KEY=your_key`
 - **Windows PowerShell:** `$env:MISTRAL_API_KEY="your_key"`
 - **Linux/macOS:** `export MISTRAL_API_KEY=your_key`
 
@@ -563,7 +562,7 @@ uspto_pfw_mcp/
 - **Cause:** Field name not in mapping
 - **Solution:** Add to `field_mapping` in `helpers.py` or use full API field name
 
-#### Authentication Errors  
+#### Authentication Errors
 - **Cause:** Missing or invalid API key
 - **Solution:** Verify `USPTO_API_KEY` environment variable or Claude Desktop config
 

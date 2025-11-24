@@ -13,7 +13,7 @@ The MCP server supports user-customizable field sets through YAML configuration 
 ### Easy Customization Process
 
 1. **Open** `field_configs.yaml` in the project root directory
-2. **Uncomment fields** you want by removing the `#` symbol 
+2. **Uncomment fields** you want by removing the `#` symbol
 3. **Save the file** - changes take effect on next Claude Desktop restart
 4. **Use the simplified tools** with your custom field selections
 
@@ -58,7 +58,7 @@ predefined_sets:
       - applicationMetaData.customerNumber              # Customer number
       - applicationMetaData.applicationStatusCode       # Status code
       # ... 40+ more organized field options
-      
+
   applications_balanced:
     description: "Key fields for application searches (85-95% context reduction)"
     fields:
@@ -80,7 +80,7 @@ predefined_sets:
       - applicationMetaData.applicationStatusCode       # Status code
       - applicationMetaData.applicantBag                # All applicants (array)
       - assignmentBag                                   # Assignment records
-      - applicationMetaData.applicationStatusDescriptionText  # Human-readable status                
+      - applicationMetaData.applicationStatusDescriptionText  # Human-readable status
       # ... additional field categories organized below
 ```
 
@@ -92,7 +92,7 @@ The `field_configs.yaml` file contains over 40 professional patent prosecution f
 - `applicationNumberText` - Application number (always required)
 - `applicationMetaData.inventionTitle` - Patent title (always required)
 
-#### Inventor and Applicant Information  
+#### Inventor and Applicant Information
 - `applicationMetaData.inventorBag` - All inventors (array)
 - `applicationMetaData.firstInventorName` - First named inventor
 - `applicationMetaData.firstApplicantName` - First applicant (often company/organization)
@@ -220,7 +220,7 @@ The MCP server includes smart field mapping that transforms complex API field na
 # User-friendly (automatically mapped)
 fields = [
     "applicationNumberText",    # Direct passthrough
-    "inventionTitle",           # applicationMetaData.inventionTitle  
+    "inventionTitle",           # applicationMetaData.inventionTitle
     "patentNumber",             # applicationMetaData.patentNumber
     "filingDate",               # applicationMetaData.filingDate
     "parentPatentNumber"        # parentContinuityBag.parentPatentNumber
@@ -338,10 +338,10 @@ predefined_sets:
     description: "Ultra-minimal for citation integration (99% reduction)"
     fields:
       - applicationNumberText
-      - examinerNameText  
+      - examinerNameText
       - filingDate
       - groupArtUnitNumber
-      
+
   applications_entity_analysis:
     description: "Entity portfolio mapping (90% reduction)"
     fields:
@@ -351,7 +351,7 @@ predefined_sets:
       - applicationMetaData.firstApplicantName
       - applicationMetaData.inventorBag
       - assignmentBag
-      
+
   applications_litigation_ready:
     description: "Comprehensive litigation research (70% reduction)"
     fields:

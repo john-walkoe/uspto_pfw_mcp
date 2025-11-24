@@ -288,7 +288,7 @@ Full with documentBag (NEVER):
 ```python
 # High-volume discovery search for AI patents
 result = await pfw_search_applications_minimal(
-    query="artificial intelligence machine learning", 
+    query="artificial intelligence machine learning",
     limit=50
 )
 
@@ -302,15 +302,15 @@ for i, app in enumerate(result['applications'][:5]):
 ```python
 # Search for all patents by Wilbur Walkoe using the comprehensive strategy
 result = await pfw_search_inventor_balanced(
-    name="Wilbur Walkoe", 
-    strategy="comprehensive", 
+    name="Wilbur Walkoe",
+    strategy="comprehensive",
     limit=25
 )
 
 # This will search using multiple strategies:
 # - applicationMetaData.inventorBag.inventorNameText:"Wilbur Walkoe"
 # - applicationMetaData.inventorBag.inventorNameText:Wilbur*
-# - applicationMetaData.firstInventorName:"Wilbur Walkoe" 
+# - applicationMetaData.firstInventorName:"Wilbur Walkoe"
 # - applicationMetaData.firstInventorName:Wilbur*
 
 print(f"Found {result['count']} applications")
@@ -327,7 +327,7 @@ patent_package = await pfw_get_granted_patent_documents_download(app_number="117
 
 print(f"Complete patent package: {patent_package['total_pages']} total pages")
 print(f"Abstract: {patent_package['abstract']['pageCount']} pages")
-print(f"Drawings: {patent_package['drawings']['pageCount']} pages") 
+print(f"Drawings: {patent_package['drawings']['pageCount']} pages")
 print(f"Specification: {patent_package['specification']['pageCount']} pages")
 print(f"Claims: {patent_package['claims']['pageCount']} pages")
 ```
@@ -452,7 +452,7 @@ pfw_get_application_documents(
 
 # Get the prior art citations considered by the examiner
 pfw_get_application_documents(
-    app_number="11752072", 
+    app_number="11752072",
     document_code="892",
     limit=10
 )
@@ -500,7 +500,7 @@ pfw_get_application_documents(
 
 # Get only applicant-filed claims
 pfw_get_application_documents(
-    app_number='11752072', 
+    app_number='11752072',
     document_code='CLM',
     direction_category='INCOMING',
     limit=20
@@ -1001,7 +1001,7 @@ pfw_get_document_content(app_number='...', document_identifier='...')
 
 These patents can be used for testing inventor searches for "Wilbur Walkoe":
 - US-7971071-B2 (inventors: Wilbur J. Walkoe, John Walkoe)  - (Application 11752072)
-- US-20080141381-A1  
+- US-20080141381-A1
 - US-7187686-B1
 - US20070036169-A1
 

@@ -9,7 +9,7 @@ import os
 def setup_test_api_key():
     """
     Set up test API key from environment or use fallback.
-    
+
     Uses TEST_USPTO_API_KEY if available, otherwise falls back to a test value.
     This prevents hardcoded test keys in individual test files.
     """
@@ -21,7 +21,7 @@ def setup_test_api_key():
 def setup_test_mistral_key():
     """
     Set up test Mistral API key from environment or use fallback.
-    
+
     Uses TEST_MISTRAL_API_KEY if available, otherwise falls back to a test value.
     """
     test_key = os.getenv("TEST_MISTRAL_API_KEY", "test_fallback_mistral_key")

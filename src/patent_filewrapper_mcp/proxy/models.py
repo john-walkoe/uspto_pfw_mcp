@@ -203,17 +203,17 @@ class PTABDocumentRegistration(BaseModel):
     def validate_proceeding_number(cls, v: str) -> str:
         """Validate PTAB proceeding number format"""
         import re
-        
+
         # AIA Trials: TYPE[4-digit-year]-[5-digit-number]
         aia_trial_pattern = r'^(IPR|PGR|CBM|DER)\d{4}-\d{5}$'
         if re.match(aia_trial_pattern, v.upper()):
             return v.upper()
-        
+
         # Appeals: 10-digit numeric (e.g., 2025000950)
         appeal_pattern = r'^\d{10}$'
         if re.match(appeal_pattern, v):
             return v  # Keep numeric format as-is
-        
+
         raise ValueError('Proceeding number must match format: AIA Trials (IPR2025-00895, PGR2025-00456) or Appeals (2025000950)')
 
 

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class OCRService:
     """Service for handling OCR operations with Mistral API"""
-    
+
     def __init__(self):
         """Initialize OCR service with rate limiting"""
         # Mistral OCR configuration - check secure storage first, then environment
@@ -36,25 +36,25 @@ class OCRService:
 
         self.mistral_api_key = self._validate_mistral_api_key(raw_mistral_key)
         self.mistral_base_url = "https://api.mistral.ai/v1"
-        
+
         # OCR rate limiting configuration
         self.ocr_calls = []  # List of timestamps for OCR calls
         self.ocr_rate_limit = 10  # Max OCR calls per minute
         self.ocr_window = 60  # Time window in seconds
-    
+
     def _validate_mistral_api_key(self, raw_key: Optional[str]) -> Optional[str]:
         """
         Validate Mistral API key and detect common placeholder patterns.
-        
+
         Args:
             raw_key: Raw API key from environment variable
-            
+
         Returns:
             Valid API key or None if invalid/placeholder
         """
         if not raw_key:
             return None
-            
+
         # Common placeholder patterns that should be treated as missing
         placeholder_patterns = [
             "your_mistral_api_key_here",
@@ -73,37 +73,37 @@ class OCRService:
             "test_key",
             "example_key"
         ]
-        
+
         normalized_key = raw_key.lower().strip()
-        
+
         # Check against placeholder patterns
         for pattern in placeholder_patterns:
             if pattern in normalized_key:
                 logger.info(f"Detected placeholder pattern '{pattern}' in MISTRAL_API_KEY. Treating as missing key.")
                 return None
-        
+
         # Additional check for very short keys that are likely placeholders
         if len(raw_key.strip()) < 10:
             logger.info(f"Detected suspiciously short API key ({len(raw_key)} chars). Treating as missing key.")
             return None
-            
+
         return raw_key.strip()
-    
+
     def _check_ocr_rate_limit(self, request_id: str) -> None:
         """
         Check if OCR rate limit is exceeded and raise exception if so.
-        
+
         Args:
             request_id: Request ID for logging
-            
+
         Raises:
             OCRRateLimitError: If rate limit is exceeded
         """
         now = time.time()
-        
+
         # Clean old calls outside the time window
         self.ocr_calls = [ts for ts in self.ocr_calls if now - ts < self.ocr_window]
-        
+
         if len(self.ocr_calls) >= self.ocr_rate_limit:
             oldest_call = min(self.ocr_calls)
             wait_time = self.ocr_window - (now - oldest_call)
@@ -114,27 +114,27 @@ class OCRService:
                 retry_after_seconds=int(wait_time) + 1,
                 request_id=request_id
             )
-        
+
         # Record this call
         self.ocr_calls.append(now)
         logger.info(f"[{request_id}] OCR rate limit check passed. {len(self.ocr_calls)}/{self.ocr_rate_limit} calls in window")
-    
-    async def extract_document_content(self, pdf_content: bytes, page_count: int, 
+
+    async def extract_document_content(self, pdf_content: bytes, page_count: int,
                                      app_number: str, document_identifier: str) -> Dict[str, Any]:
         """
         Extract document content using Mistral OCR API
-        
+
         Args:
             pdf_content: PDF content as bytes
             page_count: Number of pages in the document
             app_number: Patent application number
             document_identifier: Document identifier
-            
+
         Returns:
             Dictionary containing OCR-extracted content and metadata
         """
         request_id = generate_request_id()
-        
+
         try:
             # Check if Mistral API key is available
             if not self.mistral_api_key:
@@ -142,25 +142,25 @@ class OCRService:
                     "MISTRAL_API_KEY environment variable is required for OCR content extraction. "
                     "Set it with: set MISTRAL_API_KEY=your_key_here (Windows) or export MISTRAL_API_KEY=your_key_here (Linux/Mac)"
                 )
-            
+
             # Check OCR rate limit before proceeding
             self._check_ocr_rate_limit(request_id)
-            
+
             logger.info(f"[{request_id}] Starting OCR extraction for {app_number}/{document_identifier} ({page_count} pages)")
-            
+
             # Step 1: Upload file to Mistral
             mistral_headers = {
                 "Authorization": f"Bearer {self.mistral_api_key}",
             }
-            
+
             files = {
                 "file": ("document.pdf", pdf_content, "application/pdf")
             }
-            
+
             data = {
                 "purpose": "ocr"
             }
-            
+
             async with httpx.AsyncClient(timeout=120.0) as client:
                 upload_response = await client.post(
                     f"{self.mistral_base_url}/files",
@@ -171,10 +171,10 @@ class OCRService:
                 upload_response.raise_for_status()
                 upload_data = upload_response.json()
                 file_id = upload_data.get("id")
-                
+
                 if not file_id:
                     return format_error_response("Failed to upload file to Mistral OCR service")
-                
+
                 # Step 2: Process with OCR
                 ocr_payload = {
                     "model": "mistral-ocr-latest",
@@ -185,7 +185,7 @@ class OCRService:
                     "pages": list(range(min(page_count, 50))),  # Limit to first 50 pages for cost control
                     "include_image_base64": False  # Save tokens
                 }
-                
+
                 ocr_response = await client.post(
                     f"{self.mistral_base_url}/ocr",
                     headers={
@@ -196,20 +196,20 @@ class OCRService:
                 )
                 ocr_response.raise_for_status()
                 ocr_data = ocr_response.json()
-                
+
                 # Extract content from OCR response
                 pages_processed = ocr_data.get("usage_info", {}).get("pages_processed", 0)
                 estimated_cost = pages_processed * 0.001  # $1 per 1000 pages
-                
+
                 # Combine all page content
                 extracted_content = []
                 for page in ocr_data.get("pages", []):
                     page_markdown = page.get("markdown", "")
                     if page_markdown.strip():
                         extracted_content.append(f"=== PAGE {page.get('index', 0) + 1} ===\n{page_markdown}")
-                
+
                 full_content = "\n\n".join(extracted_content)
-                
+
                 return {
                     "success": True,
                     "application_number": app_number,
@@ -226,7 +226,7 @@ class OCRService:
                     "usage_info": ocr_data.get("usage_info", {}),
                     "note": "Content extracted using Mistral OCR - supports scanned documents, formulas, and complex layouts"
                 }
-                
+
         except OCRRateLimitError as e:
             logger.warning(f"[{request_id}] OCR rate limit exceeded: {e.message}")
             return format_error_response(e.message, e.status_code, e.request_id)

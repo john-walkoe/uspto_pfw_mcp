@@ -287,6 +287,3 @@ print("- '{{term2}}': [Potentially ambiguous, check specification]")
 ---
 
 **Deliverable:** Attorney-ready patent explanation with plain English summary, technical analysis, claim scope assessment, and strategic enforcement implications."""
-
-
-

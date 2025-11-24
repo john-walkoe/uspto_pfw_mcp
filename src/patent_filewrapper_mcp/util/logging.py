@@ -13,7 +13,7 @@ class LoggingTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request):
         # Log the request
         logger.debug(f"REQUEST: {request.method} {request.url}")
-        
+
         # Sanitize headers to prevent API key exposure
         headers_copy = dict(request.headers)
         headers_copy.pop('X-API-KEY', None)
@@ -21,7 +21,7 @@ class LoggingTransport(httpx.AsyncBaseTransport):
         headers_copy.pop('x-api-key', None)  # Case insensitive backup
         headers_copy.pop('authorization', None)  # Case insensitive backup
         logger.debug(f"REQUEST HEADERS: {headers_copy}")
-        
+
         try:
             # For body logging, convert to string if possible
             if request.content:
@@ -42,10 +42,10 @@ class LoggingTransport(httpx.AsyncBaseTransport):
 
         # Get the response
         response = await self.transport.handle_async_request(request)
-        
+
         # Log the response
         logger.debug(f"RESPONSE: {response.status_code} from {request.url}")
-        
+
         # Sanitize response headers as well (in case API returns sensitive data)
         response_headers_copy = dict(response.headers)
         response_headers_copy.pop('X-API-KEY', None)
@@ -53,5 +53,5 @@ class LoggingTransport(httpx.AsyncBaseTransport):
         response_headers_copy.pop('x-api-key', None)
         response_headers_copy.pop('authorization', None)
         logger.debug(f"RESPONSE HEADERS: {response_headers_copy}")
-        
+
         return response

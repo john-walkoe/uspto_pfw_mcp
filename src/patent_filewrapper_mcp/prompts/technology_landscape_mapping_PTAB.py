@@ -326,6 +326,3 @@ else:
 ---
 
 **Deliverable:** Competitive landscape report with market share analysis, filing trends, technology evolution insights, PTAB risk assessment, and strategic filing recommendations."""
-
-
-

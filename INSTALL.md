@@ -227,7 +227,7 @@ During the Windows setup, you'll be presented with two configuration methods:
 }
 ```
 
-### Method 2: Traditional 
+### Method 2: Traditional
 
 - 📄 **API keys stored in Claude Desktop config file**
 - 🔓 **Less secure - keys visible in config**
@@ -317,7 +317,7 @@ chmod +x deploy/linux_setup.sh
 The Linux script will:
 
 - ✅ Check for and auto-install uv package manager
-- ✅ Install dependencies and create executable  
+- ✅ Install dependencies and create executable
 - ✅ Prompt for USPTO API key (required) and Mistral API key (optional)
 - ✅ Ask if you want Claude Code integration configured
 - ✅ Automatically merge with existing Claude Code config (preserves other MCP servers)
@@ -458,7 +458,7 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
 **Requirements:**
 - ✅ **Self-hosted n8n instance** (local or server deployment)
 - ✅ **n8n version 1.0.0+** (required for community nodes)
-- ✅ **nerding-io's Community MPC Client node**: [n8n-nodes-mcp](https://github.com/nerding-io/n8n-nodes-mcp) 
+- ✅ **nerding-io's Community MPC Client node**: [n8n-nodes-mcp](https://github.com/nerding-io/n8n-nodes-mcp)
 - ❌ **Cannot be used with n8n Cloud** (requires local filesystem access to MCP executables)
 
 **For AI Agent Integration:**
@@ -470,7 +470,7 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
 1. **Install n8n** (if not already installed):
    ```bash
    npm install -g n8n
-   
+
    # Or using Docker with required environment variable
    docker run -it --rm --name n8n -p 5678:5678 \
      -e N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true \
@@ -485,10 +485,10 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
    # Method 1: Via n8n UI
    # Go to Settings > Community Nodes > Install
    # Enter: n8n-nodes-mcp
-   
+
    # Method 2: Via npm (for self-hosted)
    npm install n8n-nodes-mcp
-   
+
    # Method 3: Via Docker environment
    # Add to docker-compose.yml:
    # environment:
@@ -505,10 +505,10 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
    - **Command**: `/home/YOUR_USERNAME/uspto_pfw_mcp/.venv/bin/patent-filewrapper-mcp` (see below step 4 on how to get)
    - **Arguments**: (leave empty)
    - **Environment Variables** (Entered in as Expression):
-     
+
      ```
      USPTO_API_KEY=your_actual_USPTO_api_key_here
-     MISTRAL_API_KEY=your_mistral_api_key_here_OPTIONAL  
+     MISTRAL_API_KEY=your_mistral_api_key_here_OPTIONAL
      PROXY_PORT=8080
      ```
 
@@ -625,7 +625,7 @@ claude mcp add uspto_pfw -s user \
     "uspto_pfw": {
       "command": "python",
       "args": [
-        "-m", 
+        "-m",
         "patent_filewrapper_mcp"
       ],
       "cwd": "C:/Users/YOUR_USERNAME/uspto_pfw_mcp",
@@ -896,7 +896,7 @@ In Claude Code, try these commands:
 # Test inventor search
 uspto_pfw:pfw_search_inventor {"name": "Smith", "limit": 2}
 
-# Test application search  
+# Test application search
 uspto_pfw:pfw_search_applications_minimal {"query": "artificial intelligence", "limit": 1}
 ```
 
@@ -938,7 +938,7 @@ Expected response format:
 
 - [ ] Python 3.10+ installed
 - [ ] uv package manager installed
-- [ ] Patent MCP package installed  
+- [ ] Patent MCP package installed
 - [ ] System executable created and working
 - [ ] USPTO API key configured
 - [ ] Mistral API key configured (for OCR)

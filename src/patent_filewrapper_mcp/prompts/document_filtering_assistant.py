@@ -368,6 +368,3 @@ for doc in litigation_package:
 ---
 
 **Result:** Purpose-optimized document package with intelligent prioritization, complete download workflow, and efficient token usage."""
-
-
-

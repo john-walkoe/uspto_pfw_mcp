@@ -18,7 +18,7 @@ async def art_unit_quality_assessment_FPD_prompt(
         start = date_range_start or "2020-01-01"
         end = date_range_end or "2024-12-31"
         date_filter = f" filed between {start} and {end}"
-    
+
     return f"""Analyze Art Unit {art_unit}{date_filter} for prosecution patterns and quality:
 
 PHASE 1: PFW Analysis
@@ -57,6 +57,3 @@ Present quality indicators:
 - Risk assessment and recommendations
 
 For complex workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
-
-
-

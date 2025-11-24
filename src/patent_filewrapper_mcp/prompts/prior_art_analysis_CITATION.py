@@ -231,6 +231,3 @@ if citations_available:
 ---
 
 **Deliverable:** Citation pattern analysis with examiner preferences, prior art effectiveness scoring, and strategic search recommendations."""
-
-
-

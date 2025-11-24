@@ -182,7 +182,7 @@ if (-not (Test-Path $pythonExePath)) {
     try {
         uv venv .venv --python 3.12
         Write-Host "[OK] Virtual environment created at .venv" -ForegroundColor Green
-        
+
         # Fix: Ensure pyvenv.cfg exists (required for secure storage on older uv versions)
         $pyvenvCfgPath = ".venv\pyvenv.cfg"
         if (-not (Test-Path $pyvenvCfgPath)) {
@@ -193,7 +193,7 @@ if (-not (Test-Path $pythonExePath)) {
                 if ($uvPythonInfo) {
                     $pythonVersion = ($uvPythonInfo.Line -split '\s+')[1]  # Extract version like "3.12.8"
                     $pythonPath = ($uvPythonInfo.Line -split '\s+')[2]    # Extract path
-                    
+
                     # Create pyvenv.cfg content
                     $pyvenvContent = @"
 home = $pythonPath
@@ -265,7 +265,7 @@ try:
 except Exception as e:
     print(f'ERROR: {e}')
 "@
-    
+
     $storageResult = & $pythonExe -c $testCode 2>$null | Out-String
     if ($storageResult -match "SUCCESS") {
         Write-Host "[OK] Secure storage system working" -ForegroundColor Green
@@ -361,7 +361,7 @@ if ($updateKeys -eq $true -or $updateKeys -eq "mistral_only") {
         Write-Host "[ERROR] Failed to obtain valid Mistral API key" -ForegroundColor Red
         exit 1
     }
-    
+
     # Store keys in unified storage
     Write-Host ""
     Write-Host "[INFO] Storing API keys in unified secure storage..." -ForegroundColor Yellow
@@ -588,9 +588,9 @@ else:
     # Function to generate env section based on configuration choice
     function Get-EnvSection {
         param($indent = "        ")
-        
+
         $envItems = @()
-        
+
         if ($useSecureStorage) {
             # Secure storage - no API keys in config
             $envItems += "$indent`"PFW_PROXY_PORT`": `"8080`""
@@ -602,16 +602,16 @@ else:
             $envItems += "$indent`"PFW_PROXY_PORT`": `"8080`""
             $envItems += "$indent`"INTERNAL_AUTH_SECRET`": `"$internalSecret`""
         }
-        
+
         return $envItems -join ",`n"
     }
-    
+
     # Function to generate server JSON entry
     function Get-ServerJson {
         param($indent = "    ")
-        
+
         $envSection = Get-EnvSection -indent "      "
-        
+
         return @"
 $indent"uspto_pfw": {
 $indent  "command": "$CurrentDir/.venv/Scripts/python.exe",
@@ -823,7 +823,7 @@ Write-Host "  Start with: uv run pfw-proxy" -ForegroundColor Yellow
 Write-Host "  Port: 8080 (provides enhanced features for all USPTO MCPs)" -ForegroundColor White
 Write-Host ""
 Write-Host "Key Management:" -ForegroundColor Cyan
-Write-Host "  Manage keys: ./deploy/manage_api_keys.ps1" -ForegroundColor Yellow  
+Write-Host "  Manage keys: ./deploy/manage_api_keys.ps1" -ForegroundColor Yellow
 Write-Host "  Test keys:   uv run python tests/test_unified_key_management.py" -ForegroundColor Yellow
 Write-Host "  Cross-MCP:   Keys shared with FPD, PTAB, and Citations MCPs" -ForegroundColor White
 Write-Host ""

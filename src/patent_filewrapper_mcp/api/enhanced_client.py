@@ -46,11 +46,11 @@ class CircuitBreaker:
     Circuit breaker pattern implementation to prevent cascading failures
     when the USPTO API is down or experiencing issues.
     """
-    
+
     def __init__(self, failure_threshold: int = 5, timeout: int = 60):
         """
         Initialize circuit breaker
-        
+
         Args:
             failure_threshold: Number of failures before opening circuit
             timeout: Time in seconds before trying to close circuit again
@@ -60,7 +60,7 @@ class CircuitBreaker:
         self.failure_count = 0
         self.last_failure_time = None
         self.state = CircuitState.CLOSED
-        
+
     def can_execute(self) -> bool:
         """Check if requests can be executed"""
         if self.state == CircuitState.CLOSED:
@@ -74,24 +74,24 @@ class CircuitBreaker:
             return False
         else:  # HALF_OPEN
             return True
-    
+
     def record_success(self):
         """Record a successful operation"""
         if self.state == CircuitState.HALF_OPEN:
             logger.info("Circuit breaker transitioning to CLOSED state after successful request")
         self.failure_count = 0
         self.state = CircuitState.CLOSED
-    
+
     def record_failure(self):
         """Record a failed operation"""
         self.failure_count += 1
         self.last_failure_time = time.time()
-        
+
         if self.failure_count >= self.failure_threshold:
             if self.state != CircuitState.OPEN:
                 logger.warning(f"Circuit breaker OPENING after {self.failure_count} failures")
             self.state = CircuitState.OPEN
-    
+
     def is_open(self) -> bool:
         """Check if circuit is open"""
         return self.state == CircuitState.OPEN
@@ -295,7 +295,7 @@ class EnhancedPatentClient:
 
     def __init__(self, api_key: Optional[str] = None):
         self.base_url = "https://api.uspto.gov/api/v1/patent/applications"
-        
+
         # Load API key with unified secure storage support
         if api_key:
             self.api_key = api_key
@@ -307,11 +307,11 @@ class EnhancedPatentClient:
             except Exception:
                 # Fall back to environment variable if secure storage fails
                 pass
-            
+
             # If still no key, try environment variable
             if not self.api_key:
                 self.api_key = os.getenv("USPTO_API_KEY")
-            
+
             # Final validation
             if not self.api_key:
                 raise AuthenticationError("USPTO_API_KEY is required. Set environment variable or use unified secure storage.")
@@ -326,15 +326,15 @@ class EnhancedPatentClient:
         self.download_timeout = float(os.getenv("USPTO_DOWNLOAD_TIMEOUT", "60.0"))
         self.ocr_timeout = float(os.getenv("MISTRAL_OCR_TIMEOUT", "120.0"))
         logger.info(f"Timeout configuration: default={self.default_timeout}s, download={self.download_timeout}s, ocr={self.ocr_timeout}s")
-        
+
         # Rate limiting to prevent DoS - limit concurrent requests
         self.semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
-        
+
         # OCR rate limiting configuration
         self.ocr_calls = []  # List of timestamps for OCR calls
         self.ocr_rate_limit = 10  # Max OCR calls per minute
         self.ocr_window = 60  # Time window in seconds
-        
+
         # Circuit breaker for API resilience
         self.circuit_breaker = CircuitBreaker(failure_threshold=3, timeout=30)
 
@@ -375,28 +375,28 @@ class EnhancedPatentClient:
 
         self.mistral_api_key = self._validate_mistral_api_key(raw_mistral_key)
         self.mistral_base_url = "https://api.mistral.ai/v1"
-    
+
     def _validate_mistral_api_key(self, raw_key: Optional[str]) -> Optional[str]:
         """
         Validate Mistral API key and detect common placeholder patterns.
-        
+
         This prevents users from accidentally using placeholder text as a real API key,
         which would result in authentication errors instead of helpful guidance.
-        
+
         Args:
             raw_key: Raw API key from environment variable
-            
+
         Returns:
             Valid API key or None if invalid/placeholder
         """
         if not raw_key:
             return None
-            
+
         # Common placeholder patterns that should be treated as missing
         placeholder_patterns = [
             "your_mistral_api_key_here",
             "your_key_here",
-            "your_api_key_here", 
+            "your_api_key_here",
             "placeholder",
             "optional",
             "change_me",
@@ -404,36 +404,36 @@ class EnhancedPatentClient:
             "insert_key_here",
             "api_key_here"
         ]
-        
+
         # Check if the key matches any placeholder pattern (case-insensitive)
         key_lower = raw_key.lower().strip()
         for pattern in placeholder_patterns:
             if pattern in key_lower:
                 logger.info(f"Detected placeholder API key pattern: {pattern}. Treating as missing key.")
                 return None
-        
+
         # Additional check for very short keys that are likely placeholders
         if len(raw_key.strip()) < 10:
             logger.info(f"Detected suspiciously short API key ({len(raw_key)} chars). Treating as missing key.")
             return None
-            
+
         return raw_key.strip()
-    
+
     def _check_ocr_rate_limit(self, request_id: str) -> None:
         """
         Check if OCR rate limit is exceeded and raise exception if so.
-        
+
         Args:
             request_id: Request ID for logging
-            
+
         Raises:
             OCRRateLimitError: If rate limit is exceeded
         """
         now = time.time()
-        
+
         # Clean old calls outside the time window
         self.ocr_calls = [ts for ts in self.ocr_calls if now - ts < self.ocr_window]
-        
+
         if len(self.ocr_calls) >= self.ocr_rate_limit:
             oldest_call = min(self.ocr_calls)
             wait_time = self.ocr_window - (now - oldest_call)
@@ -444,16 +444,16 @@ class EnhancedPatentClient:
                 retry_after_seconds=int(wait_time) + 1,
                 request_id=request_id
             )
-        
+
         # Record this call
         self.ocr_calls.append(now)
         logger.info(f"[{request_id}] OCR rate limit check passed. {len(self.ocr_calls)}/{self.ocr_rate_limit} calls in window")
-        
+
     async def _make_request(self, endpoint: str, method: str = "GET", **kwargs) -> Dict[str, Any]:
         """Make HTTP request to Patent File Wrapper API with rate limiting and retry logic"""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         request_id = generate_request_id()
-        
+
         # Check circuit breaker first
         if not self.circuit_breaker.can_execute():
             logger.warning(f"[{request_id}] Request blocked by circuit breaker (state: {self.circuit_breaker.state.value})")
@@ -475,13 +475,13 @@ class EnhancedPatentClient:
                 503,  # Service Unavailable
                 request_id
             )
-        
+
         logger.info(f"[{request_id}] Starting {method} request to {endpoint}")
-        
+
         # Rate limiting: acquire semaphore before making request
         async with self.semaphore:
             last_exception = None
-            
+
             for attempt in range(self.RETRY_ATTEMPTS):
                 try:
                     async with httpx.AsyncClient(timeout=self.default_timeout, limits=self.api_limits, verify=True) as client:
@@ -489,7 +489,7 @@ class EnhancedPatentClient:
                             response = await client.post(url, headers=self.headers, **kwargs)
                         else:
                             response = await client.get(url, headers=self.headers, **kwargs)
-                        
+
                         response.raise_for_status()
                         logger.info(f"[{request_id}] Request successful on attempt {attempt + 1}")
 
@@ -501,7 +501,7 @@ class EnhancedPatentClient:
                         self.response_cache.set(endpoint, response_data, **kwargs)
 
                         return response_data
-                        
+
                 except httpx.HTTPStatusError as e:
                     # Don't retry authentication errors or client errors (4xx)
                     if e.response.status_code < 500:
@@ -513,17 +513,17 @@ class EnhancedPatentClient:
                         # 4xx errors (404 Not Found, 400 Bad Request, etc.) are expected responses, not API failures
                         return format_error_response(f"API error: {e.response.text}", e.response.status_code, request_id)
                     last_exception = e
-                    
+
                 except httpx.TimeoutException as e:
                     last_exception = e
-                    
+
                 except Exception as e:
                     # Don't retry unexpected errors on final attempt
                     if attempt == self.RETRY_ATTEMPTS - 1:
                         logger.error(f"[{request_id}] Request failed: {str(e)}")
                         return format_error_response(f"Request failed: {str(e)}", 500, request_id)
                     last_exception = e
-                
+
                 # Calculate delay with exponential backoff and jitter
                 if attempt < self.RETRY_ATTEMPTS - 1:
                     # Check retry budget before retrying
@@ -546,10 +546,10 @@ class EnhancedPatentClient:
                     logger.warning(f"[{request_id}] Request failed on attempt {attempt + 1}/{self.RETRY_ATTEMPTS}, "
                                  f"retrying in {total_delay:.2f}s: {str(last_exception)}")
                     await asyncio.sleep(total_delay)
-            
+
             # All retries failed - record failure for circuit breaker
             self.circuit_breaker.record_failure()
-            
+
             if isinstance(last_exception, httpx.TimeoutException):
                 logger.error(f"[{request_id}] Request timeout after {self.RETRY_ATTEMPTS} attempts")
                 return create_error_response("api_timeout", request_id=request_id)
@@ -566,7 +566,7 @@ class EnhancedPatentClient:
     async def search_applications(self, query: str, limit: int = 10, offset: int = 0, fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Search applications using Patent File Wrapper API with optional field filtering
-        
+
         Args:
             query: Search query using Patent File Wrapper syntax
             limit: Maximum number of results
@@ -588,21 +588,21 @@ class EnhancedPatentClient:
                     }
                 ]
             }
-            
+
             # Add fields array if specified, with mapping to API field names
             if fields:
                 api_fields = map_user_fields_to_api_fields(fields)
                 body["fields"] = api_fields
                 logger.debug(f"Mapped user fields {fields} to API fields {api_fields}")
-                
+
             result = await self._make_request("search", method="POST", json=body)
-            
+
             if result.get('error'):
                 return result
-                
+
             # Extract applications from patentFileWrapperDataBag
             applications = result.get('patentFileWrapperDataBag', [])
-            
+
             # Add application numbers at the top level for easier access
             for app in applications:
                 if not app.get('applicationNumberText'):
@@ -615,7 +615,7 @@ class EnhancedPatentClient:
                     # Add it to the top level if found
                     if app_number:
                         app['applicationNumberText'] = app_number
-            
+
             return {
                 "success": True,
                 "count": len(applications),
@@ -626,14 +626,14 @@ class EnhancedPatentClient:
                 "offset": offset,
                 "request_id": result.get('requestIdentifier')
             }
-            
+
         except Exception as e:
             return format_error_response(f"Application search failed: {str(e)}")
 
     async def search_inventor(self, name: str, strategy: str = "comprehensive", limit: int = 10, fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Enhanced inventor search using multiple strategies with optional field filtering
-        
+
         Args:
             name: Inventor name to search for
             strategy: Search strategy - 'exact', 'fuzzy', or 'comprehensive'
@@ -644,28 +644,28 @@ class EnhancedPatentClient:
             queries = create_inventor_queries(name, strategy)
             all_results = []
             seen_apps = set()
-            
+
             for query in queries:
                 try:
                     result = await self.search_applications(query, min(limit, 50), 0, fields)
-                    
+
                     if not result.get('error') and result.get('applications'):
                         for app in result['applications']:
                             app_id = app.get('applicationNumberText')
                             if app_id and app_id not in seen_apps:
                                 seen_apps.add(app_id)
                                 all_results.append(app)
-                                
+
                             if len(all_results) >= limit:
                                 break
-                                
+
                     if len(all_results) >= limit:
                         break
-                        
+
                 except Exception as e:
                     logger.warning(f"Query '{query}' failed: {e}")
                     continue
-            
+
             return {
                 "success": True,
                 "inventor_name": name,
@@ -674,44 +674,44 @@ class EnhancedPatentClient:
                 "unique_applications": all_results[:limit],
                 "queries_used": queries[:5]  # Show first 5 queries used
             }
-            
+
         except Exception as e:
             return format_error_response(f"Inventor search failed: {str(e)}")
 
     async def enhance_search_results_with_associated_docs(self, search_results: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enhance search results by adding associated documents metadata for each application
-        
+
         Args:
             search_results: Results from search_applications or search_inventor
-            
+
         Returns:
             Enhanced results with associated documents metadata
         """
         try:
             if not search_results.get("success") or not search_results.get("applications"):
                 return search_results
-                
+
             enhanced_applications = []
-            
+
             for app in search_results["applications"]:
                 # Get application number
                 app_number = app.get("applicationNumberText")
                 if not app_number:
                     # Try to get from metadata
                     app_number = app.get("applicationMetaData", {}).get("applicationNumberText")
-                
+
                 if app_number:
                     # Get associated documents for this application
                     assoc_docs_result = await self.get_associated_documents(app_number)
-                    
+
                     if assoc_docs_result.get("success"):
                         app["associatedDocuments"] = {
                             "count": assoc_docs_result.get("count", 0),
                             "documents": assoc_docs_result.get("associated_documents", []),
                             "xmlContentAvailable": assoc_docs_result.get("count", 0) > 0
                         }
-                        
+
                         # Add convenience flags for XML availability
                         docs = assoc_docs_result.get("associated_documents", [])
                         if docs:
@@ -734,9 +734,9 @@ class EnhancedPatentClient:
                         "xmlContentAvailable": False,
                         "error": "No application number found"
                     }
-                
+
                 enhanced_applications.append(app)
-            
+
             # Update the search results
             enhanced_results = search_results.copy()
             enhanced_results["applications"] = enhanced_applications
@@ -753,7 +753,7 @@ class EnhancedPatentClient:
                 "criticalApplicationCentricRules": {
                     "xmlAccess": "pfw_get_patent_or_application_xml requires applicationNumberText (now via minimal search)",
                     "documentAccess": "pfw_get_application_documents requires applicationNumberText for prosecution docs",
-                    "documentDownload": "pfw_get_document requires applicationNumberText + document_identifier from pfw_get_application_documents", 
+                    "documentDownload": "pfw_get_document requires applicationNumberText + document_identifier from pfw_get_application_documents",
                     "ocrExtraction": "pfw_get_document_content requires applicationNumberText + document_identifier from pfw_get_application_documents",
                     "proxyDownload": "pfw_get_document_download requires applicationNumberText + document_identifier from pfw_get_application_documents",
                     "patentNumbers": "Patent numbers mapped to applicationNumberText via enhanced minimal search (single call)"
@@ -761,7 +761,7 @@ class EnhancedPatentClient:
                 "optimizedWorkflowSequence": {
                     "discovery_workflow": [
                         "1. Use balanced search for discovery (20-50 applications)",
-                        "2. Review results and select applications of interest", 
+                        "2. Review results and select applications of interest",
                         "3. Use XML tool for content analysis",
                         "4. Use document tool only if prosecution docs needed"
                     ],
@@ -784,9 +784,9 @@ class EnhancedPatentClient:
                 },
                 "dataLimitation": "XML content only available for patents/applications filed after January 1, 2001"
             }
-            
+
             return enhanced_results
-            
+
         except Exception as e:
             logger.error(f"Failed to enhance search results with associated docs: {str(e)}")
             # Return original results if enhancement fails
@@ -796,30 +796,30 @@ class EnhancedPatentClient:
     async def enhance_search_results_with_document_bags(self, search_results: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enhance search results by adding document bag metadata for each application
-        
+
         Args:
             search_results: Results from search_applications or search_inventor
-            
+
         Returns:
             Enhanced results with document bag metadata
         """
         try:
             if not search_results.get("success") or not search_results.get("applications"):
                 return search_results
-                
+
             enhanced_applications = []
-            
+
             for app in search_results["applications"]:
                 # Get application number
                 app_number = app.get("applicationNumberText")
                 if not app_number:
                     # Try to get from metadata
                     app_number = app.get("applicationMetaData", {}).get("applicationNumberText")
-                
+
                 if app_number:
                     # Get document bag for this application
                     doc_bag_result = await self.get_document_bag(app_number)
-                    
+
                     if doc_bag_result.get("success"):
                         app["documentBag"] = doc_bag_result.get("documentBag", [])
                         app["documentSummary"] = doc_bag_result.get("summary", {})
@@ -831,9 +831,9 @@ class EnhancedPatentClient:
                     app["documentBag"] = []
                     app["documentSummary"] = {}
                     app["documentBagError"] = "No application number found"
-                
+
                 enhanced_applications.append(app)
-            
+
             # Update the search results
             enhanced_results = search_results.copy()
             enhanced_results["applications"] = enhanced_applications
@@ -843,7 +843,7 @@ class EnhancedPatentClient:
                 "noSinglePatentPDF": "USPTO provides individual prosecution documents, not complete patent PDFs",
                 "keyDocumentTypes": {
                     "ABST": "Abstract (1 page) - perfect for quick review",
-                    "CLM": "Claims - key for understanding scope", 
+                    "CLM": "Claims - key for understanding scope",
                     "SPEC": "Specification - full technical description (often 20+ pages)",
                     "NOA": "Notice of Allowance - examiner's reasoning for approval",
                     "CTFR/CTNF": "Rejections - examination history and objections",
@@ -861,9 +861,9 @@ class EnhancedPatentClient:
                     "alternative": "For AI analysis, use pfw_get_patent_or_application_xml for complete structured content"
                 }
             }
-            
+
             return enhanced_results
-            
+
         except Exception as e:
             logger.error(f"Failed to enhance search results with document bags: {str(e)}")
             # Return original results if enhancement fails
@@ -873,29 +873,29 @@ class EnhancedPatentClient:
     async def get_application_data(self, app_number: str) -> Dict[str, Any]:
         """
         Get complete application data including metadata
-        
+
         Args:
             app_number: Patent application number
         """
         try:
             app_number = validate_app_number(app_number)
-            
+
             # Get application data
             result = await self._make_request(app_number)
-            
+
             if result.get('error'):
                 return result
-                
+
             # Extract the first (and should be only) application from the response
             applications = result.get('patentFileWrapperDataBag', [])
             if not applications:
                 return format_error_response(f"No data found for application {app_number}")
-                
+
             app_data = applications[0]
-            
+
             # Also get documents summary
             docs_result = await self.get_documents(app_number)
-            
+
             return {
                 "success": True,
                 "application_number": app_number,
@@ -903,29 +903,29 @@ class EnhancedPatentClient:
                 "documents_summary": docs_result.get('summary', {}) if not docs_result.get('error') else None,
                 "request_id": result.get('requestIdentifier')
             }
-            
+
         except Exception as e:
             return format_error_response(f"Failed to get application data: {str(e)}")
 
     async def get_document_bag(self, app_number: str) -> Dict[str, Any]:
         """
         Get document bag for an application (prosecution documents with download links)
-        
+
         Args:
             app_number: Patent application number
-            
+
         Returns:
             Dict containing prosecution documents with download identifiers
         """
         try:
             app_number = validate_app_number(app_number)
-            
+
             # Use the documents endpoint (this was working before)
             result = await self.get_documents(app_number)
-            
+
             if result.get('error'):
                 return result
-                
+
             return {
                 "success": True,
                 "application_number": app_number,
@@ -934,30 +934,30 @@ class EnhancedPatentClient:
                 "summary": result.get('summary', {}),
                 "request_id": result.get('request_id')
             }
-            
+
         except Exception as e:
             return format_error_response(f"Failed to get document bag: {str(e)}")
 
     async def get_associated_documents(self, app_number: str) -> Dict[str, Any]:
         """
         Get associated documents metadata for an application (XML files)
-        
+
         Args:
             app_number: Patent application number
-            
+
         Returns:
             Dict containing APPXML and PTGRXML metadata with file locations
         """
         try:
             app_number = validate_app_number(app_number)
-            
+
             # Use the associated-documents endpoint
             endpoint = f"{app_number}/associated-documents"
             result = await self._make_request(endpoint)
-            
+
             if result.get('error'):
                 return result
-                
+
             return {
                 "success": True,
                 "application_number": app_number,
@@ -965,12 +965,12 @@ class EnhancedPatentClient:
                 "associated_documents": result.get('patentFileWrapperDataBag', []),
                 "request_id": result.get('requestIdentifier')
             }
-            
+
         except Exception as e:
             return format_error_response(f"Failed to get associated documents: {str(e)}")
 
     async def get_documents(
-        self, 
+        self,
         app_number: str,
         limit: Optional[int] = None,
         document_code: Optional[str] = None,
@@ -978,7 +978,7 @@ class EnhancedPatentClient:
     ) -> Dict[str, Any]:
         """
         Get documents list for an application with optional filtering
-        
+
         Args:
             app_number: Patent application number
             limit: Maximum number of documents to return (applied AFTER filtering)
@@ -989,28 +989,28 @@ class EnhancedPatentClient:
         """
         try:
             app_number = validate_app_number(app_number)
-            
+
             # Fetch ALL documents from USPTO API (no server-side filtering available)
             result = await self._make_request(f"{app_number}/documents")
-            
+
             if result.get('error'):
                 return result
-                
+
             documents = result.get('documentBag', [])
-            
+
             # Track filtering for summary
             filtering_applied = []
             original_count = len(documents)
-            
+
             # Apply document_code filter (client-side)
             if document_code:
                 filtered_docs = [
-                    doc for doc in documents 
+                    doc for doc in documents
                     if doc.get('documentCode', '').upper() == document_code.upper()
                 ]
                 documents = filtered_docs
                 filtering_applied.append(f"document_code='{document_code}'")
-            
+
             # Apply direction_category filter (client-side)
             if direction_category:
                 filtered_docs = [
@@ -1019,21 +1019,21 @@ class EnhancedPatentClient:
                 ]
                 documents = filtered_docs
                 filtering_applied.append(f"direction_category='{direction_category}'")
-            
+
             # Apply limit AFTER filtering
             if limit and len(documents) > limit:
                 documents = documents[:limit]
                 filtering_applied.append(f"limit={limit}")
-            
+
             # Create summary
             doc_types = {}
             download_options = 0
             pdf_docs = []
-            
+
             for doc in documents:
                 doc_code = doc.get('documentCode', 'Unknown')
                 doc_types[doc_code] = doc_types.get(doc_code, 0) + 1
-                
+
                 # Count download options and track PDF availability
                 for option in doc.get('downloadOptionBag', []):
                     download_options += 1
@@ -1046,7 +1046,7 @@ class EnhancedPatentClient:
                             'page_count': option.get('pageTotalQuantity', 0),
                             'download_url': option.get('downloadUrl', '')
                         })
-            
+
             # Build filtering summary message
             filter_summary = None
             if filtering_applied:
@@ -1056,7 +1056,7 @@ class EnhancedPatentClient:
                     "filtered_document_count": len(documents),
                     "reduction_percentage": round((1 - len(documents)/original_count) * 100, 1) if original_count > 0 else 0
                 }
-            
+
             return {
                 "success": True,
                 "application_number": app_number,
@@ -1071,29 +1071,29 @@ class EnhancedPatentClient:
                     "filtering": filter_summary  # NEW: Filtering summary
                 }
             }
-            
+
         except Exception as e:
             return format_error_response(f"Failed to get documents: {str(e)}")
 
     async def download_application_pdf(self, app_number: str, download_dir: str = "/tmp") -> Dict[str, Any]:
         """
         Download key PDF documents for an application
-        
+
         Args:
             app_number: Patent application number
             download_dir: Directory to save files
         """
         try:
             app_number = validate_app_number(app_number)
-            
+
             # Get documents first
             docs_result = await self.get_documents(app_number)
-            
+
             if docs_result.get('error'):
                 return docs_result
-                
+
             documents = docs_result.get('documentBag', [])
-            
+
             # Get invention title and patent number for better filenames
             invention_title = None
             patent_number = None
@@ -1115,18 +1115,18 @@ class EnhancedPatentClient:
                         patent_number = extract_patent_number(app_data)
             except Exception as e:
                 logger.warning(f"Could not fetch application metadata for {app_number}: {e}")
-            
+
             # Priority document types to download
             priority_types = ['SPEC', 'CLM', 'ABST', 'DRW', 'NOA', 'CTFR', 'CTNF']
-            
+
             downloaded_files = []
-            
+
             for doc in documents:
                 doc_code = doc.get('documentCode', '')
-                
+
                 if doc_code in priority_types:
                     download_options = doc.get('downloadOptionBag', [])
-                    
+
                     for option in download_options:
                         if option.get('mimeTypeIdentifier') == 'PDF':
                             try:
@@ -1139,7 +1139,7 @@ class EnhancedPatentClient:
                             except Exception as e:
                                 logger.warning(f"Failed to download {doc_code}: {e}")
                                 continue
-            
+
             return {
                 "success": True,
                 "application_number": app_number,
@@ -1147,14 +1147,14 @@ class EnhancedPatentClient:
                 "downloaded_files": downloaded_files,
                 "total_downloaded": len(downloaded_files)
             }
-            
+
         except Exception as e:
             return format_error_response(f"Failed to download PDFs: {str(e)}")
 
     async def download_document_pdf(self, app_number: str, document_code: str, download_dir: str = "/tmp") -> Dict[str, Any]:
         """
         Download a specific document PDF
-        
+
         Args:
             app_number: Patent application number
             document_code: Document code to download
@@ -1162,40 +1162,40 @@ class EnhancedPatentClient:
         """
         try:
             app_number = validate_app_number(app_number)
-            
+
             # Get documents
             docs_result = await self.get_documents(app_number)
-            
+
             if docs_result.get('error'):
                 return docs_result
-                
+
             documents = docs_result.get('documentBag', [])
-            
+
             # Find the specific document
             target_doc = None
             for doc in documents:
                 if doc.get('documentCode', '').upper() == document_code.upper():
                     target_doc = doc
                     break
-                    
+
             if not target_doc:
                 raise NotFoundError(
                     f"Document code '{document_code}' not found in application {app_number}",
                     request_id=request_id
                 )
-                
+
             # Find PDF download option
             download_options = target_doc.get('downloadOptionBag', [])
             pdf_option = None
-            
+
             for option in download_options:
                 if option.get('mimeTypeIdentifier') == 'PDF':
                     pdf_option = option
                     break
-                    
+
             if not pdf_option:
                 return format_error_response(f"PDF not available for document '{document_code}'")
-            
+
             # Get invention title and patent number for better filename
             invention_title = None
             patent_number = None
@@ -1217,10 +1217,10 @@ class EnhancedPatentClient:
                         patent_number = extract_patent_number(app_data)
             except Exception as e:
                 logger.warning(f"Could not fetch application metadata for {app_number}: {e}")
-                
+
             # Download the document
             result = await self._download_document_from_url(app_number, target_doc, pdf_option, download_dir, invention_title, patent_number)
-            
+
             return result
 
         except NotFoundError as e:
@@ -1240,11 +1240,11 @@ class EnhancedPatentClient:
         """Download a single document from its URL"""
         try:
             from .helpers import generate_safe_filename
-            
+
             doc_code = document.get('documentCode', 'Unknown')
             doc_date = document.get('officialDate', 'NoDate')[:10]  # Just the date part
             doc_identifier = document.get('documentIdentifier', 'Unknown')
-            
+
             # Construct filename using invention title and patent number if available
             if invention_title:
                 filename = generate_safe_filename(app_number, invention_title, doc_code, patent_number)
@@ -1253,27 +1253,27 @@ class EnhancedPatentClient:
                 filename = f"{app_number}_{doc_code}_{doc_date}_{doc_identifier}.pdf"
                 # Clean filename
                 filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-            
+
             filepath = os.path.join(download_dir, filename)
-            
+
             # Get download URL
             download_url = download_option.get('downloadUrl')
-            
+
             if not download_url:
                 return format_error_response("Download URL not available")
-                
+
             # Download the file, following redirects
             async with httpx.AsyncClient(timeout=self.download_timeout, limits=self.download_limits, follow_redirects=True) as client:
                 response = await client.get(download_url, headers=self.headers)
                 response.raise_for_status()
-                
+
                 # Ensure directory exists
                 os.makedirs(download_dir, exist_ok=True)
-                
+
                 # Save file
                 async with aiofiles.open(filepath, 'wb') as f:
                     await f.write(response.content)
-                    
+
                 return {
                     "success": True,
                     "filename": filename,
@@ -1286,80 +1286,80 @@ class EnhancedPatentClient:
                     "application_number": app_number,
                     "download_url": download_url
                 }
-                
+
         except Exception as e:
             return format_error_response(f"Download failed: {str(e)}")
-    
+
     async def download_document_content(self, app_number: str, document_identifier: str) -> Dict[str, Any]:
         """
         Download and extract content from a specific USPTO document
-        
+
         Args:
             app_number: Patent application number
             document_identifier: Document identifier from documentBag
-            
+
         Returns:
             Dictionary containing extracted text, base64 PDF data, and metadata
         """
         try:
             app_number = validate_app_number(app_number)
-            
+
             # First get documents to find the specific document
             docs_result = await self.get_documents(app_number)
             if docs_result.get('error'):
                 return docs_result
-                
+
             documents = docs_result.get('documentBag', [])
-            
+
             # Find the target document
             target_doc = None
             for doc in documents:
                 if doc.get('documentIdentifier') == document_identifier:
                     target_doc = doc
                     break
-                    
+
             if not target_doc:
                 raise NotFoundError(
                     f"Document with identifier '{document_identifier}' not found in application {app_number}",
                     request_id=request_id
                 )
-                
+
             # Find PDF download option
             download_options = target_doc.get('downloadOptionBag', [])
             pdf_option = None
-            
+
             for option in download_options:
                 if option.get('mimeTypeIdentifier') == 'PDF':
                     pdf_option = option
                     break
-                    
+
             if not pdf_option:
                 return format_error_response("PDF not available for this document")
-                
+
             download_url = pdf_option.get('downloadUrl')
             if not download_url:
                 return format_error_response("Download URL not available")
-                
+
             page_count = pdf_option.get('pageTotalQuantity', 0)
-            
+
             # Check page count and warn for large documents
             if page_count > 25:
                 logger.warning(f"Large document warning: {page_count} pages for document {document_identifier}")
-                
+
             # Download the PDF with authentication, following redirects
             async with httpx.AsyncClient(timeout=self.download_timeout, limits=self.download_limits, follow_redirects=True) as client:
                 response = await client.get(download_url, headers=self.headers)
                 response.raise_for_status()
-                
+
                 pdf_content = response.content
-                
+
                 # Extract text using PyPDF2 if available
                 extracted_text = ""
                 if PDF_AVAILABLE:
                     try:
                         pdf_reader = PyPDF2.PdfReader(BytesIO(pdf_content))
                         text_parts = []
-                        
+
                         for page_num, page in enumerate(pdf_reader.pages):
                             try:
                                 page_text = page.extract_text()
@@ -1368,26 +1368,26 @@ class EnhancedPatentClient:
                             except Exception as e:
                                 logger.warning(f"Failed to extract text from page {page_num + 1}: {e}")
                                 text_parts.append(f"=== PAGE {page_num + 1} ===\n[Text extraction failed]")
-                                
+
                         extracted_text = "\n\n".join(text_parts)
-                        
+
                     except Exception as e:
                         logger.warning(f"PDF text extraction failed: {e}")
                         extracted_text = "[PDF text extraction failed - document may contain only images or be corrupted]"
                 else:
                     extracted_text = "[PyPDF2 not available - install with: pip install PyPDF2]"
-                
+
                 # Create an obfuscated download link that hides the API key
                 # Include the redirect URL from the response if available
                 final_download_url = str(response.url) if hasattr(response, 'url') else download_url
-                
+
                 # Create a clean download link without exposing the API key
                 obfuscated_link = final_download_url
                 if 'redirect_request_id=' in obfuscated_link:
                     # Remove any sensitive parameters but keep the redirect functionality
                     base_url = obfuscated_link.split('?')[0]
                     obfuscated_link = f"{base_url}?source=mcp-tool"
-                
+
                 return {
                     "success": True,
                     "application_number": app_number,
@@ -1404,7 +1404,7 @@ class EnhancedPatentClient:
                     "text_extraction_available": PDF_AVAILABLE,
                     "note": "PDF content available via download_url_for_llm - text extracted above for immediate analysis"
                 }
-                
+
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 403:
                 return format_error_response("Authentication failed - check USPTO_API_KEY")
@@ -1412,15 +1412,15 @@ class EnhancedPatentClient:
                 return format_error_response(f"HTTP error {e.response.status_code}: {e.response.text}")
         except Exception as e:
             return format_error_response(f"Failed to download document content: {str(e)}")
-    
+
     async def extract_document_content_with_mistral(self, app_number: str, document_identifier: str) -> Dict[str, Any]:
         """
         Extract document content using Mistral OCR API
-        
+
         Args:
             app_number: Patent application number
             document_identifier: Document identifier from documentBag
-            
+
         Returns:
             Dictionary containing OCR-extracted content, structured data, and processing metadata
         """
@@ -1431,36 +1431,36 @@ class EnhancedPatentClient:
                     "MISTRAL_API_KEY environment variable is required for OCR content extraction. "
                     "Set it with: set MISTRAL_API_KEY=your_key_here (Windows) or export MISTRAL_API_KEY=your_key_here (Linux/Mac)"
                 )
-            
+
             app_number = validate_app_number(app_number)
             request_id = generate_request_id()
-            
+
             # Check OCR rate limit before proceeding
             self._check_ocr_rate_limit(request_id)
-            
+
             # First download the PDF (reuse existing logic)
             download_result = await self.download_document_content(app_number, document_identifier)
             if download_result.get('error'):
                 return download_result
-                
+
             # Get the PDF content by re-downloading with our internal method
             docs_result = await self.get_documents(app_number)
             if docs_result.get('error'):
                 return docs_result
-                
+
             documents = docs_result.get('documentBag', [])
             target_doc = None
             for doc in documents:
                 if doc.get('documentIdentifier') == document_identifier:
                     target_doc = doc
                     break
-                    
+
             if not target_doc:
                 raise NotFoundError(
                     f"Document with identifier '{document_identifier}' not found in application {app_number}",
                     request_id=request_id
                 )
-                
+
             # Find PDF download option
             download_options = target_doc.get('downloadOptionBag', [])
             pdf_option = None
@@ -1468,28 +1468,28 @@ class EnhancedPatentClient:
                 if option.get('mimeTypeIdentifier') == 'PDF':
                     pdf_option = option
                     break
-                    
+
             if not pdf_option:
                 return format_error_response("PDF not available for this document")
-                
+
             download_url = pdf_option.get('downloadUrl')
             page_count = pdf_option.get('pageTotalQuantity', 0)
-            
+
             # Download PDF content for Mistral processing
             async with httpx.AsyncClient(timeout=self.download_timeout, limits=self.download_limits, follow_redirects=True) as client:
                 response = await client.get(download_url, headers=self.headers)
                 response.raise_for_status()
                 pdf_content = response.content
-            
+
             # Step 1: Upload file to Mistral
             mistral_headers = {
                 "Authorization": f"Bearer {self.mistral_api_key}",
             }
-            
+
             files = {
                 "file": ("document.pdf", pdf_content, "application/pdf")
             }
-            
+
             data = {
                 "purpose": "ocr"
             }
@@ -1504,10 +1504,10 @@ class EnhancedPatentClient:
                 upload_response.raise_for_status()
                 upload_data = upload_response.json()
                 file_id = upload_data.get("id")
-                
+
                 if not file_id:
                     return format_error_response("Failed to upload file to Mistral OCR service")
-                
+
                 # Step 2: Process with OCR
                 ocr_payload = {
                     "model": "mistral-ocr-latest",
@@ -1518,7 +1518,7 @@ class EnhancedPatentClient:
                     "pages": list(range(min(page_count, 50))),  # Limit to first 50 pages for cost control
                     "include_image_base64": False  # Save tokens
                 }
-                
+
                 ocr_response = await client.post(
                     f"{self.mistral_base_url}/ocr",
                     headers={
@@ -1529,20 +1529,20 @@ class EnhancedPatentClient:
                 )
                 ocr_response.raise_for_status()
                 ocr_data = ocr_response.json()
-                
+
                 # Extract content from OCR response
                 pages_processed = ocr_data.get("usage_info", {}).get("pages_processed", 0)
                 estimated_cost = pages_processed * 0.001  # $1 per 1000 pages
-                
+
                 # Combine all page content
                 extracted_content = []
                 for page in ocr_data.get("pages", []):
                     page_markdown = page.get("markdown", "")
                     if page_markdown.strip():
                         extracted_content.append(f"=== PAGE {page.get('index', 0) + 1} ===\n{page_markdown}")
-                
+
                 full_content = "\n\n".join(extracted_content)
-                
+
                 return {
                     "success": True,
                     "application_number": app_number,
@@ -1562,7 +1562,7 @@ class EnhancedPatentClient:
                     "usage_info": ocr_data.get("usage_info", {}),
                     "note": "Content extracted using Mistral OCR - supports scanned documents, formulas, and complex layouts"
                 }
-                
+
         except OCRRateLimitError as e:
             logger.warning(f"[{request_id}] OCR rate limit exceeded: {e.message}")
             return format_error_response(e.message, e.status_code, e.request_id)
@@ -1575,14 +1575,14 @@ class EnhancedPatentClient:
                 return format_error_response(f"Mistral API error {e.response.status_code}: {e.response.text}")
         except Exception as e:
             return format_error_response(f"Failed to extract document content with Mistral OCR: {str(e)}")
-    
+
     async def find_application_for_patent(self, patent_number: str) -> tuple[str, dict]:
         """
         Find the application number that led to a granted patent using direct API calls.
-        
+
         Args:
             patent_number: Patent number (e.g., '7971071')
-            
+
         Returns:
             Tuple of (application_number, associated_documents)
         """
@@ -1593,10 +1593,10 @@ class EnhancedPatentClient:
                 f"parentPatentNumber:{patent_number}",
                 f"applicationMetaData.applicationStatusCode:Patent"
             ]
-            
+
             for i, query in enumerate(queries):
                 limit = 10 if i < 2 else 100  # Use higher limit for broader search
-                
+
                 # Direct API call using the same pattern as search_applications
                 body = {
                     "q": query,
@@ -1605,21 +1605,21 @@ class EnhancedPatentClient:
                         "offset": 0
                     },
                     "fields": [
-                        "applicationNumberText", 
-                        "applicationMetaData.patentNumber", 
+                        "applicationNumberText",
+                        "applicationMetaData.patentNumber",
                         "parentPatentNumber",
                         "parentContinuityBag",
                         "associatedDocuments"  # Try to get this directly
                     ]
                 }
-                
+
                 result = await self._make_request("search", method="POST", json=body)
-                
+
                 if result.get('error'):
                     continue
-                    
+
                 applications = result.get('patentFileWrapperDataBag', [])
-                
+
                 if i < 2:  # Direct searches
                     if applications:
                         app = applications[0]
@@ -1627,16 +1627,16 @@ class EnhancedPatentClient:
                 else:  # Broader search - need to scan
                     for app in applications:
                         app_meta = app.get("applicationMetaData", {})
-                        if (app_meta.get("patentNumber") == patent_number or 
-                            any(parent.get("parentPatentNumber") == patent_number 
+                        if (app_meta.get("patentNumber") == patent_number or
+                            any(parent.get("parentPatentNumber") == patent_number
                                 for parent in app.get("parentContinuityBag", []))):
                             return app["applicationNumberText"], app.get("associatedDocuments")
-            
+
             raise ValueError(f"No application found for patent {patent_number}")
-            
+
         except Exception as e:
             raise ValueError(f"Failed to find application for patent {patent_number}: {str(e)}")
-    
+
     def detect_content_type(self, identifier: str) -> str:
         """
         Auto-detect patent vs application based on identifier format.
@@ -1667,45 +1667,45 @@ class EnhancedPatentClient:
                 return "patent"
             else:
                 return "application"
-    
+
     def extract_xml_url(self, associated_docs: dict, target_xml: str) -> str:
         """
         Extract the correct XML URL from Associated Documents.
-        
+
         Args:
             associated_docs: Associated documents data from API
             target_xml: "PTGRXML" for granted patents, "APPXML" for applications
         """
         if not associated_docs or not associated_docs.get("documents"):
             raise ValueError("No associated documents available")
-        
+
         documents = associated_docs["documents"]
         if not documents:
             raise ValueError("No documents found in associated documents")
-        
+
         doc = documents[0]  # Usually only one document entry
-        
+
         if target_xml == "PTGRXML":
             if "grantDocumentMetaData" in doc and associated_docs.get("ptgrXmlAvailable"):
                 return doc["grantDocumentMetaData"]["fileLocationURI"]
             else:
                 raise ValueError("No granted patent XML available - application may not be granted")
-        
+
         elif target_xml == "APPXML":
             if "pgpubDocumentMetaData" in doc and associated_docs.get("appXmlAvailable"):
                 return doc["pgpubDocumentMetaData"]["fileLocationURI"]
             else:
                 raise ValueError("No application XML available")
-        
+
         raise ValueError(f"Unknown XML type: {target_xml}")
-    
+
     async def fetch_xml_from_url(self, xml_url: str) -> str:
         """
         Fetch XML content from the provided URL.
-        
+
         Args:
             xml_url: URL to fetch XML from
-            
+
         Returns:
             Raw XML content as string
         """
@@ -1716,7 +1716,7 @@ class EnhancedPatentClient:
                 return response.text
         except Exception as e:
             raise ValueError(f"Failed to fetch XML from URL {xml_url}: {str(e)}")
-    
+
     def parse_xml_for_llm(
         self,
         xml_content: str,
@@ -1834,7 +1834,7 @@ class EnhancedPatentClient:
         if abstract_elem is not None:
             return ' '.join(abstract_elem.itertext()).strip()
         return "Abstract not found"
-    
+
     def _extract_claims(self, root) -> list:
         """Extract all claims from XML"""
         claims = []
@@ -1847,7 +1847,7 @@ class EnhancedPatentClient:
                 "type": "independent" if "comprising:" in claim_text or "wherein:" in claim_text else "dependent"
             })
         return claims
-    
+
     def _extract_description(self, root) -> str:
         """Extract description/specification text"""
         desc_elem = root.find('.//description')
@@ -1856,11 +1856,11 @@ class EnhancedPatentClient:
             paragraphs = desc_elem.findall('.//p')[:5]  # Limit for LLM context
             return '\n\n'.join([' '.join(p.itertext()).strip() for p in paragraphs])
         return "Description not found"
-    
+
     def _extract_inventors(self, root) -> list:
         """Extract inventor information"""
         inventors = []
-        
+
         # Try standard inventor elements first
         for inventor in root.findall('.//inventor'):
             name_elem = inventor.find('.//name')
@@ -1868,7 +1868,7 @@ class EnhancedPatentClient:
                 first = name_elem.findtext('.//first-name', '')
                 last = name_elem.findtext('.//last-name', '')
                 inventors.append(f"{first} {last}".strip())
-        
+
         # If no standard inventors found, try applicant-inventors
         if not inventors:
             for applicant in root.findall('.//applicant[@app-type="applicant-inventor"]'):
@@ -1878,19 +1878,19 @@ class EnhancedPatentClient:
                     last = addressbook.findtext('.//last-name', '')
                     if first or last:
                         inventors.append(f"{first} {last}".strip())
-        
+
         return inventors
-    
+
     def _extract_applicants(self, root) -> list:
         """Extract applicant information"""
         applicants = []
-        
+
         # Try standard applicant elements first
         for applicant in root.findall('.//applicant'):
             name_elem = applicant.find('.//name')
             if name_elem is not None:
                 applicants.append(' '.join(name_elem.itertext()).strip())
-        
+
         # If no standard applicants found, try addressbook format
         if not applicants:
             for applicant in root.findall('.//applicant'):
@@ -1905,9 +1905,9 @@ class EnhancedPatentClient:
                         last = addressbook.findtext('.//last-name', '')
                         if first or last:
                             applicants.append(f"{first} {last}".strip())
-        
+
         return applicants
-    
+
     def _extract_classifications(self, root) -> dict:
         """Extract classification information"""
         classifications = {
@@ -1915,21 +1915,21 @@ class EnhancedPatentClient:
             "cpc": [],
             "ipc": []
         }
-        
+
         # USPC classifications
         for uspc in root.findall('.//classification-us'):
             main = uspc.findtext('.//main-classification', '')
             if main:
                 classifications["uspc"].append(main.strip())
-        
-        # CPC classifications  
+
+        # CPC classifications
         for cpc in root.findall('.//classification-cpc'):
             symbol = cpc.findtext('.//symbol', '')
             if symbol:
                 classifications["cpc"].append(symbol.strip())
-        
+
         return classifications
-    
+
     def _extract_citations(self, root) -> list:
         """Extract patent and non-patent citations"""
         citations = []
@@ -1943,28 +1943,28 @@ class EnhancedPatentClient:
                         "number": doc_num.strip()
                     })
         return citations[:10]  # Limit for context
-    
+
     def _extract_publication_info(self, root) -> dict:
         """Extract publication information"""
         pub_info = {}
-        
+
         # Document number
         doc_num = root.findtext('.//doc-number')
         if doc_num:
             pub_info["document_number"] = doc_num.strip()
-        
+
         # Publication date
         pub_date = root.findtext('.//publication-date')
         if pub_date:
             pub_info["publication_date"] = pub_date.strip()
-        
+
         # Application number
         app_number = root.findtext('.//application-number')
         if app_number:
             pub_info["application_number"] = app_number.strip()
-        
+
         return pub_info
-    
+
     async def get_patent_or_application_xml(
         self,
         identifier: str,
@@ -1988,13 +1988,13 @@ class EnhancedPatentClient:
             # Step 1: Determine if we have a patent or application number
             if content_type == "auto":
                 content_type = self.detect_content_type(identifier)
-            
+
             # Step 2: Get application number and associated documents
             if content_type == "patent":
                 # Patent number → find originating application + get XML metadata
                 app_number, assoc_docs = await self.find_application_for_patent(identifier)
                 target_xml = "PTGRXML"  # Want granted patent XML
-                
+
                 # If minimal search didn't return associatedDocuments, fetch them
                 if not assoc_docs:
                     assoc_docs_result = await self.get_associated_documents(app_number)
@@ -2002,11 +2002,11 @@ class EnhancedPatentClient:
                         assoc_docs = {
                             "documents": assoc_docs_result.get("associated_documents", []),
                             "ptgrXmlAvailable": any(
-                                "grantDocumentMetaData" in doc 
+                                "grantDocumentMetaData" in doc
                                 for doc in assoc_docs_result.get("associated_documents", [])
                             ),
                             "appXmlAvailable": any(
-                                "pgpubDocumentMetaData" in doc 
+                                "pgpubDocumentMetaData" in doc
                                 for doc in assoc_docs_result.get("associated_documents", [])
                             )
                         }
@@ -2014,7 +2014,7 @@ class EnhancedPatentClient:
                 # Application number → use directly
                 app_number = identifier
                 target_xml = "APPXML"   # Want application XML
-                
+
                 # Get from direct API search first
                 body = {
                     "q": f"applicationNumberText:{app_number}",
@@ -2022,11 +2022,11 @@ class EnhancedPatentClient:
                     "fields": ["applicationNumberText", "associatedDocuments"]
                 }
                 results = await self._make_request("search", method="POST", json=body)
-                
+
                 applications = results.get('patentFileWrapperDataBag', [])
                 if applications:
                     assoc_docs = applications[0].get("associatedDocuments")
-                
+
                 # Fallback to direct API call if needed
                 if not assoc_docs:
                     assoc_docs_result = await self.get_associated_documents(app_number)
@@ -2034,15 +2034,15 @@ class EnhancedPatentClient:
                         assoc_docs = {
                             "documents": assoc_docs_result.get("associated_documents", []),
                             "ptgrXmlAvailable": any(
-                                "grantDocumentMetaData" in doc 
+                                "grantDocumentMetaData" in doc
                                 for doc in assoc_docs_result.get("associated_documents", [])
                             ),
                             "appXmlAvailable": any(
-                                "pgpubDocumentMetaData" in doc 
+                                "pgpubDocumentMetaData" in doc
                                 for doc in assoc_docs_result.get("associated_documents", [])
                             )
                         }
-            
+
             # Step 3: Extract appropriate XML URL
             xml_url = self.extract_xml_url(assoc_docs, target_xml)
 
@@ -2070,126 +2070,126 @@ class EnhancedPatentClient:
                 response["raw_xml"] = xml_content
 
             return response
-            
+
         except Exception as e:
             return format_error_response(f"Failed to get XML content: {str(e)}")
-    
+
     def is_good_extraction(self, text: str) -> bool:
         """
         Determine if PyPDF2 extraction is usable.
-        
+
         Criteria for "good" extraction:
         - Not empty or whitespace-only
         - Contains reasonable amount of text (>50 chars)
         - Contains readable words (not just symbols/garbage)
         - Has reasonable word-to-character ratio
         """
-        
+
         if not text or len(text.strip()) < 50:
             return False
-        
+
         # Check for reasonable word content
         words = text.split()
         if len(words) < 10:  # Very short extractions are probably garbage
             return False
-        
+
         # Check character-to-word ratio (catch symbol/garbage extractions)
         avg_word_length = len(text) / len(words)
         if avg_word_length > 20:  # Probably garbage characters
             return False
-        
+
         # Check for English-like content (basic heuristic)
         alpha_chars = sum(1 for c in text if c.isalpha())
         alpha_ratio = alpha_chars / len(text)
         if alpha_ratio < 0.6:  # Less than 60% alphabetic = probably scanned/garbage
             return False
-        
+
         return True
 
     async def extract_with_pypdf2(self, pdf_content: bytes) -> str:
         """Extract text using PyPDF2"""
         if not PDF_AVAILABLE:
             raise ValueError("PyPDF2 not available")
-            
+
         import PyPDF2
         import io
-        
+
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
         text = ""
-        
+
         for page in pdf_reader.pages:
             text += page.extract_text() + "\n"
-        
+
         return text.strip()
 
     async def extract_document_content_hybrid(
-        self, 
-        app_number: str, 
-        document_identifier: str, 
+        self,
+        app_number: str,
+        document_identifier: str,
         auto_optimize: bool = True
     ) -> Dict[str, Any]:
         """
         Get document content with intelligent extraction method selection (Session 5 Enhancement).
-        
+
         HYBRID APPROACH:
         - If auto_optimize=True (default): Try PyPDF2 first, fallback to Mistral OCR
         - If auto_optimize=False: Use Mistral OCR directly
         - Only charge for Mistral when actually used
         - Always returns usable text extraction
-        
+
         Args:
             app_number: Application number (e.g., '11752072')
             document_identifier: Document ID from documentBag
             auto_optimize: Try free PyPDF2 first, fallback to Mistral OCR (default: True)
-        
+
         Returns:
             Document content with extraction method and cost information
         """
-        
+
         try:
             app_number = validate_app_number(app_number)
-            
+
             # Get document metadata to validate the request
             docs_result = await self.get_documents(app_number)
             if docs_result.get('error'):
                 return docs_result
-                
+
             documents = docs_result.get('documentBag', [])
-            
+
             # Find the target document
             target_doc = None
             for doc in documents:
                 if doc.get('documentIdentifier') == document_identifier:
                     target_doc = doc
                     break
-                    
+
             if not target_doc:
                 raise NotFoundError(
                     f"Document with identifier '{document_identifier}' not found in application {app_number}",
                     request_id=request_id
                 )
-            
+
             # Find PDF download option for metadata
             download_options = target_doc.get('downloadOptionBag', [])
             pdf_option = None
-            
+
             for option in download_options:
                 if option.get('mimeTypeIdentifier') == 'PDF':
                     pdf_option = option
                     break
-                    
+
             if not pdf_option:
                 return format_error_response("PDF not available for this document")
-            
+
             download_url = pdf_option.get('downloadUrl')
             page_count = pdf_option.get('pageTotalQuantity', 0)
-            
+
             # Download PDF content
             async with httpx.AsyncClient(timeout=self.download_timeout, limits=self.download_limits, follow_redirects=True) as client:
                 response = await client.get(download_url, headers=self.headers)
                 response.raise_for_status()
                 pdf_content = response.content
-            
+
             extraction_result = {
                 "success": True,
                 "application_number": app_number,
@@ -2200,13 +2200,13 @@ class EnhancedPatentClient:
                 "page_count": page_count,
                 "file_size_bytes": len(pdf_content)
             }
-            
+
             if auto_optimize:
                 # Phase 1: Try PyPDF2 first (free, fast)
                 try:
                     if PDF_AVAILABLE:
                         pypdf2_text = await self.extract_with_pypdf2(pdf_content)
-                        
+
                         # Check if PyPDF2 extraction is usable
                         if self.is_good_extraction(pypdf2_text):
                             extraction_result.update({
@@ -2222,10 +2222,10 @@ class EnhancedPatentClient:
                             logger.info(f"PyPDF2 extraction poor for {document_identifier} - falling back to Mistral OCR")
                     else:
                         logger.warning("PyPDF2 not available - falling back to Mistral OCR")
-                
+
                 except Exception as e:
                     logger.warning(f"PyPDF2 extraction failed for {document_identifier}: {e} - falling back to Mistral OCR")
-            
+
             # Phase 2: Use Mistral OCR (either fallback or direct)
             # First check if Mistral API key is available
             if not self.mistral_api_key:
@@ -2253,10 +2253,10 @@ class EnhancedPatentClient:
                         "auto_optimization": "Mistral OCR requested but API key not available"
                     })
                 return extraction_result
-            
+
             # Mistral API key is available, proceed with OCR
             mistral_result = await self.extract_document_content_with_mistral(app_number, document_identifier)
-            
+
             if mistral_result.get("success"):
                 extraction_result.update({
                     "extracted_content": mistral_result.get("extracted_content", ""),
@@ -2275,9 +2275,9 @@ class EnhancedPatentClient:
                     "error": mistral_result.get("error", "Content extraction failed"),
                     "auto_optimization": "Both PyPDF2 and Mistral OCR failed"
                 })
-            
+
             return extraction_result
-            
+
         except Exception as e:
             return {
                 "success": False,
@@ -2297,7 +2297,7 @@ class EnhancedPatentClient:
     ) -> Dict[str, Any]:
         """
         Get complete granted patent package (ABST, DRW, SPEC, CLM) in one call.
-        
+
         Args:
             app_number: Patent application number
             include_drawings: Include drawings (default: True, set False to skip)
@@ -2305,24 +2305,24 @@ class EnhancedPatentClient:
                                     (default: False = get granted/final claims)
             direction_category: Filter claims by direction (default: INCOMING)
                               Set to None to get all claim versions
-        
+
         Returns:
             dict: Structured response with all patent components and download metadata
-            
+
         Raises:
             ValueError: If app_number is invalid
             Exception: If API call fails or no components found
         """
-        
+
         # Validate app_number
         if not app_number or not isinstance(app_number, str):
             raise ValueError("app_number must be a non-empty string")
-        
+
         # Components to retrieve
         components_to_fetch = ['ABST', 'SPEC', 'CLM']
         if include_drawings:
             components_to_fetch.insert(1, 'DRW')  # Insert after ABST
-        
+
         results = {
             "success": False,
             "application_number": app_number,
@@ -2332,7 +2332,7 @@ class EnhancedPatentClient:
             "components_missing": [],
             "error_details": []
         }
-        
+
         # Fetch each component
         for doc_code in components_to_fetch:
             try:
@@ -2343,10 +2343,10 @@ class EnhancedPatentClient:
                     direction_category=direction_category if doc_code != 'CLM' else direction_category,
                     limit=5  # Get up to 5 versions (for claims with amendments)
                 )
-                
+
                 if response.get("success") and response.get("count", 0) > 0:
                     documents = response.get("documentBag", [])
-                    
+
                     # For claims, handle original vs granted
                     if doc_code == 'CLM':
                         if include_original_claims:
@@ -2358,7 +2358,7 @@ class EnhancedPatentClient:
                     else:
                         # For other components, get the first (should only be one)
                         selected_doc = documents[0]
-                    
+
                     # Extract key information
                     component_name = doc_code.lower()
                     if doc_code == 'ABST':
@@ -2369,10 +2369,10 @@ class EnhancedPatentClient:
                         component_name = 'specification'
                     elif doc_code == 'CLM':
                         component_name = 'claims'
-                    
+
                     download_options = selected_doc.get("downloadOptionBag", [])
                     pdf_option = next((opt for opt in download_options if opt.get("mimeTypeIdentifier") == "PDF"), None)
-                    
+
                     results["granted_patent_components"][component_name] = {
                         "document_identifier": selected_doc.get("documentIdentifier"),
                         "document_code": selected_doc.get("documentCode"),
@@ -2383,22 +2383,22 @@ class EnhancedPatentClient:
                         "proxy_download_url": f"http://localhost:8080/download/{app_number}/{selected_doc.get('documentIdentifier')}",
                         "direction_category": selected_doc.get("directionCategory")
                     }
-                    
+
                     results["total_pages"] += results["granted_patent_components"][component_name]["page_count"]
                     results["components_found"].append(component_name)
                 else:
                     results["components_missing"].append(doc_code)
-                    
+
             except Exception as e:
                 results["error_details"].append({
                     "component": doc_code,
                     "error": str(e)
                 })
                 results["components_missing"].append(doc_code)
-        
+
         # Determine success
         results["success"] = len(results["components_found"]) >= 3  # At least 3 of 4 components
-        
+
         # Add guidance for LLM response formatting
         results["llm_response_guidance"] = {
             "critical_requirement": "ALWAYS format each component as a clickable markdown link",
@@ -2407,5 +2407,5 @@ class EnhancedPatentClient:
             "presentation_order": ["abstract", "drawings", "specification", "claims"],
             "include_total": "Show total page count at end: 'Total: 59 pages'"
         }
-        
+
         return results

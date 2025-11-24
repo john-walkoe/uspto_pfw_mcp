@@ -23,11 +23,11 @@ BASE_URL = "https://ppubs.uspto.gov"
 
 class PpubsClient:
     """Client for the USPTO Public Search API at ppubs.uspto.gov.
-    
-    This client provides access to full text patent documents, search capabilities, 
+
+    This client provides access to full text patent documents, search capabilities,
     and PDF downloads from the USPTO Public Search system.
     """
-    
+
     def __init__(self):
         self.headers = {
             "X-Requested-With": "XMLHttpRequest",
@@ -38,11 +38,11 @@ class PpubsClient:
             "Cache-Control": "no-cache",
             "Priority": "u=1, i",
         }
-        
+
         # Create a custom transport that logs all requests and responses
         transport = httpx.AsyncHTTPTransport()
         logging_transport = LoggingTransport(transport)
-        
+
         self.client = httpx.AsyncClient(
             headers=self.headers,
             http2=True,
@@ -53,7 +53,7 @@ class PpubsClient:
         self.case_id = None
         self.access_token = None
         self.search_query = None
-        
+
         # Load search query template
         script_dir = Path(__file__).parent.parent.parent
         search_query_path = script_dir / "json" / "search_query.json"
@@ -64,10 +64,10 @@ class PpubsClient:
         """Establish a session with USPTO Public Search."""
         logger.info("Establishing new session with USPTO Public Search")
         self.client.cookies = httpx.Cookies()
-        
+
         # First request to get cookies
         response = await self.client.get(f"{BASE_URL}/pubwebapp/")
-        
+
         # Create session
         url = f"{BASE_URL}/api/users/me/session"
         response = await self.client.post(
@@ -78,19 +78,19 @@ class PpubsClient:
                 "referer": f"{BASE_URL}/pubwebapp/",
             },
         )
-        
+
         if response.status_code != 200:
             logger.error(f"Failed to establish session: {response.status_code} - {response.text}")
             return None
-            
+
         # Log response body for debugging
         logger.debug(f"Session response body: {response.text}")
-        
+
         self.session = response.json()
         self.case_id = self.session["userCase"]["caseId"]
         self.access_token = response.headers["X-Access-Token"]
         self.client.headers["X-Access-Token"] = self.access_token
-        
+
         logger.info(f"Session established with case ID: {self.case_id}")
         return self.session
 
@@ -98,25 +98,25 @@ class PpubsClient:
         """Make a request with automatic retry for session expiration."""
         try:
             response = await self.client.request(method, url, **kwargs)
-            
+
             # Handle 403 (Session expired)
             if response.status_code == 403:
                 logger.info("Session expired, refreshing")
                 await self.get_session()
                 response = await self.client.request(method, url, **kwargs)
-                
+
             # Handle rate limiting
             if response.status_code == 429:
                 wait_time = int(response.headers.get("x-rate-limit-retry-after-seconds", 5)) + 1
                 logger.info(f"Rate limited, waiting {wait_time} seconds")
                 await asyncio.sleep(wait_time)
                 response = await self.client.request(method, url, **kwargs)
-                
+
             # Log response body for debugging
             logger.debug(f"Response body for {method} {url}: {response.text}")
-            
+
             return response
-            
+
         except Exception as e:
             logger.error(f"Request error: {str(e)}")
             return {
@@ -139,9 +139,9 @@ class PpubsClient:
         # Ensure we have a session
         if self.case_id is None:
             await self.get_session()
-            
+
         logger.info(f"Running query: {query}")
-        
+
         # Prepare query data
         data = self.search_query.copy()
         data["start"] = start
@@ -157,23 +157,23 @@ class PpubsClient:
         ]
         data["query"]["plurals"] = expand_plurals
         data["query"]["britishEquivalents"] = british_equivalents
-        
+
         # Get counts first
         logger.info("Getting search counts")
         counts_url = f"{BASE_URL}/api/searches/counts"
         counts_response = await self.make_request("POST", counts_url, json=data["query"])
-        
+
         if isinstance(counts_response, dict) and counts_response.get("error", False):
             return counts_response
-            
+
         # Execute search
         logger.info("Executing search query")
         search_url = f"{BASE_URL}/api/searches/searchWithBeFamily"
         search_response = await self.make_request("POST", search_url, json=data)
-        
+
         if isinstance(search_response, dict) and search_response.get("error", False):
             return search_response
-            
+
         # Process response
         if search_response.status_code != 200:
             return {
@@ -181,9 +181,9 @@ class PpubsClient:
                 "status_code": search_response.status_code,
                 "message": search_response.text
             }
-            
+
         result = search_response.json()
-        
+
         # Check for API errors
         if result.get("error", None) is not None:
             return {
@@ -191,10 +191,10 @@ class PpubsClient:
                 "errorCode": result["error"]["errorCode"],
                 "message": result["error"]["errorMessage"]
             }
-            
+
         # Log search results for debugging
         logger.debug(f"Search results: {json.dumps(result, indent=2, default=str)}")
-        
+
         return result
 
     async def get_document(self, guid, source_type) -> Dict[str, Any]:
@@ -202,9 +202,9 @@ class PpubsClient:
         # Ensure we have a session
         if self.case_id is None:
             await self.get_session()
-            
+
         logger.info(f"Getting document: {guid}")
-        
+
         url = f"{BASE_URL}/api/patents/highlight/{guid}"
         params = {
             "queryId": 1,
@@ -212,23 +212,23 @@ class PpubsClient:
             "includeSections": True,
             "uniqueId": None,
         }
-        
+
         response = await self.make_request("GET", url, params=params)
-        
+
         if isinstance(response, dict) and response.get("error", False):
             return response
-            
+
         if response.status_code != 200:
             return {
                 "error": True,
                 "status_code": response.status_code,
                 "message": response.text
             }
-            
+
         # Log document data for debugging
         document_data = response.json()
         logger.debug(f"Document data: {json.dumps(document_data, indent=2, default=str)}")
-        
+
         return document_data
 
     async def close(self):

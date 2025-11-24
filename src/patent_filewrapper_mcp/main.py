@@ -283,7 +283,7 @@ async def _search_applications_with_params(params: SearchParameters) -> Dict[str
 
         # Input validation
         if len(final_query) > api_client.MAX_QUERY_LENGTH:
-            return create_error_response("query_too_long", 
+            return create_error_response("query_too_long",
                 custom_message=f"Query too long (max {api_client.MAX_QUERY_LENGTH} characters)")
 
         fields = params.fields
@@ -329,7 +329,7 @@ async def _search_applications_with_params(params: SearchParameters) -> Dict[str
 async def _search_inventor_with_params(params: InventorSearchParameters) -> Dict[str, Any]:
     """
     Internal helper function using InventorSearchParameters object
-    
+
     This function implements the parameter object pattern for inventor searches.
     """
     try:
@@ -353,7 +353,7 @@ async def _search_inventor_with_params(params: InventorSearchParameters) -> Dict
                 'fields_used': fields,
                 'estimated_response_size_chars': estimated_chars
             }
-            
+
         return result
     except Exception as e:
         return format_error_response(f"Inventor search failed: {str(e)}")
@@ -393,7 +393,7 @@ pfw_search_applications(query='artificial intelligence', art_unit='2128', fields
 ```
 
 For complex search strategies and cross-MCP workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
-    
+
     # Create SearchParameters object and delegate to helper function
     try:
         params = SearchParameters(
@@ -616,7 +616,7 @@ For complex workflows and cross-MCP integration, use pfw_get_guidance (see quick
 
         # Input validation
         if len(final_query) > api_client.MAX_QUERY_LENGTH:
-            return create_error_response("query_too_long", 
+            return create_error_response("query_too_long",
                 custom_message=f"Query too long (max {api_client.MAX_QUERY_LENGTH} characters)")
         if limit < 1 or limit > api_client.MAX_SEARCH_LIMIT:
             return format_error_response(
@@ -1001,8 +1001,8 @@ For complex workflows and cross-MCP integration, use pfw_get_guidance (see quick
 
 @mcp.tool(name="PFW_get_document_content_with_mistral_ocr")
 async def pfw_get_document_content(
-    app_number: str, 
-    document_identifier: str, 
+    app_number: str,
+    document_identifier: str,
     auto_optimize: bool = True
 ) -> Dict[str, Any]:
     """Extract full text from USPTO prosecution documents with intelligent hybrid extraction (PyPDF2 first, Mistral OCR fallback).
@@ -1010,7 +1010,7 @@ PREREQUISITE: First use pfw_get_application_documents to get document_identifier
 Auto-optimizes cost: free PyPDF2 for text-based PDFs, ~$0.001/page Mistral OCR only for scanned documents.
 MISTRAL_API_KEY is optional - without it, only PyPDF2 extraction is available (works well for text-based PDFs).
 Returns: extracted_content, extraction_method, processing_cost_usd.
-Example workflow: 
+Example workflow:
 1. pfw_get_application_documents(app_number='17896175') → get doc IDs
 2. pfw_get_document_content(app_number='17896175', document_identifier='ABC123XYZ')
 For document selection strategies and cost optimization, use pfw_get_guidance (see quick reference chart for section selection)."""
@@ -1057,58 +1057,58 @@ For document selection strategies and multi-document workflows, use pfw_get_guid
         # Use environment variable if proxy_port not specified
         if proxy_port is None:
             proxy_port = int(os.getenv('PROXY_PORT', 8080))
-            
+
         # Validate application number
         app_number = validate_app_number(app_number)
-        
+
         # Start proxy server if not already running
         await _ensure_proxy_server_running(proxy_port)
-        
+
         # Get document metadata to validate the request
         docs_result = await api_client.get_documents(app_number)
         if docs_result.get('error'):
             return docs_result
-            
+
         documents = docs_result.get('documentBag', [])
-        
+
         # Find the target document
         target_doc = None
         for doc in documents:
             if doc.get('documentIdentifier') == document_identifier:
                 target_doc = doc
                 break
-                
+
         if not target_doc:
             return format_error_response(f"Document with identifier '{document_identifier}' not found")
-        
+
         # Find PDF download option for metadata
         download_options = target_doc.get('downloadOptionBag', [])
         pdf_option = None
-        
+
         for option in download_options:
             if option.get('mimeTypeIdentifier') == 'PDF':
                 pdf_option = option
                 break
-                
+
         if not pdf_option:
             return format_error_response("PDF not available for this document")
-        
+
         # Create proxy URL (immediate or persistent)
         if generate_persistent_link:
             # Generate encrypted persistent link valid for 7 days
             from .proxy.secure_link_cache import get_link_cache
             link_cache = get_link_cache()
             proxy_download_url = link_cache.generate_persistent_link(
-                app_number, 
-                document_identifier, 
+                app_number,
+                document_identifier,
                 f"http://localhost:{proxy_port}"
             )
         else:
             # Generate immediate download link (original behavior)
             proxy_download_url = f"http://localhost:{proxy_port}/download/{app_number}/{document_identifier}"
-        
+
         original_download_url = pdf_option.get('downloadUrl', '')
-        
+
         # Get invention title and patent number for enhanced document info
         invention_title = None
         patent_number = None
@@ -1130,13 +1130,13 @@ For document selection strategies and multi-document workflows, use pfw_get_guid
                     patent_number = extract_patent_number(app_data)
         except Exception as e:
             logger.warning(f"Could not fetch application metadata for {app_number}: {e}")
-        
+
         # Generate expected filename for user reference
         expected_filename = "Legacy format used (metadata unavailable)"
         if invention_title:
             from .api.helpers import generate_safe_filename
             expected_filename = generate_safe_filename(app_number, invention_title, target_doc.get('documentCode', 'UNKNOWN'), patent_number)
-        
+
         document_info = {
             "document_code": target_doc.get('documentCode', ''),
             "document_description": target_doc.get('documentCodeDescriptionText', ''),
@@ -1153,7 +1153,7 @@ For document selection strategies and multi-document workflows, use pfw_get_guid
                 "document_type": target_doc.get('documentCode', 'UNKNOWN')
             }
         }
-        
+
         return {
             "success": True,
             "proxy_download_url": proxy_download_url,
@@ -1161,7 +1161,7 @@ For document selection strategies and multi-document workflows, use pfw_get_guid
             "document_info": document_info,
             "application_number": app_number,
             "document_identifier": document_identifier,
-            
+
             # LLM guidance for proper response formatting
             "llm_response_guidance": {
                 "format": f"**📁 [Download {document_info.get('document_description', 'Document')} ({document_info.get('page_count', 'N/A')} pages)]({proxy_download_url})**",
@@ -1169,7 +1169,7 @@ For document selection strategies and multi-document workflows, use pfw_get_guid
             },
             "note": "Proxy handles authentication and rate limiting (5 downloads per 10s)"
         }
-        
+
     except Exception as e:
         return format_error_response(f"Failed to create download proxy: {str(e)}")
 
@@ -1233,10 +1233,10 @@ For cross-MCP workflows, use pfw_get_guidance (see quick reference chart)."""
                 f"direction_category must be one of: {', '.join(DocumentDirection.all())}",
                 400
             )
-            
+
         # Validate and clean app number
         app_number = validate_app_number(app_number)
-        
+
         # Get document bag from USPTO API with filtering
         docs_result = await api_client.get_documents(
             app_number,
@@ -1244,10 +1244,10 @@ For cross-MCP workflows, use pfw_get_guidance (see quick reference chart)."""
             document_code=document_code,
             direction_category=direction_category
         )
-        
+
         if docs_result.get('error'):
             return docs_result
-        
+
         return {
             "success": True,
             "application_number": docs_result.get('application_number'),
@@ -1276,7 +1276,7 @@ For cross-MCP workflows, use pfw_get_guidance (see quick reference chart)."""
                 "expectation": "No single 'complete patent PDF' - must download individual documents"
             }
         }
-        
+
     except Exception as e:
         return {
             "success": False,
@@ -1288,23 +1288,23 @@ For cross-MCP workflows, use pfw_get_guidance (see quick reference chart)."""
 
 def _create_document_summary(documents: List[dict]) -> Dict[str, Any]:
     """Create summary of available documents for LLM guidance"""
-    
+
     if not documents:
         return {"total": 0, "types": {}, "key_documents": []}
-    
+
     summary = {
         "total": len(documents),
         "document_types": {},
         "key_documents": [],
         "total_download_options": 0
     }
-    
+
     # Count document types and download options
     for doc in documents:
         doc_code = doc.get("documentCode", "UNKNOWN")
         summary["document_types"][doc_code] = summary["document_types"].get(doc_code, 0) + 1
         summary["total_download_options"] += len(doc.get("downloadOptionBag", []))
-    
+
     # Identify key documents for patent analysis
     key_doc_codes = ["ABST", "CLM", "SPEC", "NOA", "CTFR", "CTNF", "DRW"]
     for doc in documents:
@@ -1319,7 +1319,7 @@ def _create_document_summary(documents: List[dict]) -> Dict[str, Any]:
                     "page_count": download_options[0].get("pageTotalQuantity", 0),
                     "download_url": download_options[0].get("downloadUrl", "")
                 })
-    
+
     return summary
 
 @mcp.tool(name="get_patent_or_application_xml")
@@ -1446,22 +1446,22 @@ async def pfw_get_granted_patent_documents_download(
         # Use environment variable if proxy_port not specified
         if proxy_port is None:
             proxy_port = int(os.getenv('PROXY_PORT', 8080))
-            
+
         # Validate app_number using the existing validation function
         app_number = validate_app_number(app_number)
-        
+
         # Start proxy server if not already running
         await _ensure_proxy_server_running(proxy_port)
-        
+
         result = await api_client.get_granted_patent_documents_download(
             app_number=app_number,
             include_drawings=include_drawings,
             include_original_claims=include_original_claims,
             direction_category=direction_category
         )
-        
+
         return result
-        
+
     except ValueError as ve:
         return format_error_response(str(ve), 400)
     except Exception as e:
@@ -1472,7 +1472,7 @@ async def pfw_get_granted_patent_documents_download(
         }
 
 # REMOVED: pfw_get_tool_reflections - migrated to pfw_get_guidance for context efficiency
-# The comprehensive tool reflection functionality has been migrated to sectioned guidance  
+# The comprehensive tool reflection functionality has been migrated to sectioned guidance
 # Use pfw_get_guidance(section='tools') for tool-specific guidance
 # Use pfw_get_guidance(section='overview') to see all available sections
 
@@ -1483,14 +1483,14 @@ async def pfw_get_granted_patent_documents_download(
 
 @mcp.resource(
     "uspto://pfw/doc-codes",
-    name="RESOURCE: USPTO Document Code Decoder", 
+    name="RESOURCE: USPTO Document Code Decoder",
     description="USPTO Document Code decoder table covering common prosecution, PTAB, and FPD document codes with descriptions and business processes",
     mime_type="text/markdown"
 )
 def read_doc_codes() -> str:
     """
     Read USPTO document code decoder table resource via HTTP proxy
-    
+
     Returns:
         Formatted document code table from USPTO EFS-Web documentation
     """
@@ -1498,12 +1498,12 @@ def read_doc_codes() -> str:
         import httpx
         import csv
         import io
-        
+
         # Use HTTP proxy to serve the document codes table
         proxy_url = "http://localhost:8080/doc-codes"
-        
+
         logger.info("Requesting document codes table from proxy server")
-        
+
         # Try to get from proxy server first
         try:
             response = httpx.get(proxy_url, timeout=10.0)
@@ -1514,10 +1514,10 @@ def read_doc_codes() -> str:
                 logger.warning(f"Proxy server returned status {response.status_code}: {response.text[:200]}")
         except Exception as proxy_error:
             logger.warning(f"Proxy server not available, generating from local CSV: {proxy_error}")
-        
+
         # Fallback to local CSV processing
         csv_path = "reference/Document_Descriptions_List.csv"
-        
+
         # Check if file exists relative to current working directory
         import os
         if not os.path.exists(csv_path):
@@ -1525,10 +1525,10 @@ def read_doc_codes() -> str:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.join(script_dir, "..", "..")
             csv_path = os.path.join(project_root, "reference", "Document_Descriptions_List.csv")
-        
+
         if not os.path.exists(csv_path):
             raise ValueError("Document_Descriptions_List.csv not found")
-            
+
         # Parse CSV and format as markdown
         output = []
         output.append("# USPTO Document Code Decoder Table")
@@ -1538,67 +1538,67 @@ def read_doc_codes() -> str:
         output.append("")
         output.append("This table provides document codes used in USPTO patent prosecution, PTAB proceedings, and FPD petitions.")
         output.append("")
-        
+
         # Common prosecution codes
         output.append("## Common Prosecution Document Codes")
         output.append("")
         output.append("| Code | Description | Business Process |")
         output.append("|------|-------------|------------------|")
-        
+
         prosecution_codes = []
         ptab_codes = []
-        
+
         # Try multiple encodings to handle the CSV file
         encodings_to_try = ['utf-8', 'utf-8-sig', 'latin1', 'cp1252', 'iso-8859-1']
-        
+
         for encoding in encodings_to_try:
             try:
                 logger.info(f"Trying to read CSV with encoding: {encoding}")
                 with open(csv_path, 'r', encoding=encoding) as file:
                     csv_reader = csv.reader(file)
                     headers = None
-                    
+
                     for row in csv_reader:
                         if not headers:
                             headers = row
                             continue
-                            
+
                         if len(row) >= 4:
                             category = row[0].strip()
                             description = row[1].strip()
                             business_process = row[2].strip()
                             doc_code = row[3].strip()
-                            
+
                             if doc_code and doc_code != "DOC CODE":
                                 # Clean up description and handle encoding issues
                                 description = description.replace('\n', ' ').replace('\r', ' ')
                                 business_process = business_process.replace('\n', ' ').replace('\r', ' ')
-                                
+
                                 # Remove any problematic characters
                                 description = ''.join(char if ord(char) < 128 else '?' for char in description)
                                 business_process = ''.join(char if ord(char) < 128 else '?' for char in business_process)
-                                
+
                                 # Limit lengths for readability
                                 if len(description) > 100:
                                     description = description[:97] + "..."
                                 if len(business_process) > 80:
                                     business_process = business_process[:77] + "..."
-                                
+
                                 code_entry = {
                                     'code': doc_code,
                                     'description': description,
                                     'process': business_process,
                                     'category': category
                                 }
-                                
+
                                 if 'PTAB' in category:
                                     ptab_codes.append(code_entry)
                                 else:
                                     prosecution_codes.append(code_entry)
-                
+
                 logger.info(f"Successfully read CSV with {encoding} encoding")
                 break  # Success - exit the encoding loop
-                
+
             except UnicodeDecodeError as e:
                 logger.warning(f"Failed to read CSV with {encoding} encoding: {e}")
                 continue
@@ -1608,11 +1608,11 @@ def read_doc_codes() -> str:
         else:
             # If we get here, all encodings failed
             raise ValueError(f"Unable to read CSV file with any of the attempted encodings: {encodings_to_try}")
-        
+
         # Add common prosecution codes
         for code_info in prosecution_codes[:50]:  # Limit to first 50 for readability
             output.append(f"| {code_info['code']} | {code_info['description']} | {code_info['process']} |")
-        
+
         # Add PTAB codes
         if ptab_codes:
             output.append("")
@@ -1620,19 +1620,19 @@ def read_doc_codes() -> str:
             output.append("")
             output.append("| Code | Description | Business Process |")
             output.append("|------|-------------|------------------|")
-            
+
             for code_info in ptab_codes:
                 output.append(f"| {code_info['code']} | {code_info['description']} | {code_info['process']} |")
-        
+
         # Add footer
         output.append("")
         output.append("---")
         output.append("*This table is generated from the USPTO EFS-Web Document Description List and includes the most commonly used document codes in patent prosecution and PTAB proceedings.*")
-        
+
         result = "\n".join(output)
         logger.info(f"Generated document codes table ({len(result)} characters)")
         return result
-        
+
     except Exception as e:
         logger.error(f"Error reading document codes resource: {e}")
         raise ValueError(f"Failed to read document codes resource: {str(e)}")
@@ -1697,16 +1697,16 @@ async def pfw_get_guidance(section: str = "overview") -> str:
             "advanced": _get_advanced_section(),
             "cost": _get_cost_section()
         }
-        
+
         if section not in sections:
             available = ", ".join(sections.keys())
             return f"Invalid section '{section}'. Available: {available}"
-        
+
         result = f"# USPTO PFW MCP Guidance - {section.title()} Section\n\n{sections[section]}"
-        
+
         logger.info(f"Retrieved PFW guidance section '{section}' ({len(result)} characters)")
         return result
-        
+
     except Exception as e:
         logger.error(f"Error accessing PFW guidance section '{section}': {e}")
         return format_error_response(f"Failed to access guidance section '{section}': {str(e)}")
@@ -1768,7 +1768,7 @@ def _handle_background_task_exception(task: asyncio.Task):
 async def _ensure_proxy_server_running(port: int = 8080):
     """Ensure the proxy server is running"""
     global _proxy_server_running, _proxy_server_task
-    
+
     if not _proxy_server_running:
         logger.info(f"Starting HTTP proxy server on port {port}")
         _proxy_server_task = asyncio.create_task(_run_proxy_server(port))
@@ -1785,7 +1785,7 @@ async def _run_proxy_server(port: int = 8080):
     try:
         import uvicorn
         from .proxy.server import create_proxy_app
-        
+
         app = create_proxy_app()
         config = uvicorn.Config(
             app,
@@ -1797,7 +1797,7 @@ async def _run_proxy_server(port: int = 8080):
         server = uvicorn.Server(config)
         logger.info(f"HTTP proxy server starting on http://127.0.0.1:{port}")
         await server.serve()
-        
+
     except Exception as e:
         global _proxy_server_running
         _proxy_server_running = False
@@ -1875,7 +1875,7 @@ def _get_tools_section() -> str:
 - 15 preset fields (~500 chars/result) OR custom fields (~100 chars/result)
 - Present top results to user for selection on vague queries
 
-### Stage 2: Analysis (Balanced Search)  
+### Stage 2: Analysis (Balanced Search)
 - Use `search_applications_balanced` for detailed metadata
 - 18+ fields including cross-MCP integration fields (~2KB/result)
 - Limit to 10-20 user-selected results
@@ -1983,7 +1983,7 @@ fields=["applicationNumberText", "examinerNameText", "groupArtUnitNumber"]
 
 ### Convenience Parameters
 - `applicant_name`: Direct applicant search
-- `inventor_name`: Direct inventor search  
+- `inventor_name`: Direct inventor search
 - `examiner_name`: Find by specific examiner
 - `art_unit`: Filter by group art unit
 - `filing_date_start/end`: Date range filtering
@@ -2006,7 +2006,7 @@ def _get_documents_section() -> str:
 **Priority:** NOA → Final CTFR → 892 → N417
 **Focus:** Examiner's reasoning and prior art analysis
 
-#### Due Diligence  
+#### Due Diligence
 **Priority:** NOA → All CTFR → Fee worksheets → Interview summaries
 **Focus:** Prosecution quality and timeline issues
 
@@ -2041,7 +2041,7 @@ def _get_documents_section() -> str:
 
 ### Document Extraction Hierarchy
 1. **XML Content (Free)**: Try first for patents/applications
-2. **PyPDF2 (Free)**: Works for 80%+ of patent documents  
+2. **PyPDF2 (Free)**: Works for 80%+ of patent documents
 3. **Mistral OCR ($0.001-0.003)**: Only for scanned/poor quality
 
 ### Typical OCR Costs
@@ -2253,7 +2253,7 @@ def _get_errors_section() -> str:
 - Try inventor or applicant name search
 - Check application status and publication dates
 
-#### "Field not recognized"  
+#### "Field not recognized"
 **Causes:**
 - Incorrect field name syntax
 - Custom field not in available set
@@ -2292,7 +2292,7 @@ def _get_fields_section() -> str:
 - Good for 20-50 results
 
 **Ultra-Minimal (2-3 custom fields ~100 chars/result):**
-- `fields=["applicationNumberText", "inventionTitle"]`  
+- `fields=["applicationNumberText", "inventionTitle"]`
 - Perfect for 50-200 results
 - 99% context reduction vs balanced
 
@@ -2309,7 +2309,7 @@ def _get_fields_section() -> str:
 # For PTAB integration
 fields=["applicationNumberText", "patentNumber", "examinerNameText", "groupArtUnitNumber"]
 
-# For Citations integration  
+# For Citations integration
 fields=["applicationNumberText", "examinerNameText", "groupArtUnitNumber", "filingDate"]
 
 # For FPD integration
@@ -2323,7 +2323,7 @@ fields=["applicationNumberText", "applicationStatus", "examinerNameText"]
 - Standard filtering (applicant, inventor, examiner, date ranges)
 - New user or quick exploration
 
-#### Use Custom Fields When:  
+#### Use Custom Fields When:
 - Ultra-minimal context usage required
 - Specific workflow requirements
 - Processing 50+ results efficiently"""
@@ -2335,13 +2335,13 @@ def _get_cost_section() -> str:
 ### Document Extraction Costs
 
 #### Free Methods (Always Try First)
-1. **XML Content**: `get_patent_or_application_xml` 
+1. **XML Content**: `get_patent_or_application_xml`
    - Patents and published applications
    - Structured data with claims, description, citations
    - No cost, fastest access
 
 2. **PyPDF2 Extraction**: Automatic fallback in document tools
-   - Works for 80%+ of patent documents  
+   - Works for 80%+ of patent documents
    - Free text extraction from PDFs
    - No OCR costs
 
@@ -2358,7 +2358,7 @@ def _get_cost_section() -> str:
 # Instead of expensive balanced search for discovery
 results = search_applications_balanced(query="AI healthcare", limit=50)  # 100KB context
 
-# Do efficient progressive disclosure  
+# Do efficient progressive disclosure
 discovery = search_applications_minimal(query="AI healthcare", limit=50)  # 25KB context
 # User selects 5 results
 detailed = search_applications_balanced(selected_apps, limit=5)  # 10KB context
@@ -2388,7 +2388,7 @@ def _get_workflows_ptab_section() -> str:
 **Key Fields:** applicationNumberText, patentNumber, examinerNameText, groupArtUnitNumber"""
 
 def _get_workflows_fpd_section() -> str:
-    """FPD integration workflows"""  
+    """FPD integration workflows"""
     return """## FPD Integration Workflows
 
 ### FPD Red Flag Detection
@@ -2403,7 +2403,7 @@ def _get_workflows_fpd_section() -> str:
 
 **High-Risk Indicators:**
 - Denied petitions (serious prosecution issues)
-- Revival petitions (missed deadlines)  
+- Revival petitions (missed deadlines)
 - Multiple appeal petitions (examiner relationship problems)"""
 
 def _get_workflows_citations_section() -> str:
@@ -2433,12 +2433,12 @@ def _get_workflows_complete_section() -> str:
 1. **Portfolio Discovery (PFW)**: `search_applications_minimal(applicant_name='Target Company', filing_date_start='2015-01-01', limit=100)`
 2. **Citation Intelligence (Citations)**: Analyze examiner citation patterns for prosecution quality (2017+ applications)
 3. **FPD Risk Assessment (FPD)**: Check procedural irregularities and petition history
-4. **PTAB Challenge Analysis (PTAB)**: Assess post-grant challenge exposure for granted patents  
+4. **PTAB Challenge Analysis (PTAB)**: Assess post-grant challenge exposure for granted patents
 5. **Document Intelligence (PFW)**: Extract key prosecution documents for detailed analysis
 6. **Comprehensive Reporting**: Integrate findings across all four data sources
 
 **Enhanced Risk Scoring Matrix:**
-- **Technical Strength**: Claim scope, prosecution quality, prior art landscape  
+- **Technical Strength**: Claim scope, prosecution quality, prior art landscape
 - **Legal Enforceability**: Citation thoroughness, procedural cleanliness
 - **Challenge Exposure**: PTAB proceedings history and outcomes
 - **Procedural Issues**: FPD petition patterns and denial history"""
@@ -2741,18 +2741,18 @@ async def run_hybrid_server():
     try:
         # Start both servers concurrently
         logger.info("Starting hybrid MCP + HTTP proxy server")
-        
+
         # Check if always-on proxy is enabled (default: true)
         enable_always_on_proxy = os.getenv("ENABLE_ALWAYS_ON_PROXY", "true").lower() == "true"
         proxy_port = int(os.getenv('PROXY_PORT', 8080))
-        
+
         if enable_always_on_proxy:
             logger.info("Always-on proxy mode enabled - starting proxy server immediately")
             # Start proxy server immediately for Resources and persistent links
             await _ensure_proxy_server_running(proxy_port)
         else:
             logger.info("On-demand proxy mode - proxy will start when first download is requested")
-        
+
         # Run MCP server in a separate task
         mcp_task = asyncio.create_task(
             asyncio.to_thread(lambda: mcp.run(transport='stdio'))
@@ -2763,7 +2763,7 @@ async def run_hybrid_server():
 
         # Wait for MCP server to complete (it runs indefinitely)
         await mcp_task
-        
+
     except KeyboardInterrupt:
         logger.info("Shutting down servers...")
     except Exception as e:

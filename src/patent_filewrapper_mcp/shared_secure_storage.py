@@ -55,34 +55,34 @@ logger = logging.getLogger(__name__)
 def _encrypt_with_dpapi(data: bytes, entropy: bytes) -> bytes:
     """
     Encrypt data using Windows DPAPI with custom entropy.
-    
+
     Args:
         data: The data to encrypt
         entropy: Custom entropy for additional security
-        
+
     Returns:
         Encrypted data as bytes
-        
+
     Raises:
         OSError: If encryption fails
         RuntimeError: If not running on Windows
     """
     if sys.platform != "win32":
         raise RuntimeError("DPAPI is only available on Windows")
-    
+
     # Prepare input data blob
     data_in = DATA_BLOB()
     data_in.pbData = ctypes.cast(ctypes.create_string_buffer(data), ctypes.POINTER(ctypes.c_char))
     data_in.cbData = len(data)
-    
+
     # Prepare output data blob
     data_out = DATA_BLOB()
-    
+
     # Prepare entropy blob
     entropy_blob = DATA_BLOB()
     entropy_blob.pbData = ctypes.cast(ctypes.create_string_buffer(entropy), ctypes.POINTER(ctypes.c_char))
     entropy_blob.cbData = len(entropy)
-    
+
     # Call CryptProtectData
     CRYPTPROTECT_UI_FORBIDDEN = 0x01
     result = ctypes.windll.crypt32.CryptProtectData(
@@ -94,11 +94,11 @@ def _encrypt_with_dpapi(data: bytes, entropy: bytes) -> bytes:
         CRYPTPROTECT_UI_FORBIDDEN,      # dwFlags
         ctypes.byref(data_out)          # pDataOut
     )
-    
+
     if not result:
         error_code = ctypes.windll.kernel32.GetLastError()
         raise OSError(f"CryptProtectData failed with error code: {error_code}")
-    
+
     # Extract encrypted data
     encrypted_data = get_data_from_blob(data_out)
     return encrypted_data
@@ -107,37 +107,37 @@ def _encrypt_with_dpapi(data: bytes, entropy: bytes) -> bytes:
 def _decrypt_with_dpapi(encrypted_data: bytes, entropy: bytes) -> bytes:
     """
     Decrypt data using Windows DPAPI with custom entropy.
-    
+
     Args:
         encrypted_data: The encrypted data to decrypt
         entropy: Custom entropy used during encryption
-        
+
     Returns:
         Decrypted data as bytes
-        
+
     Raises:
         OSError: If decryption fails
         RuntimeError: If not running on Windows
     """
     if sys.platform != "win32":
         raise RuntimeError("DPAPI is only available on Windows")
-    
+
     # Prepare input data blob
     data_in = DATA_BLOB()
     data_in.pbData = ctypes.cast(ctypes.create_string_buffer(encrypted_data), ctypes.POINTER(ctypes.c_char))
     data_in.cbData = len(encrypted_data)
-    
+
     # Prepare output data blob
     data_out = DATA_BLOB()
-    
+
     # Prepare entropy blob
     entropy_blob = DATA_BLOB()
     entropy_blob.pbData = ctypes.cast(ctypes.create_string_buffer(entropy), ctypes.POINTER(ctypes.c_char))
     entropy_blob.cbData = len(entropy)
-    
+
     # Prepare description pointer
     description_ptr = ctypes.wintypes.LPWSTR()
-    
+
     # Call CryptUnprotectData
     CRYPTPROTECT_UI_FORBIDDEN = 0x01
     result = ctypes.windll.crypt32.CryptUnprotectData(
@@ -149,15 +149,15 @@ def _decrypt_with_dpapi(encrypted_data: bytes, entropy: bytes) -> bytes:
         CRYPTPROTECT_UI_FORBIDDEN,      # dwFlags
         ctypes.byref(data_out)          # pDataOut
     )
-    
+
     if not result:
         error_code = ctypes.windll.kernel32.GetLastError()
         raise OSError(f"CryptUnprotectData failed with error code: {error_code}")
-    
+
     # Clean up description
     if description_ptr.value:
         ctypes.windll.kernel32.LocalFree(description_ptr)
-    
+
     # Extract decrypted data
     return get_data_from_blob(data_out)
 
@@ -165,16 +165,16 @@ def _decrypt_with_dpapi(encrypted_data: bytes, entropy: bytes) -> bytes:
 class UnifiedSecureStorage:
     """
     Unified secure storage for USPTO MCP ecosystem.
-    
+
     Provides simple, consistent API key storage across all USPTO MCPs:
     - Patent File Wrapper (PFW)
-    - Final Petition Decisions (FPD) 
+    - Final Petition Decisions (FPD)
     - PTAB Decisions
     - Enriched Citations
-    
+
     Uses single-key-per-file architecture for maximum simplicity and security isolation.
     """
-    
+
     def __init__(self):
         """Initialize unified secure storage."""
         self.home_dir = Path.home()
@@ -186,45 +186,45 @@ class UnifiedSecureStorage:
         logger.debug(f"USPTO key path: {self.uspto_key_path}")
         logger.debug(f"Mistral key path: {self.mistral_key_path}")
         logger.debug(f"Internal auth secret path: {self.internal_auth_secret_path}")
-    
+
     def has_uspto_key(self) -> bool:
         """Check if USPTO API key exists in secure storage."""
         return self.uspto_key_path.exists()
-    
+
     def has_mistral_key(self) -> bool:
         """Check if Mistral API key exists in secure storage."""
         return self.mistral_key_path.exists()
-    
+
     def get_uspto_key(self) -> Optional[str]:
         """
         Retrieve USPTO API key from secure storage.
-        
+
         Returns:
             USPTO API key string, or None if not found or decryption fails
         """
         return self._load_single_key(self.uspto_key_path, "USPTO_API_KEY")
-    
+
     def store_uspto_key(self, key: str) -> bool:
         """
         Store USPTO API key in secure storage.
-        
+
         Args:
             key: USPTO API key string
-            
+
         Returns:
             True if successful, False otherwise
         """
         return self._store_single_key(key, self.uspto_key_path, "USPTO_API_KEY")
-    
+
     def get_mistral_key(self) -> Optional[str]:
         """
         Retrieve Mistral API key from secure storage.
-        
+
         Returns:
             Mistral API key string, or None if not found or decryption fails
         """
         return self._load_single_key(self.mistral_key_path, "MISTRAL_API_KEY")
-    
+
     def store_mistral_key(self, key: str) -> bool:
         """
         Store Mistral API key in secure storage.
@@ -306,12 +306,12 @@ class UnifiedSecureStorage:
     def _store_single_key(self, key: str, path: Path, key_name: str) -> bool:
         """
         Store single key with CWE-330 compliant random entropy.
-        
+
         Args:
             key: API key string to store
             path: File path for storage
             key_name: Key name for logging
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -328,46 +328,46 @@ class UnifiedSecureStorage:
 
                 # Generate cryptographically secure random entropy (CWE-330 compliant)
                 entropy = secrets.token_bytes(32)
-                
+
                 # Encrypt key data with DPAPI
                 key_data = key.encode('utf-8')
                 encrypted_data = _encrypt_with_dpapi(key_data, entropy)
-                
+
                 # Format: entropy (32 bytes) + encrypted_data
                 file_data = entropy + encrypted_data
-                
+
                 # Write to file with restricted permissions
                 path.write_bytes(file_data)
-                
+
                 # Set restrictive permissions (owner read/write only)
                 if hasattr(os, 'chmod'):
                     os.chmod(path, 0o600)
-                
+
                 logger.info(f"Stored {key_name} securely at: {path}")
                 return True
             else:
                 # Non-Windows: Store with basic file permissions (fallback)
                 logger.warning("DPAPI not available - storing with file permissions only")
                 path.write_text(key, encoding='utf-8')
-                
+
                 if hasattr(os, 'chmod'):
                     os.chmod(path, 0o600)
-                
+
                 logger.info(f"Stored {key_name} with file permissions at: {path}")
                 return True
-                
+
         except Exception as e:
             logger.error(f"Failed to store {key_name}: {e}")
             return False
-    
+
     def _load_single_key(self, path: Path, key_name: str) -> Optional[str]:
         """
         Load single key with entropy extraction.
-        
+
         Args:
             path: File path to load from
             key_name: Key name for logging
-            
+
         Returns:
             Decrypted key string, or None if load fails
         """
@@ -375,23 +375,23 @@ class UnifiedSecureStorage:
             if not path.exists():
                 logger.debug(f"{key_name} file not found: {path}")
                 return None
-            
+
             if sys.platform == "win32":
                 # Read encrypted file data
                 file_data = path.read_bytes()
-                
+
                 if len(file_data) < 32:
                     logger.error(f"Invalid {key_name} file format: too short")
                     return None
-                
+
                 # Extract entropy and encrypted data
                 entropy = file_data[:32]
                 encrypted_data = file_data[32:]
-                
+
                 # Decrypt with DPAPI
                 decrypted_data = _decrypt_with_dpapi(encrypted_data, entropy)
                 key = decrypted_data.decode('utf-8')
-                
+
                 logger.debug(f"Loaded {key_name} from: {path}")
                 return key
             else:
@@ -399,11 +399,11 @@ class UnifiedSecureStorage:
                 key = path.read_text(encoding='utf-8').strip()
                 logger.debug(f"Loaded {key_name} from: {path}")
                 return key
-                
+
         except Exception as e:
             logger.error(f"Failed to load {key_name}: {e}")
             return None
-    
+
     def get_storage_stats(self) -> dict:
         """
         Get storage statistics for debugging.
@@ -490,10 +490,10 @@ def ensure_internal_auth_secret() -> str:
 def has_secure_key(key_name: str) -> bool:
     """
     Check if a secure key exists (for backward compatibility).
-    
+
     Args:
         key_name: "USPTO_API_KEY" or "MISTRAL_API_KEY"
-        
+
     Returns:
         True if key exists, False otherwise
     """
@@ -509,10 +509,10 @@ def has_secure_key(key_name: str) -> bool:
 def get_secure_api_key(key_name: str) -> Optional[str]:
     """
     Get a secure API key (for backward compatibility).
-    
+
     Args:
         key_name: "USPTO_API_KEY" or "MISTRAL_API_KEY"
-        
+
     Returns:
         API key string or None
     """
@@ -528,11 +528,11 @@ def get_secure_api_key(key_name: str) -> Optional[str]:
 def store_secure_api_key(key: str, key_name: str) -> bool:
     """
     Store a secure API key (for backward compatibility).
-    
+
     Args:
         key: API key string
         key_name: "USPTO_API_KEY" or "MISTRAL_API_KEY"
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -548,23 +548,23 @@ def store_secure_api_key(key: str, key_name: str) -> bool:
 # Test function
 if __name__ == "__main__":
     print("Testing Unified Secure Storage...")
-    
+
     storage = UnifiedSecureStorage()
     print("Storage stats:", storage.get_storage_stats())
     print("Available keys:", storage.list_available_keys())
-    
+
     # Test encryption/decryption if on Windows
     if sys.platform == "win32":
         test_key = "test_api_key_12345"
         print(f"Testing with key: {test_key}")
-        
+
         success = storage.store_uspto_key(test_key)
         print(f"Store success: {success}")
-        
+
         retrieved_key = storage.get_uspto_key()
         print(f"Retrieved key: {retrieved_key}")
         print(f"Keys match: {test_key == retrieved_key}")
-        
+
         # Clean up test
         if storage.uspto_key_path.exists():
             storage.uspto_key_path.unlink()

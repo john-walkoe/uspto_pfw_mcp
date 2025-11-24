@@ -41,12 +41,12 @@ predefined_sets:
       # Uncomment the line below ONLY if you need prosecution documents in search results:
       # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
 
-      
+
       # === DOCKET DATA ===
       # - applicationMetaData.applicationConfirmationNumber  # Confirmation number
       # - applicationMetaData.docketNumber              # Attorney/agent docket number
       # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
-      
+
       # === DATES ===
       # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
       # - applicationMetaData.applicationStatusDate     # When status was last updated
@@ -54,32 +54,32 @@ predefined_sets:
       # - applicationMetaData.earliestPublicationNumber # Publication number
       # - applicationMetaData.earliestPublicationDate   # Earliest publication date (specific)
       # - applicationMetaData.pctPublicationDate        # PCT publication date
-      
+
       # === INVENTORS & APPLICANTS ===
       # - applicationMetaData.firstInventorName         # First named inventor
       # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
       # - applicationMetaData.assigneeBag               # Current assignees (array)
-      
+
       # === APPLICATION TYPE & ENTITY ===
       # - applicationMetaData.applicationTypeCode       # Application type code
       # - applicationMetaData.applicationTypeLabelName  # Application type description
       # - applicationMetaData.applicationTypeCategory   # Additional application categorization
       # - applicationMetaData.entityStatusData          # Entity status (large/small/micro)
       # - applicationMetaData.entityStatusData.businessEntityStatusCategory  # Entity category
-      
+
       # === CLASSIFICATION ===
       # - applicationMetaData.class                     # USPC Class (first level)
       # - applicationMetaData.subclass                  # USPC Subclass (second level)
       # - applicationMetaData.ipcClassificationBag      # International Patent Classification
       # - applicationMetaData.locarnoClassificationBag  # Locarno Classification (design)
-      
+
       # === FAMILY & CONTINUITY ===
       # - parentContinuityBag                           # Parent application data (full)
       # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
       # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
       # - childContinuityBag                            # Child application data (full)
       # - childContinuityBag.childApplicationNumberText # Child application numbers
-      
+
       # === INTERNATIONAL & PRIORITY ===
       # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
       # - applicationMetaData.pctBag                    # PCT application data
@@ -88,12 +88,12 @@ predefined_sets:
       # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
       # - applicationMetaData.priorityClaimBag          # Priority claims
       # - applicationMetaData.foreignPriorityBag        # Foreign priority data
-      
+
       # === PUBLICATIONS & RELATED DOCS ===
       # - applicationMetaData.relatedPublicationBag     # Related publications
       # - applicationMetaData.publicationSequenceNumberBag  # Publication sequence numbers
       # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
-      
+
       # === ADVANCED DATA ===
       # - termAdjustmentBag                             # Patent term adjustments
       # - transactionBag                                # Transaction history
@@ -129,12 +129,12 @@ predefined_sets:
       # Uncomment the line below ONLY if you need prosecution documents in search results:
       # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
 
-      
+
       # === DOCKET DATA ===
       # - applicationMetaData.applicationConfirmationNumber  # Confirmation number
       # - applicationMetaData.docketNumber              # Attorney/agent docket number
       # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
-      
+
       # === DATES ===
       # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
       # - applicationMetaData.applicationStatusDate     # When status was last updated
@@ -142,32 +142,32 @@ predefined_sets:
       # - applicationMetaData.earliestPublicationNumber # Publication number
       # - applicationMetaData.earliestPublicationDate   # Earliest publication date (specific)
       # - applicationMetaData.pctPublicationDate        # PCT publication date
-      
+
       # === INVENTORS & APPLICANTS ===
       # - applicationMetaData.firstInventorName         # First named inventor
       # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
       # - applicationMetaData.assigneeBag               # Current assignees (array)
-      
+
       # === APPLICATION TYPE & ENTITY ===
       # - applicationMetaData.applicationTypeCode       # Application type code
       # - applicationMetaData.applicationTypeLabelName  # Application type description
       # - applicationMetaData.applicationTypeCategory   # Additional application categorization
       # - applicationMetaData.entityStatusData          # Entity status (large/small/micro)
       # - applicationMetaData.entityStatusData.businessEntityStatusCategory  # Entity category
-      
+
       # === CLASSIFICATION ===
       # - applicationMetaData.class                     # USPC Class (first level)
       # - applicationMetaData.subclass                  # USPC Subclass (second level)
       # - applicationMetaData.ipcClassificationBag      # International Patent Classification
       # - applicationMetaData.locarnoClassificationBag  # Locarno Classification (design)
-      
+
       # === FAMILY & CONTINUITY ===
       # - parentContinuityBag                           # Parent application data (full)
       # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
       # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
       # - childContinuityBag                            # Child application data (full)
       # - childContinuityBag.childApplicationNumberText # Child application numbers
-      
+
       # === INTERNATIONAL & PRIORITY ===
       # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
       # - applicationMetaData.pctBag                    # PCT application data
@@ -176,12 +176,12 @@ predefined_sets:
       # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
       # - applicationMetaData.priorityClaimBag          # Priority claims
       # - applicationMetaData.foreignPriorityBag        # Foreign priority data
-      
+
       # === PUBLICATIONS & RELATED DOCS ===
       # - applicationMetaData.relatedPublicationBag     # Related publications
       # - applicationMetaData.publicationSequenceNumberBag  # Publication sequence numbers
       # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
-      
+
       # === ADVANCED DATA ===
       # - termAdjustmentBag                             # Patent term adjustments
       # - transactionBag                                # Transaction history
@@ -217,12 +217,12 @@ predefined_sets:
       # Uncomment the line below ONLY if you need prosecution documents in search results:
       # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
 
-      
+
       # === DOCKET DATA ===
       # - applicationMetaData.applicationConfirmationNumber  # Confirmation number
       # - applicationMetaData.docketNumber              # Attorney/agent docket number
       # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
-      
+
       # === DATES ===
       # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
       # - applicationMetaData.applicationStatusDate     # When status was last updated
@@ -230,32 +230,32 @@ predefined_sets:
       # - applicationMetaData.earliestPublicationNumber # Publication number
       # - applicationMetaData.earliestPublicationDate   # Earliest publication date (specific)
       # - applicationMetaData.pctPublicationDate        # PCT publication date
-      
+
       # === INVENTORS & APPLICANTS ===
       # - applicationMetaData.firstInventorName         # First named inventor
       # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
       # - applicationMetaData.assigneeBag               # Current assignees (array)
-      
+
       # === APPLICATION TYPE & ENTITY ===
       # - applicationMetaData.applicationTypeCode       # Application type code
       # - applicationMetaData.applicationTypeLabelName  # Application type description
       # - applicationMetaData.applicationTypeCategory   # Additional application categorization
       # - applicationMetaData.entityStatusData          # Entity status (large/small/micro)
       # - applicationMetaData.entityStatusData.businessEntityStatusCategory  # Entity category
-      
+
       # === CLASSIFICATION ===
       # - applicationMetaData.class                     # USPC Class (first level)
       # - applicationMetaData.subclass                  # USPC Subclass (second level)
       # - applicationMetaData.ipcClassificationBag      # International Patent Classification
       # - applicationMetaData.locarnoClassificationBag  # Locarno Classification (design)
-      
+
       # === FAMILY & CONTINUITY ===
       # - parentContinuityBag                           # Parent application data (full)
       # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
       # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
       # - childContinuityBag                            # Child application data (full)
       # - childContinuityBag.childApplicationNumberText # Child application numbers
-      
+
       # === INTERNATIONAL & PRIORITY ===
       # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
       # - applicationMetaData.pctBag                    # PCT application data
@@ -264,12 +264,12 @@ predefined_sets:
       # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
       # - applicationMetaData.priorityClaimBag          # Priority claims
       # - applicationMetaData.foreignPriorityBag        # Foreign priority data
-      
+
       # === PUBLICATIONS & RELATED DOCS ===
       # - applicationMetaData.relatedPublicationBag     # Related publications
       # - applicationMetaData.publicationSequenceNumberBag  # Publication sequence numbers
       # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
-      
+
       # === ADVANCED DATA ===
       # - termAdjustmentBag                             # Patent term adjustments
       # - transactionBag                                # Transaction history
@@ -306,12 +306,12 @@ predefined_sets:
       # Uncomment the line below ONLY if you need prosecution documents in search results:
       # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
 
-      
+
       # === DOCKET DATA ===
       # - applicationMetaData.applicationConfirmationNumber  # Confirmation number
       # - applicationMetaData.docketNumber              # Attorney/agent docket number
       # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
-      
+
       # === DATES ===
       # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
       # - applicationMetaData.applicationStatusDate     # When status was last updated
@@ -319,32 +319,32 @@ predefined_sets:
       # - applicationMetaData.earliestPublicationNumber # Publication number
       # - applicationMetaData.earliestPublicationDate   # Earliest publication date (specific)
       # - applicationMetaData.pctPublicationDate        # PCT publication date
-      
+
       # === INVENTORS & APPLICANTS ===
       # - applicationMetaData.firstInventorName         # First named inventor
       # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
       # - applicationMetaData.assigneeBag               # Current assignees (array)
-      
+
       # === APPLICATION TYPE & ENTITY ===
       # - applicationMetaData.applicationTypeCode       # Application type code
       # - applicationMetaData.applicationTypeLabelName  # Application type description
       # - applicationMetaData.applicationTypeCategory   # Additional application categorization
       # - applicationMetaData.entityStatusData          # Entity status (large/small/micro)
       # - applicationMetaData.entityStatusData.businessEntityStatusCategory  # Entity category
-      
+
       # === CLASSIFICATION ===
       # - applicationMetaData.class                     # USPC Class (first level)
       # - applicationMetaData.subclass                  # USPC Subclass (second level)
       # - applicationMetaData.ipcClassificationBag      # International Patent Classification
       # - applicationMetaData.locarnoClassificationBag  # Locarno Classification (design)
-      
+
       # === FAMILY & CONTINUITY ===
       # - parentContinuityBag                           # Parent application data (full)
       # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
       # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
       # - childContinuityBag                            # Child application data (full)
       # - childContinuityBag.childApplicationNumberText # Child application numbers
-      
+
       # === INTERNATIONAL & PRIORITY ===
       # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
       # - applicationMetaData.pctBag                    # PCT application data
@@ -353,12 +353,12 @@ predefined_sets:
       # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
       # - applicationMetaData.priorityClaimBag          # Priority claims
       # - applicationMetaData.foreignPriorityBag        # Foreign priority data
-      
+
       # === PUBLICATIONS & RELATED DOCS ===
       # - applicationMetaData.relatedPublicationBag     # Related publications
       # - applicationMetaData.publicationSequenceNumberBag  # Publication sequence numbers
       # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
-      
+
       # === ADVANCED DATA ===
       # - termAdjustmentBag                             # Patent term adjustments
       # - transactionBag                                # Transaction history
@@ -368,7 +368,7 @@ predefined_sets:
 #    - Edit 'applications_minimal' section for pfw_search_applications_minimal
 #    - Edit 'applications_balanced' section for pfw_search_applications_balanced
 # 2. INVENTOR SEARCHES:
-#    - Edit 'inventor_minimal' section for pfw_search_inventor_minimal  
+#    - Edit 'inventor_minimal' section for pfw_search_inventor_minimal
 #    - Edit 'inventor_balanced' section for pfw_search_inventor_balanced
 # 3. Uncomment fields you want by removing the # symbol
 # 4. After editing, restart Claude Desktop to reload the configuration

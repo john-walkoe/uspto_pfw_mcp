@@ -28,17 +28,14 @@ The project uses **detect-secrets** to prevent accidental commits of API keys, t
 ### Install Pre-commit Hooks (Recommended)
 
 ```bash
-# Install pre-commit framework
-pip install pre-commit
-
-# Or with uv (project's package manager)
-uv pip install pre-commit
+# Install pre-commit framework and detect-secrets
+uv pip install pre-commit detect-secrets
 
 # Install the git hooks
-pre-commit install
+uv run pre-commit install
 
 # Test the hooks (optional)
-pre-commit run --all-files
+uv run pre-commit run --all-files
 ```
 
 ### Manual Secret Scanning
@@ -144,7 +141,7 @@ The workflow runs on:
 
 ```bash
 # Check what's detected
-pre-commit run detect-secrets --all-files
+uv run pre-commit run detect-secrets --all-files
 
 # If false positive, update baseline
 uv run detect-secrets scan --baseline .secrets.baseline

@@ -24,15 +24,15 @@ from patent_filewrapper_mcp.proxy.models import PTABDocumentRegistration
 def test_ptab_basic():
     """Test basic PTAB functionality"""
     print("[TEST] Testing PTAB Document Store...")
-    
+
     # Create test database
     test_db_path = str(project_root / "test_ptab_documents.db")
     if os.path.exists(test_db_path):
         os.remove(test_db_path)
-    
+
     try:
         store = PTABDocumentStore(db_path=test_db_path)
-        
+
         # Test data
         test_data = {
             'proceeding_number': 'IPR2024-00123',
@@ -45,20 +45,20 @@ def test_ptab_basic():
             'document_type': 'petition',
             'enhanced_filename': 'PTAB-2024-05-15_IPR2024-00123_PAT-8524787_PETITION.pdf'
         }
-        
+
         # Test registration
         print("  [1] Testing document registration...")
         success = store.register_document(**test_data)
         assert success, "Document registration failed"
         print("    [OK] Document registered successfully")
-        
+
         # Test retrieval
         print("  [2] Testing document retrieval...")
         doc = store.get_document(test_data['proceeding_number'], test_data['document_identifier'])
         assert doc is not None, "Document not found"
         assert doc['enhanced_filename'] == test_data['enhanced_filename'], "Enhanced filename mismatch"
         print("    [OK] Document retrieved successfully")
-        
+
         # Test proceeding number validation
         print("  [3] Testing proceeding number validation...")
         # Test AIA Trial formats
@@ -74,7 +74,7 @@ def test_ptab_basic():
         assert not store.is_ptab_proceeding_number('202500095'), "9-digit number accepted (should be 10)"
         assert not store.is_ptab_proceeding_number('20250009501'), "11-digit number accepted (should be 10)"
         print("    [OK] Proceeding number validation working (AIA Trials and Appeals)")
-        
+
         # Test Pydantic model
         print("  [4] Testing Pydantic model validation...")
         # Test AIA Trial format
@@ -87,7 +87,7 @@ def test_ptab_basic():
             'enhanced_filename': 'PTAB-2024-05-15_IPR2024-00123_DECISION.pdf'
         })
         assert registration_trial.proceeding_number == 'IPR2024-00123'
-        
+
         # Test Appeal format
         registration_appeal = PTABDocumentRegistration(**{
             'source': 'ptab',
@@ -99,10 +99,10 @@ def test_ptab_basic():
         })
         assert registration_appeal.proceeding_number == '2025000950'
         print("    [OK] Model validation working (AIA Trials and Appeals)")
-        
+
         print("[PASS] PTAB Integration: ALL TESTS PASSED")
         return True
-        
+
     except Exception as e:
         print(f"[FAIL] PTAB test failed: {e}")
         return False
@@ -116,9 +116,9 @@ def main():
     """Run PTAB integration test"""
     print("PTAB INTEGRATION TEST - Future Open Data Portal Support")
     print("=" * 60)
-    
+
     success = test_ptab_basic()
-    
+
     if success:
         print()
         print("SUCCESS: PTAB integration is ready for Open Data Portal!")

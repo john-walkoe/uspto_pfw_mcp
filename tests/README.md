@@ -8,7 +8,7 @@ The server provides these tools for patent research:
 
 ### Search Tools
 - **`pfw_search_applications`** - Full search with custom field selection
-- **`pfw_search_applications_minimal`** - Minimal fields (95-99% context reduction)  
+- **`pfw_search_applications_minimal`** - Minimal fields (95-99% context reduction)
 - **`pfw_search_applications_balanced`** - Balanced fields (85-95% context reduction)
 - **`pfw_search_inventor`** - Full inventor search with custom fields
 - **`pfw_search_inventor_minimal`** - Minimal inventor search
@@ -28,7 +28,7 @@ The server provides these tools for patent research:
 
 ### Core Functionality Tests
 - **`test_fields_fix.py`** - Tests core search functionality and field mapping
-- **`test_proxy_simple.py`** - Tests the secure browser download proxy server 
+- **`test_proxy_simple.py`** - Tests the secure browser download proxy server
 - **`test_mcp_server.py`** - Tests basic MCP server startup and configuration
 - **`test_quality_detection.py`** - Tests document extraction quality detection logic
 - **`test_tool_reflections.py`** - Tests tool reflection metadata and LLM guidance system
@@ -181,7 +181,7 @@ USPTO API keys remain secure server-side
 ### test_mcp_server.py
 ```
 ✅ Successfully imported MCP server
-✅ Found tools: [...] 
+✅ Found tools: [...]
 ✅ MCP server can be imported and accessed successfully
 ```
 
@@ -222,7 +222,7 @@ All tool reflection tests passed!
 ```
 [PASS] PTAB Integration: ALL TESTS PASSED
 ✅ Document registration working
-✅ Document retrieval working  
+✅ Document retrieval working
 ✅ Proceeding number validation working
 ✅ Pydantic model validation working
 
@@ -355,13 +355,13 @@ Testing unified storage functionality...
 
 ### Required Setup
 - **Python 3.10+** with required dependencies installed
-- **Internet connection** for USPTO API access  
+- **Internet connection** for USPTO API access
 - **USPTO API Key** (see setup instructions below)
 
 **Getting a USPTO API Key:**
 1. Visit [USPTO Open Data Portal](https://data.uspto.gov/myodp/)
 2. Register for an account - Select "I don’t have a MyUSPTO account and need to create one"
-3. Log in 
+3. Log in
 4. Generate an API key for the Patent File Wrapper API
 5. Set the key in your environment as shown above
 

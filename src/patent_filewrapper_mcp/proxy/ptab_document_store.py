@@ -129,7 +129,7 @@ class PTABDocumentStore:
             conn = create_secure_connection(self.db_path)
             conn.execute("""
                 INSERT OR REPLACE INTO ptab_documents
-                (proceeding_number, document_identifier, download_url, api_key, 
+                (proceeding_number, document_identifier, download_url, api_key,
                  patent_number, application_number, proceeding_type, document_type,
                  enhanced_filename, registered_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -178,7 +178,7 @@ class PTABDocumentStore:
         try:
             conn = create_secure_connection(self.db_path)
             cursor = conn.execute("""
-                SELECT download_url, api_key, patent_number, application_number, 
+                SELECT download_url, api_key, patent_number, application_number,
                        proceeding_type, document_type, enhanced_filename, registered_at
                 FROM ptab_documents
                 WHERE proceeding_number = ? AND document_identifier = ?
@@ -194,7 +194,7 @@ class PTABDocumentStore:
                 )
                 return None
 
-            (download_url, api_key, patent_number, application_number, 
+            (download_url, api_key, patent_number, application_number,
              proceeding_type, document_type, enhanced_filename, registered_at) = result
 
             return {
@@ -232,12 +232,12 @@ class PTABDocumentStore:
         aia_trial_pattern = r'^(IPR|PGR|CBM|DER)\d{4}-\d{5}$'
         if re.match(aia_trial_pattern, identifier.upper()):
             return True
-        
+
         # Appeals: 10-digit numeric (e.g., 2025000950)
         appeal_pattern = r'^\d{10}$'
         if re.match(appeal_pattern, identifier):
             return True
-        
+
         return False
 
     def get_statistics(self) -> Dict[str, Any]:
@@ -260,8 +260,8 @@ class PTABDocumentStore:
 
             # Documents by proceeding type
             cursor = conn.execute("""
-                SELECT proceeding_type, COUNT(*) 
-                FROM ptab_documents 
+                SELECT proceeding_type, COUNT(*)
+                FROM ptab_documents
                 WHERE proceeding_type IS NOT NULL
                 GROUP BY proceeding_type
             """)
@@ -312,28 +312,28 @@ class PTABDocumentStore:
     def get_documents_by_patent(self, patent_number: str) -> list[Dict[str, Any]]:
         """
         Get all PTAB documents for a specific patent number
-        
+
         Useful for cross-MCP workflows between PTAB and PFW.
-        
+
         Args:
             patent_number: Patent number to search for
-            
+
         Returns:
             List of document metadata dicts
         """
         try:
             conn = create_secure_connection(self.db_path)
             cursor = conn.execute("""
-                SELECT proceeding_number, document_identifier, proceeding_type, 
+                SELECT proceeding_number, document_identifier, proceeding_type,
                        document_type, enhanced_filename, registered_at
                 FROM ptab_documents
                 WHERE patent_number = ?
                 ORDER BY registered_at DESC
             """, (patent_number,))
-            
+
             results = cursor.fetchall()
             conn.close()
-            
+
             return [
                 {
                     'proceeding_number': row[0],
@@ -346,7 +346,7 @@ class PTABDocumentStore:
                 }
                 for row in results
             ]
-            
+
         except Exception as e:
             logger.error(f"Error getting PTAB documents by patent: {e}")
             return []
@@ -354,28 +354,28 @@ class PTABDocumentStore:
     def get_documents_by_application(self, application_number: str) -> list[Dict[str, Any]]:
         """
         Get all PTAB documents for a specific application number
-        
+
         Useful for cross-MCP workflows between PTAB and PFW.
-        
+
         Args:
             application_number: Application number to search for
-            
+
         Returns:
             List of document metadata dicts
         """
         try:
             conn = create_secure_connection(self.db_path)
             cursor = conn.execute("""
-                SELECT proceeding_number, document_identifier, proceeding_type, 
+                SELECT proceeding_number, document_identifier, proceeding_type,
                        document_type, enhanced_filename, registered_at, patent_number
                 FROM ptab_documents
                 WHERE application_number = ?
                 ORDER BY registered_at DESC
             """, (application_number,))
-            
+
             results = cursor.fetchall()
             conn.close()
-            
+
             return [
                 {
                     'proceeding_number': row[0],
@@ -389,7 +389,7 @@ class PTABDocumentStore:
                 }
                 for row in results
             ]
-            
+
         except Exception as e:
             logger.error(f"Error getting PTAB documents by application: {e}")
             return []

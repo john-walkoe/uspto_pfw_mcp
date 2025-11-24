@@ -22,19 +22,19 @@ def main():
     """Main entry point for standalone launcher"""
     try:
         logger.info("Loading Patent File Wrapper MCP...")
-        
+
         # Import and run the MCP server
         from patent_filewrapper_mcp.main import mcp
-        
+
         logger.info("Starting MCP server...")
         mcp.run()
-        
+
     except ImportError as e:
         logger.error(f"Failed to import MCP module: {e}")
         logger.error("Make sure all dependencies are installed:")
         logger.error("pip install -e .")
         sys.exit(1)
-        
+
     except Exception as e:
         logger.error(f"Failed to start MCP server: {e}")
         import traceback

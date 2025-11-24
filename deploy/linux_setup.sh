@@ -33,12 +33,12 @@ log_info "UV will handle Python installation automatically"
 # Step 1: Check/Install uv
 if ! command -v uv &> /dev/null; then
     log_info "uv not found. Installing uv package manager..."
-    
+
     # Install uv using the official installer
     if curl -LsSf https://astral.sh/uv/install.sh | sh; then
         # Add uv to PATH for current session
         export PATH="$HOME/.cargo/bin:$PATH"
-        
+
         # Verify installation
         if command -v uv &> /dev/null; then
             log_success "uv installed successfully"
@@ -67,7 +67,7 @@ else
     exit 1
 fi
 
-# Step 3: Install package in editable mode  
+# Step 3: Install package in editable mode
 log_info "Installing Patent File Wrapper MCP package..."
 if uv pip install -e .; then
     log_success "Package installed successfully"
@@ -129,19 +129,19 @@ CONFIGURE_CLAUDE=${CONFIGURE_CLAUDE:-Y}
 if [[ "$CONFIGURE_CLAUDE" =~ ^[Yy]$ ]]; then
     # Claude Code config location (Linux)
     CLAUDE_CONFIG_FILE="$HOME/.claude.json"
-    
+
     log_info "Claude Code config location: $CLAUDE_CONFIG_FILE"
-    
+
     if [ -f "$CLAUDE_CONFIG_FILE" ]; then
         log_info "Existing Claude Code config found"
         log_info "Merging Patent File Wrapper configuration with existing config..."
-        
+
         # Backup the original file
         BACKUP_FILE="${CLAUDE_CONFIG_FILE}.backup_$(date +%Y%m%d_%H%M%S)"
         cp "$CLAUDE_CONFIG_FILE" "$BACKUP_FILE"
         chmod 600 "$BACKUP_FILE"  # Secure backup file permissions
         log_info "Backup created: $BACKUP_FILE"
-        
+
         # Use Python to merge JSON configuration with proper variable handling
         MERGE_SCRIPT="
 import json
@@ -174,11 +174,11 @@ try:
             'USPTO_API_KEY': uspto_key
         }
     }
-    
+
     # Add Mistral API key if provided
     if mistral_key:
         server_config['env']['MISTRAL_API_KEY'] = mistral_key
-    
+
     config['mcpServers']['uspto_pfw'] = server_config
 
     # Write merged config
@@ -190,7 +190,7 @@ except Exception as e:
     print(f'ERROR: {e}', file=sys.stderr)
     sys.exit(1)
 "
-        
+
         if MERGE_USPTO_API_KEY="$USPTO_API_KEY" MERGE_MISTRAL_API_KEY="$MISTRAL_API_KEY" echo "$MERGE_SCRIPT" | python3; then
             # Secure the configuration file and directory
             chmod 600 "$CLAUDE_CONFIG_FILE"
@@ -203,11 +203,11 @@ except Exception as e:
             log_info "Please manually add the configuration to $CLAUDE_CONFIG_FILE"
             exit 1
         fi
-        
+
     else
         # Create new config file
         log_info "Creating new Claude Code config..."
-        
+
         # Use Python to create new config safely
         CREATE_SCRIPT="
 import json
@@ -236,7 +236,7 @@ try:
             }
         }
     }
-    
+
     # Add Mistral API key if provided
     if mistral_key:
         config['mcpServers']['uspto_pfw']['env']['MISTRAL_API_KEY'] = mistral_key
@@ -250,7 +250,7 @@ except Exception as e:
     print(f'ERROR: {e}', file=sys.stderr)
     sys.exit(1)
 "
-        
+
         if CREATE_USPTO_API_KEY="$USPTO_API_KEY" CREATE_MISTRAL_API_KEY="$MISTRAL_API_KEY" echo "$CREATE_SCRIPT" | python3; then
             # Secure the configuration file and directory
             chmod 600 "$CLAUDE_CONFIG_FILE"

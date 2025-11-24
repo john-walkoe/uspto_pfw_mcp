@@ -293,7 +293,7 @@ _proxy_server_task = None
 async def _ensure_proxy_server_running(port: int = 8080):
     """Ensure the proxy server is running"""
     global _proxy_server_running, _proxy_server_task
-    
+
     if not _proxy_server_running:
         logger.info(f"Starting HTTP proxy server on port {port}")
         _proxy_server_task = asyncio.create_task(_run_proxy_server(port))
@@ -306,7 +306,7 @@ async def _run_proxy_server(port: int = 8080):
     try:
         import uvicorn
         from .proxy.server import create_proxy_app
-        
+
         app = create_proxy_app()
         config = uvicorn.Config(
             app,
@@ -318,7 +318,7 @@ async def _run_proxy_server(port: int = 8080):
         server = uvicorn.Server(config)
         logger.info(f"HTTP proxy server starting on http://127.0.0.1:{port}")
         await server.serve()
-        
+
     except Exception as e:
         global _proxy_server_running
         _proxy_server_running = False
