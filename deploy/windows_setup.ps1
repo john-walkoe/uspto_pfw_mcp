@@ -25,7 +25,7 @@ success = store_uspto_api_key('$ApiKey')
 print('SUCCESS' if success else 'FAILED')
 " 2>&1 | Out-String
 
-        if ($result.Trim() -eq "SUCCESS") {
+        if (([string]$result).Trim() -eq "SUCCESS") {
             Write-Host "[OK] USPTO API key stored in unified secure storage" -ForegroundColor Green
             Write-Host "     Location: ~/.uspto_api_key (DPAPI encrypted)" -ForegroundColor Yellow
             return $true
@@ -54,7 +54,7 @@ success = store_mistral_api_key('$ApiKey')
 print('SUCCESS' if success else 'FAILED')
 " 2>&1 | Out-String
 
-        if ($result.Trim() -eq "SUCCESS") {
+        if (([string]$result).Trim() -eq "SUCCESS") {
             Write-Host "[OK] Mistral API key stored in unified secure storage" -ForegroundColor Green
             Write-Host "     Location: ~/.mistral_api_key (DPAPI encrypted)" -ForegroundColor Yellow
             return $true
@@ -247,35 +247,7 @@ try {
 # Verify installation and secure storage
 Write-Host "[INFO] Verifying installation..." -ForegroundColor Yellow
 
-# Test secure storage system
-Write-Host "[INFO] Testing secure storage system..." -ForegroundColor Yellow
-try {
-    $pythonExe = ".venv/Scripts/python.exe"
-    $testCode = @"
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path('src')))
-
-try:
-    from patent_filewrapper_mcp.shared_secure_storage import UnifiedSecureStorage
-    storage = UnifiedSecureStorage()
-    test_result = storage.store_uspto_key('testkey12345678901234567890')
-    storage.uspto_key_path.unlink(missing_ok=True)  # Clean up test
-    print('SUCCESS' if test_result else 'FAILED')
-except Exception as e:
-    print(f'ERROR: {e}')
-"@
-
-    $storageResult = & $pythonExe -c $testCode 2>$null | Out-String
-    if ($storageResult -match "SUCCESS") {
-        Write-Host "[OK] Secure storage system working" -ForegroundColor Green
-    } else {
-        Write-Host "[WARN] Secure storage test failed - API key storage may not work properly" -ForegroundColor Yellow
-        Write-Host "[INFO] Error details: $storageResult" -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "[WARN] Could not test secure storage system" -ForegroundColor Yellow
-}
+# Storage test will be performed later, after checking for existing keys
 
 # Test MCP server command
 try {
@@ -299,6 +271,40 @@ Write-Host ""
 # Check for existing keys first
 Write-Host "[INFO] Checking for existing API keys in unified storage..." -ForegroundColor Yellow
 $existingKeys = Test-UnifiedKeys
+
+# Test secure storage system ONLY if no keys exist yet (avoids deleting existing keys)
+if (-not $existingKeys.USPTO -and -not $existingKeys.MISTRAL) {
+    Write-Host "[INFO] Testing secure storage system..." -ForegroundColor Yellow
+    try {
+        $pythonExe = ".venv/Scripts/python.exe"
+        $testCode = @"
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path('src')))
+
+try:
+    from patent_filewrapper_mcp.shared_secure_storage import UnifiedSecureStorage
+    storage = UnifiedSecureStorage()
+    test_result = storage.store_uspto_key('testkey12345678901234567890')
+    storage.uspto_key_path.unlink(missing_ok=True)  # Clean up test
+    print('SUCCESS' if test_result else 'FAILED')
+except Exception as e:
+    print(f'ERROR: {e}')
+"@
+
+        $storageResult = & $pythonExe -c $testCode 2>$null | Out-String
+        if ($storageResult -match "SUCCESS") {
+            Write-Host "[OK] Secure storage system working" -ForegroundColor Green
+        } else {
+            Write-Host "[WARN] Secure storage test failed - API key storage may not work properly" -ForegroundColor Yellow
+            Write-Host "[INFO] Error details: $storageResult" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "[WARN] Could not test secure storage system" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "[OK] Secure storage system verified (existing keys found)" -ForegroundColor Green
+}
 
 # Flags for tracking configuration path
 $usingPreexistingDPAPI = $false
@@ -404,8 +410,9 @@ Write-Host "[INFO] Configuring shared INTERNAL_AUTH_SECRET..." -ForegroundColor 
 
 try {
     Set-Location $ProjectDir
-    $pythonExe = "$ProjectDir/.venv/Scripts/python.exe"
-    $pythonCode = @'
+
+    # Use uv run python (not direct python.exe) to avoid stderr diagnostic messages
+    $result = uv run python -c @'
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path('src')))
@@ -417,16 +424,17 @@ if secret:
     print(secret)
 else:
     sys.exit(1)
-'@
+'@ 2>&1 | Out-String
 
-    $result = & $pythonExe -c $pythonCode 2>&1 | Out-String
     $lines = $result -split "`n" | Where-Object { $_.Trim() -ne "" }
 
-    # The first non-INFO line should be the secret
+    # Filter to find the secret (base64 pattern, 40+ chars, ignoring diagnostic/error messages)
     $internalSecret = ""
     foreach ($line in $lines) {
-        if ($line -notmatch "^(INFO|DEBUG|WARNING|ERROR):" -and $line.Trim() -ne "") {
-            $internalSecret = $line.Trim()
+        $trimmed = ([string]$line).Trim()
+        # Match base64 pattern: alphanumeric+/= characters, ends with =, length 40+
+        if ($trimmed -match '^[A-Za-z0-9+/]+=*$' -and $trimmed.Length -ge 40) {
+            $internalSecret = $trimmed
             break
         }
     }
@@ -508,7 +516,7 @@ else:
 '@
                 $result = & $pythonExe -c $pythonCode 2>$null
                 if ($LASTEXITCODE -eq 0 -and $result) {
-                    $configUsptoApiKey = $result.Trim()
+                    $configUsptoApiKey = ([string]$result).Trim()
                     # Validate it looks like a USPTO key (30 chars, lowercase)
                     if ($configUsptoApiKey.Length -eq 30 -and $configUsptoApiKey -cmatch '^[a-z]+$') {
                         Write-Host "[OK] Retrieved USPTO API key from DPAPI storage (30 chars)" -ForegroundColor Green
@@ -543,7 +551,7 @@ else:
 '@
                 $result = & $pythonExe -c $pythonCode 2>$null
                 if ($LASTEXITCODE -eq 0 -and $result) {
-                    $configureMistralApiKey = $result.Trim()
+                    $configureMistralApiKey = ([string]$result).Trim()
                     # Validate it looks like a Mistral key (32 chars, alphanumeric)
                     if ($configureMistralApiKey.Length -eq 32 -and $configureMistralApiKey -match '^[a-zA-Z0-9]+$') {
                         Write-Host "[OK] Retrieved Mistral API key from DPAPI storage (32 chars)" -ForegroundColor Green

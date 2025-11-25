@@ -4,7 +4,11 @@ This document provides a comprehensive set of examples for using the Patent File
 
 ## Notes on Patent File Wrapper MCP Usage
 
-For the most part the LLMs will perform these searches and workflows on their own with minimal guidance from the user. These examples are illustrative to give insight on what the LLMs are doing in the background. Sample requests that the user can give to the LLM to trigger the Examples are as follows:
+For the most part the LLMs will perform these searches and workflows on their own with minimal guidance from the user. These examples are illustrative to give insight on what the LLMs are doing in the background.
+
+**💡 Best Practice Recommendation:** For complex workflows or when you're unsure about the best approach, start by asking the LLM to use the `pfw_get_guidance` tool first. This tool provides context-efficient workflow recommendations and helps the LLM choose the most appropriate tools and strategies for your specific use case.
+
+Sample requests that the user can give to the LLM to trigger the Examples are as follows:
 
 ### Sample User Requests by Example
 

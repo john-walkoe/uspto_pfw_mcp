@@ -243,6 +243,20 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 4. **Integration Phase**: Cross-MCP data correlation and synthesis
 5. **Documentation Phase**: Organized output with actionable recommendations
 
+## 📊 Cross-MCP Integration Matrix
+
+| Template | FPD MCP | Citations MCP | PTAB MCP | Pinecone MCP | Integration Level |
+|----------|---------|---------------|----------|--------------|-------------------|
+| Patent Search | Optional | Optional | Optional | Optional | Discovery enhancement |
+| Patent Explanation | Optional | Optional | Optional | **Recommended** | **Legal context** |
+| **Art Unit Quality Assessment** | **Required** | Optional | Optional | Optional | **Petition correlation** |
+| **Litigation Research Setup** | **Required** | Optional | **Required** | Recommended | **Multi-database prep** |
+| **Technology Landscape Mapping** | Optional | Optional | **Required** | Optional | **Risk assessment** |
+| Complete Patent Package | Optional | Optional | Optional | Optional | Document enhancement |
+| Document Filtering Assistant | Optional | Optional | Optional | Optional | Context optimization |
+| Inventor Portfolio Analysis | Optional | Optional | Optional | Optional | Research enhancement |
+| **Patent Invalidity Analysis** | Recommended | Recommended | **Required** | **Recommended** | **Comprehensive defense** |
+
 ## 🎯 Usage Recommendations
 
 ### For Patent Attorneys
