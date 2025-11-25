@@ -1056,7 +1056,8 @@ For document selection strategies and multi-document workflows, use pfw_get_guid
     try:
         # Use environment variable if proxy_port not specified
         if proxy_port is None:
-            proxy_port = int(os.getenv('PROXY_PORT', 8080))
+            # Check PFW_PROXY_PORT first (MCP-specific), then PROXY_PORT (generic)
+            proxy_port = int(os.getenv('PFW_PROXY_PORT', os.getenv('PROXY_PORT', 8080)))
 
         # Validate application number
         app_number = validate_app_number(app_number)
@@ -1445,7 +1446,8 @@ async def pfw_get_granted_patent_documents_download(
     try:
         # Use environment variable if proxy_port not specified
         if proxy_port is None:
-            proxy_port = int(os.getenv('PROXY_PORT', 8080))
+            # Check PFW_PROXY_PORT first (MCP-specific), then PROXY_PORT (generic)
+            proxy_port = int(os.getenv('PFW_PROXY_PORT', os.getenv('PROXY_PORT', 8080)))
 
         # Validate app_number using the existing validation function
         app_number = validate_app_number(app_number)
@@ -2744,7 +2746,8 @@ async def run_hybrid_server():
 
         # Check if always-on proxy is enabled (default: true)
         enable_always_on_proxy = os.getenv("ENABLE_ALWAYS_ON_PROXY", "true").lower() == "true"
-        proxy_port = int(os.getenv('PROXY_PORT', 8080))
+        # Check PFW_PROXY_PORT first (MCP-specific), then PROXY_PORT (generic)
+        proxy_port = int(os.getenv('PFW_PROXY_PORT', os.getenv('PROXY_PORT', 8080)))
 
         if enable_always_on_proxy:
             logger.info("Always-on proxy mode enabled - starting proxy server immediately")
@@ -2803,7 +2806,8 @@ def main():
     Environment Variables:
     - ENABLE_PROXY_SERVER: Enable/disable proxy functionality (default: true)
     - ENABLE_ALWAYS_ON_PROXY: Start proxy immediately vs on-demand (default: true)
-    - PROXY_PORT: Proxy server port (default: 8080)
+    - PFW_PROXY_PORT: MCP-specific proxy server port (takes precedence)
+    - PROXY_PORT: Generic proxy server port (fallback, default: 8080)
     """
     logger.info("Starting Enhanced Patent File Wrapper MCP server with proxy support")
 

@@ -2318,6 +2318,10 @@ class EnhancedPatentClient:
         if not app_number or not isinstance(app_number, str):
             raise ValueError("app_number must be a non-empty string")
 
+        # Get proxy port from environment variables
+        # Check PFW_PROXY_PORT first (MCP-specific), then PROXY_PORT (generic)
+        proxy_port = int(os.getenv('PFW_PROXY_PORT', os.getenv('PROXY_PORT', 8080)))
+
         # Components to retrieve
         components_to_fetch = ['ABST', 'SPEC', 'CLM']
         if include_drawings:
@@ -2380,7 +2384,7 @@ class EnhancedPatentClient:
                         "official_date": selected_doc.get("officialDate"),
                         "page_count": pdf_option.get("pageTotalQuantity", 0) if pdf_option else 0,
                         "direct_download_url": pdf_option.get("downloadUrl") if pdf_option else None,
-                        "proxy_download_url": f"http://localhost:8080/download/{app_number}/{selected_doc.get('documentIdentifier')}",
+                        "proxy_download_url": f"http://localhost:{proxy_port}/download/{app_number}/{selected_doc.get('documentIdentifier')}",
                         "direction_category": selected_doc.get("directionCategory")
                     }
 
@@ -2403,7 +2407,7 @@ class EnhancedPatentClient:
         results["llm_response_guidance"] = {
             "critical_requirement": "ALWAYS format each component as a clickable markdown link",
             "required_format": "**📁 [Download {ComponentName} ({PageCount} pages)]({proxy_download_url})**",
-            "example": "**📁 [Download Abstract (1 page)](http://localhost:8080/download/14171705/HR8IXPO4PXXIFW3)**",
+            "example": "**📁 [Download Abstract (1 page)](http://localhost:{port}/download/14171705/HR8IXPO4PXXIFW3)**",
             "presentation_order": ["abstract", "drawings", "specification", "claims"],
             "include_total": "Show total page count at end: 'Total: 59 pages'"
         }
