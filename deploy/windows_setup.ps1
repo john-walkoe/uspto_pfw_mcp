@@ -341,18 +341,18 @@ if ($existingKeys.USPTO -and $existingKeys.MISTRAL) {
     }
 } elseif ($existingKeys.MISTRAL) {
     Write-Host "[WARN] Only Mistral API key found, USPTO key missing (required)" -ForegroundColor Yellow
-    $updateKeys = $true
+    $updateKeys = "uspto_only"
 } else {
     Write-Host "[INFO] No API keys found in unified storage" -ForegroundColor Yellow
     $updateKeys = $true
 }
 
 # Collect and store keys if needed
-if ($updateKeys -eq $true -or $updateKeys -eq "mistral_only") {
+if ($updateKeys -eq $true -or $updateKeys -eq "mistral_only" -or $updateKeys -eq "uspto_only") {
     # Show API key requirements
     Show-ApiKeyRequirements
 
-    if ($updateKeys -eq $true) {
+    if ($updateKeys -eq $true -or $updateKeys -eq "uspto_only") {
         # Collect and validate USPTO API key
         $usptoApiKey = Read-UsptoApiKeyWithValidation
         if (-not $usptoApiKey) {
@@ -361,11 +361,14 @@ if ($updateKeys -eq $true -or $updateKeys -eq "mistral_only") {
         }
     }
 
-    # Collect and validate Mistral API key (optional)
-    $mistralApiKey = Read-MistralApiKeyWithValidation
-    if ($mistralApiKey -eq $null) {
-        Write-Host "[ERROR] Failed to obtain valid Mistral API key" -ForegroundColor Red
-        exit 1
+    # Collect and validate Mistral API key (optional) - skip for uspto_only
+    $mistralApiKey = ""
+    if ($updateKeys -eq $true -or $updateKeys -eq "mistral_only") {
+        $mistralApiKey = Read-MistralApiKeyWithValidation
+        if ($mistralApiKey -eq $null) {
+            Write-Host "[ERROR] Failed to obtain valid Mistral API key" -ForegroundColor Red
+            exit 1
+        }
     }
 
     # Store keys in unified storage

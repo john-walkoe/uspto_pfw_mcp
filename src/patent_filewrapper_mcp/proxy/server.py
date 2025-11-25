@@ -1236,8 +1236,11 @@ def create_proxy_app() -> FastAPI:
             )
 
             if success:
+                # Get the configured proxy port (same logic as other parts of the code)
+                proxy_port = int(os.getenv('PFW_PROXY_PORT', os.getenv('PROXY_PORT', '8080')))
+                
                 # Generate download URL
-                download_url = f"http://localhost:8080/download/{registration.petition_id}/{registration.document_identifier}"
+                download_url = f"http://localhost:{proxy_port}/download/{registration.petition_id}/{registration.document_identifier}"
 
                 logger.info(
                     f"[{request_id}] Successfully registered FPD document: {registration.petition_id}/{registration.document_identifier}"
@@ -1347,8 +1350,11 @@ def create_proxy_app() -> FastAPI:
             )
 
             if success:
+                # Get the configured proxy port (same logic as other parts of the code)
+                proxy_port = int(os.getenv('PFW_PROXY_PORT', os.getenv('PROXY_PORT', '8080')))
+                
                 # Generate download URL
-                download_url = f"http://localhost:8080/download/{registration.proceeding_number}/{registration.document_identifier}"
+                download_url = f"http://localhost:{proxy_port}/download/{registration.proceeding_number}/{registration.document_identifier}"
 
                 logger.info(
                     f"[{request_id}] Successfully registered PTAB document: {registration.proceeding_number}/{registration.document_identifier}"
