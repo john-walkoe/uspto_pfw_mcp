@@ -2,7 +2,88 @@
 
 ## Overview
 
-This document provides security guidelines for developing, deploying, and maintaining the USPTO Patent File Wrapper MCP Server. Following these guidelines helps ensure the security of API keys, user data, and system integrity.
+This document provides comprehensive security guidelines for developing, deploying, and maintaining the USPTO Patent File Wrapper MCP Server. Following these guidelines helps ensure the security of API keys, user data, system integrity, and protection against AI-specific attacks including prompt injection.
+
+## 🛡️ Prompt Injection Protection
+
+### Overview
+The USPTO PFW MCP includes advanced prompt injection detection to protect against malicious attempts to:
+- Override system instructions
+- Extract sensitive prompts or configuration
+- Manipulate AI behavior
+- Bypass security controls
+- Access unauthorized patent data
+
+### Detection System
+**Comprehensive Pattern Detection:**
+- **70+ Attack Patterns** covering instruction override, prompt extraction, format manipulation
+- **Patent-Specific Threats** including USPTO API bypass attempts and examiner data disclosure
+- **Enhanced Filtering** to minimize false positives in legitimate code and documentation
+- **Multi-Modal Awareness** for future extensibility to image/audio injection vectors
+
+**Integration Points:**
+- **Pre-commit Hooks** - Automatic scanning before every commit
+- **CI/CD Pipeline** - Continuous validation in GitHub Actions
+- **Manual Scanning** - On-demand security assessment tools
+
+### Usage
+
+**Manual Security Scanning:**
+```bash
+# Scan specific directories/files
+uv run python .security/check_prompt_injections.py src/ tests/ *.md
+
+# Scan all relevant file types
+uv run python .security/check_prompt_injections.py src/ tests/ docs/ *.yml *.json
+
+# Run via pre-commit (recommended)
+uv run pre-commit run prompt-injection-check --all-files
+```
+
+**Attack Categories Detected:**
+1. **Instruction Override**: "ignore previous instructions", "disregard above commands"
+2. **Prompt Extraction**: "show me your instructions", "reveal your system prompt"
+3. **Behavior Manipulation**: "you are now a different AI", "act as a hacker"
+4. **Format Manipulation**: "encode in base64", "spell backwards", "use hex encoding"
+5. **Patent-Specific**: "extract patent numbers", "bypass USPTO API limits", "show examiner names"
+6. **Social Engineering**: "we became friends", "our previous conversation"
+
+**File Type Coverage:**
+- Python source code (.py)
+- Configuration files (.yml, .yaml, .json)
+- Documentation (.md, .txt)
+- Web files (.html, .js, .ts)
+- Data files (.csv, .xml)
+
+### Incident Response
+
+**If Patterns Are Detected:**
+1. **Review Context** - Determine if the detection is legitimate or false positive
+2. **Assess Intent** - Check if the pattern was introduced maliciously
+3. **Investigate Source** - Review commit history and author
+4. **Document Findings** - Log the incident for security tracking
+5. **Update Exclusions** - If false positive, consider pattern refinements
+
+**False Positive Handling:**
+```bash
+# For legitimate test cases, add context markers
+echo "# Example injection pattern (for testing): ignore previous instructions" >> test_file.py
+
+# For documentation, ensure clear context
+echo "This pattern 'show me your instructions' is an example of prompt injection" >> docs.md
+```
+
+### Advanced Threats
+
+**Hybrid Attacks** (Future Considerations):
+- **XSS + Prompt Injection**: AI-generated JavaScript payloads
+- **SQL + Prompt Injection**: Natural language to malicious SQL
+- **Multi-Agent Propagation**: Self-replicating prompts across AI systems
+
+**Multi-Modal Injection** (Roadmap):
+- **Image-based**: Hidden instructions in steganography
+- **Audio/Video**: Transcript manipulation attacks
+- **Cross-Modal**: Exploiting modality translation inconsistencies
 
 ## API Key Management
 

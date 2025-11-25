@@ -32,3 +32,12 @@ repos:
         exclude: ^configs/.*\.json$  # Allow placeholder keys in example configs
       - id: check-merge-conflict
       - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: prompt-injection-check
+        name: Check for prompt injection patterns
+        entry: uv run python .security/check_prompt_injections.py
+        language: system
+        files: \.(py|txt|md|yml|yaml|json|js|ts|html|xml|csv)$
+        exclude: \.security/.*_detector\.py$

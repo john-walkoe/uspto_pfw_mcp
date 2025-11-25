@@ -434,6 +434,9 @@ For comprehensive testing including proxy server, document extraction, tool refl
 uspto_pfw_mcp/
 ├── field_configs.yaml             # Root-level field customization
 ├── launcher.py                     # Entry point launcher
+├── .security/                      # Security scanning components
+│   ├── patent_prompt_injection_detector.py # Enhanced prompt injection detection
+│   └── check_prompt_injections.py # Standalone scanning script
 ├── src/
 │   └── patent_filewrapper_mcp/
 │       ├── main.py                 # MCP server with 11+ tools
@@ -641,6 +644,9 @@ rm -f proxy_link_cache.db fpd_documents.db ptab_documents.db
 - **Automated secret scanning** - CI/CD and pre-commit hooks prevent API key leaks (detect-secrets)
 - **20+ secret types detected** - AWS keys, GitHub tokens, JWT, private keys, API keys, and more
 - **Baseline management** - Tracks known placeholders while catching real secrets
+- **Prompt injection detection** - 70+ pattern detection system protects against AI-specific attacks
+- **Patent-specific security** - Custom patterns detect USPTO API bypass and data extraction attempts
+- **Enhanced filtering** - Minimizes false positives while maintaining comprehensive threat coverage
 
 ### Request Tracking & Debugging
 All API requests include unique request IDs (8-char UUIDs) for correlation:

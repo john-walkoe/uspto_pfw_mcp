@@ -1,10 +1,12 @@
 # Security Scanning Guide
 
-This document explains the automated security scanning setup for the USPTO Patent File Wrapper MCP project.
+This document explains the comprehensive automated security scanning setup for the USPTO Patent File Wrapper MCP project.
 
 ## Overview
 
-The project uses **detect-secrets** to prevent accidental commits of API keys, tokens, passwords, and other sensitive data.
+The project uses multiple security scanning technologies:
+- **detect-secrets** to prevent accidental commits of API keys, tokens, passwords, and other sensitive data
+- **Prompt Injection Detection** to protect against AI-specific attacks and malicious prompt patterns
 
 ## Features
 
@@ -23,6 +25,21 @@ The project uses **detect-secrets** to prevent accidental commits of API keys, t
 - Tracks known placeholder keys and false positives
 - Location: `.secrets.baseline`
 
+### 4. **Prompt Injection Detection** (Enhanced Security)
+- Scans for 70+ malicious prompt patterns
+- Detects patent-specific attack vectors (API bypass, data extraction)
+- Integrated with pre-commit hooks and CI/CD pipeline
+- Location: `.security/patent_prompt_injection_detector.py`
+
+**Attack Categories Detected:**
+- Instruction override attempts ("ignore previous instructions")
+- System prompt extraction ("show me your instructions")
+- AI behavior manipulation ("you are now a different AI")
+- Patent data extraction ("extract all patent numbers")
+- USPTO API bypass attempts ("bypass API restrictions")
+- Examiner information disclosure ("reveal examiner names")
+- Social engineering patterns ("we became friends")
+
 ## Setup
 
 ### Install Pre-commit Hooks (Recommended)
@@ -38,8 +55,9 @@ uv run pre-commit install
 uv run pre-commit run --all-files
 ```
 
-### Manual Secret Scanning
+### Manual Security Scanning
 
+**Secret Detection:**
 ```bash
 # Scan entire codebase
 uv run detect-secrets scan
@@ -52,6 +70,21 @@ uv run detect-secrets scan --baseline .secrets.baseline
 
 # Audit baseline (review all flagged items)
 uv run detect-secrets audit .secrets.baseline
+```
+
+**Prompt Injection Detection:**
+```bash
+# Scan for prompt injection patterns
+uv run python .security/check_prompt_injections.py src/ tests/ *.md
+
+# Scan specific directories
+uv run python .security/check_prompt_injections.py src/patent_filewrapper_mcp/
+
+# Run via pre-commit hook
+uv run pre-commit run prompt-injection-check --all-files
+
+# Test with verbose output
+uv run python .security/check_prompt_injections.py --verbose src/ tests/
 ```
 
 ## What Gets Scanned
