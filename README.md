@@ -16,7 +16,7 @@ A high-performance Model Context Protocol (MCP) server for the USPTO Patent File
 | **[🎯 Prompt Templates](PROMPTS.md)** | Detailed guide to sophisticated prompt templates for legal & research workflows |
 | **[⚙️ Field Customization](CUSTOMIZATION.md)** | Comprehensive guidance on customizing field sets for the minimal and balanced tools |
 | **[🔒 Security Guidelines](SECURITY_GUIDELINES.md)** | Comprehensive security best practices |
-| **[🛡️ Security Scanning](SECURITY_SCANNING.md)** | Automated secret detection and prevention guide |
+| **[🛡️ Security Scanning](SECURITY_SCANNING.md)** | Automated secret detection and prompt injection protection guide |
 | **[🧪 Testing Guide](tests/README.md)** | Test suite documentation and API key setup |
 | **[⚖️ License](LICENSE)** | MIT License terms and conditions |
 
@@ -676,6 +676,8 @@ MIT License
 ## ⚠️ Disclaimer
 
 **THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT WARRANTY OF ANY KIND.**
+
+**Independent Project Notice**: This is an independent personal project and is not affiliated with, endorsed by, or sponsored by the United States Patent and Trademark Office (USPTO).
 
 The author makes no representations or warranties, express or implied, including but not limited to:
 
