@@ -2405,11 +2405,12 @@ class EnhancedPatentClient:
 
         # Add guidance for LLM response formatting
         results["llm_response_guidance"] = {
-            "critical_requirement": "ALWAYS format each component as a clickable markdown link",
-            "required_format": "**📁 [Download {ComponentName} ({PageCount} pages)]({proxy_download_url})**",
-            "example": "**📁 [Download Abstract (1 page)](http://localhost:{port}/download/14171705/HR8IXPO4PXXIFW3)**",
+            "critical_requirement": "ALWAYS format each component as a clickable markdown link AND raw URL",
+            "required_format": "**📁 [Download {ComponentName} ({PageCount} pages)]({proxy_download_url})** | Raw URL: `{proxy_download_url}`",
+            "example": "**📁 [Download Abstract (1 page)](http://localhost:8080/download/14171705/HR8IXPO4PXXIFW3)** | Raw URL: `http://localhost:8080/download/14171705/HR8IXPO4PXXIFW3`",
             "presentation_order": ["abstract", "drawings", "specification", "claims"],
-            "include_total": "Show total page count at end: 'Total: 59 pages'"
+            "include_total": "Show total page count at end: 'Total: 59 pages'",
+            "explanation": "Clickable link works in Claude Desktop, raw URL enables copy/paste in Msty and other clients where links aren't clickable"
         }
 
         return results

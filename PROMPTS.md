@@ -74,13 +74,15 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 
 ---
 
-### `/patent_invalidity_analysis_defense_pinecone_PTAB` - Comprehensive Defense Analysis
+### `/patent_invalidity_analysis_defense_Pinecone_PTAB_FPD_Citations` - Comprehensive Defense Analysis
 **Purpose**: Advanced invalidity analysis for defensive patent litigation
 **Key Features**:
 - **§ 112 indefiniteness analysis**: Systematic claim construction review
-- **Multi-database integration**: Combines PFW + PTAB + FPD + Citations + Pinecone
+- **5-MCP integration**: Combines PFW + PTAB + FPD + Citations + Pinecone
 - **PTAB risk assessment**: Evaluates potential IPR/PGR challenges
-- **Pinecone RAG detection**: Auto-configures for optimal token budgeting
+- **Citation pattern analysis**: Leverages examiner citation effectiveness (Oct 2017+)
+- **FPD petition correlation**: Examiner procedural pattern analysis
+- **Pinecone auto-configuration**: Detects RAG setup for optimal token budgeting
 - **Ultra-minimal Step 1**: Reduces context waste through targeted discovery
 
 **Use Cases**:
@@ -89,7 +91,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 - Due diligence for patent acquisition defense
 - Pre-litigation patent strength assessment
 
-**Integration**: Requires USPTO PTAB MCP; enhanced with Pinecone Assistant/RAG MCP for MPEP guidance
+**Integration**: Requires USPTO PTAB MCP + Citations MCP + FPD MCP; enhanced with Pinecone Assistant/RAG MCP for MPEP guidance
 
 ## 📊 Prosecution & Research Templates
 
@@ -147,21 +149,23 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 
 ## 📁 Document Management Templates
 
-### `/complete_patent_package` - Comprehensive Document Retrieval
+### `/complete_patent_package_retrieval_PTAB_FPD` - Comprehensive Document Retrieval
 **Purpose**: Systematically retrieve complete patent documentation
 **Key Features**:
+- **Cross-MCP intelligence**: Integrates PFW + PTAB + FPD data
+- **Red flag analysis**: Identifies PTAB vulnerabilities and FPD petition risks
+- **Package type selection**: Basic (4 docs) / Prosecution (10-15 docs) / Full (20-40 docs)
 - **Organized downloads**: Structured metadata with proxy download URLs
-- **Intelligent component selection**: Auto-selects optimal document versions
 - **Professional filenames**: Attorney-friendly naming conventions
-- **Metadata extraction**: Complete bibliographic and prosecution data
+- **Status tracking**: Real-time download progress and completion status
 
 **Use Cases**:
-- Due diligence document packages for M&A
-- Litigation discovery document compilation
-- Patent portfolio auditing and organization
-- Client deliverable preparation
+- Due diligence document packages with risk assessment
+- Litigation discovery with PTAB/FPD intelligence
+- Patent portfolio auditing with cross-MCP insights
+- Client deliverable preparation with comprehensive analysis
 
-**Integration**: Uses `pfw_get_granted_patent_documents_download` for one-call retrieval
+**Integration**: Requires USPTO PTAB MCP + FPD MCP for comprehensive intelligence
 
 ---
 
@@ -198,6 +202,42 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 - Patent prosecution strategy based on inventor history
 
 **Integration**: Uses multi-strategy inventor search capabilities
+
+---
+
+### `/examiner_behavior_intelligence_CITATION` - Citation Pattern Intelligence
+**Purpose**: Deep analysis of examiner citation patterns and prosecution strategies
+**Key Features**:
+- **Citation effectiveness tracking**: Analyzes which prior art references work with specific examiners
+- **Prosecution strategy optimization**: Identifies examiner preferences for argument types
+- **Allowance pattern recognition**: Maps examiner decision-making across technology areas
+- **Data-driven approach**: Leverages Citations MCP (Oct 2017+) for statistical analysis
+
+**Use Cases**:
+- Tailoring prosecution strategy to specific examiners
+- Predicting likelihood of allowance based on examiner history
+- Preparing targeted examiner interviews
+- Analyzing art unit prosecution patterns
+
+**Integration**: Requires USPTO Citations MCP for citation effectiveness data
+
+---
+
+### `/prior_art_analysis_CITATION` - Citation-Enhanced Prior Art Analysis
+**Purpose**: Advanced prior art analysis using examiner citation intelligence
+**Key Features**:
+- **Citation effectiveness scoring**: Identifies which prior art types are most effective
+- **Examiner decision intelligence**: Analyzes how examiners use citations in rejections
+- **Strategic prior art selection**: Recommends optimal prior art based on examiner patterns
+- **Prosecution history correlation**: Links citation patterns to allowance outcomes
+
+**Use Cases**:
+- IDS submission strategy optimization
+- Preparing stronger invalidity arguments
+- Understanding examiner prior art preferences
+- Analyzing effectiveness of cited references
+
+**Integration**: Requires USPTO Citations MCP for citation pattern analysis
 
 ## 🔧 Input Processing Features
 
@@ -252,18 +292,20 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 | **Art Unit Quality Assessment** | **Required** | Optional | Optional | Optional | **Petition correlation** |
 | **Litigation Research Setup** | **Required** | Optional | **Required** | Recommended | **Multi-database prep** |
 | **Technology Landscape Mapping** | Optional | Optional | **Required** | Optional | **Risk assessment** |
-| Complete Patent Package | Optional | Optional | Optional | Optional | Document enhancement |
+| **Complete Patent Package Retrieval** | **Required** | Optional | **Required** | Optional | **Cross-MCP intelligence** |
 | Document Filtering Assistant | Optional | Optional | Optional | Optional | Context optimization |
 | Inventor Portfolio Analysis | Optional | Optional | Optional | Optional | Research enhancement |
-| **Patent Invalidity Analysis** | Recommended | Recommended | **Required** | **Recommended** | **Comprehensive defense** |
+| **Patent Invalidity Analysis Defense** | **Required** | **Required** | **Required** | **Required** | **5-MCP comprehensive defense** |
+| **Examiner Behavior Intelligence** | Optional | **Required** | Optional | Optional | **Citation pattern analysis** |
+| **Prior Art Analysis** | Optional | **Required** | Optional | Optional | **Citation effectiveness** |
 
 ## 🎯 Usage Recommendations
 
 ### For Patent Attorneys
 - **Start with `/patent_search`** for initial discovery when working with incomplete information
-- **Use `/patent_invalidity_analysis_defense_pinecone_PTAB`** for comprehensive defensive litigation analysis
+- **Use `/patent_invalidity_analysis_defense_Pinecone_PTAB_FPD_Citations`** for comprehensive defensive litigation analysis
 - **Apply `/art_unit_quality_assessment_FPD`** for prosecution strategy optimization
-- **Leverage `/complete_patent_package`** for organized client deliverables
+- **Leverage `/complete_patent_package_retrieval_PTAB_FPD`** for organized client deliverables with risk assessment
 
 ### For IP Professionals
 - **Begin with `/technology_landscape_mapping_PTAB`** for competitive intelligence

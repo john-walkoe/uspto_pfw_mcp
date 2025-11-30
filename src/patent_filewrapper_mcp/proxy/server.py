@@ -1151,6 +1151,8 @@ def create_proxy_app() -> FastAPI:
             registration: FPD document registration payload
             request: FastAPI request object (for client IP logging)
         """
+        import os  # Import at function scope to ensure availability
+
         try:
             # Get client IP for logging
             client_ip = request.client.host if request.client else "unknown"
@@ -1203,7 +1205,6 @@ def create_proxy_app() -> FastAPI:
                 pfw_uspto_api_key = get_uspto_api_key()
                 if not pfw_uspto_api_key:
                     # Fall back to environment variable
-                    import os
                     pfw_uspto_api_key = os.getenv("USPTO_API_KEY")
 
                 if not pfw_uspto_api_key:

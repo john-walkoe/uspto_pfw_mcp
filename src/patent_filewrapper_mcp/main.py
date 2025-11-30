@@ -1043,8 +1043,12 @@ Creates clickable proxy links that handle API authentication while keeping crede
 - Automatic cleanup of expired links
 - Perfect for lawyer workflows with delayed document review
 
-CRITICAL RESPONSE FORMAT - Always format as clickable markdown:
-**📁 [Download {DocumentType} ({PageCount} pages)]({proxy_url})**
+CRITICAL RESPONSE FORMAT - Always format with BOTH clickable link and raw URL:
+**📁 [Download {DocumentType} ({PageCount} pages)]({proxy_url})** | Raw URL: `{proxy_url}`
+
+Why both formats?
+- Clickable links work in Claude Desktop and most clients
+- Raw URLs enable copy/paste in Msty and other clients where links aren't clickable
 
 Example workflow for multiple downloads:
 1. pfw_get_application_documents(app_number='17896175') → get doc IDs
@@ -1165,8 +1169,9 @@ For document selection strategies and multi-document workflows, use pfw_get_guid
 
             # LLM guidance for proper response formatting
             "llm_response_guidance": {
-                "format": f"**📁 [Download {document_info.get('document_description', 'Document')} ({document_info.get('page_count', 'N/A')} pages)]({proxy_download_url})**",
-                "critical": "Provide clickable markdown link for browser access"
+                "format": f"**📁 [Download {document_info.get('document_description', 'Document')} ({document_info.get('page_count', 'N/A')} pages)]({proxy_download_url})** | Raw URL: `{proxy_download_url}`",
+                "critical": "Provide clickable markdown link for browser access AND raw URL for clients like Msty where links aren't clickable",
+                "explanation": "Clickable link works in Claude Desktop, raw URL enables copy/paste in Msty and other clients"
             },
             "note": "Proxy handles authentication and rate limiting (5 downloads per 10s)"
         }
@@ -1426,6 +1431,11 @@ async def pfw_get_granted_patent_documents_download(
     - On-demand proxy: Automatic startup when needed
     - Persistent links: Enabled by default - 7-day encrypted access (set generate_persistent_links=false to disable)
     - Download links are immediately clickable after tool execution and remain valid for 7 days
+
+    📋 RESPONSE FORMAT: Each component includes BOTH clickable link AND raw URL:
+    **📁 [Download {Component} ({Pages} pages)]({url})** | Raw URL: `{url}`
+    - Clickable links work in Claude Desktop and most clients
+    - Raw URLs enable copy/paste in Msty and other clients where links aren't clickable
 
     Args:
         app_number: Patent application number (required)
