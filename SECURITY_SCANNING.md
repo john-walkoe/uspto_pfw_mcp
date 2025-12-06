@@ -39,6 +39,29 @@ The project uses multiple security scanning technologies:
 - USPTO API bypass attempts ("bypass API restrictions")
 - Examiner information disclosure ("reveal examiner names")
 - Social engineering patterns ("we became friends")
+- **Unicode steganography attacks** (Variation Selectors, zero-width characters)
+
+### Unicode Steganography Detection (Enhanced Security)
+
+The enhanced detector now includes comprehensive Unicode steganography detection to counter advanced threats like the Repello AI emoji injection attack:
+
+**Detection Capabilities:**
+- **Variation Selector Encoding**: Detects VS0/VS1 (U+FE00/U+FE01) binary encoding in emojis
+- **Zero-Width Character Abuse**: Identifies suspicious use of invisible Unicode characters
+- **High Invisible Character Ratios**: Flags content with >10% invisible-to-visible character ratios
+- **Binary Pattern Recognition**: Detects 8+ bit sequences that could encode hidden messages
+
+**Attack Patterns Detected:**
+- Emoji steganography (like "Hello!" with hidden binary-encoded messages)
+- Zero-width space injection for text manipulation
+- Invisible Unicode character abuse for bypassing filters
+- Binary steganography using Variation Selectors
+
+**Examples of Detected Threats:**
+- `"Hello!" + hidden_binary_message` - Appears innocent but contains malicious instructions
+- Text with embedded zero-width characters for prompt manipulation
+- Emoji sequences with suspicious Variation Selector patterns
+- High ratios of invisible formatting characters
 
 ## Setup
 
