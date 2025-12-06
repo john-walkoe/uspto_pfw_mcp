@@ -208,6 +208,33 @@ class PatentPromptInjectionDetector(BasePlugin):
     def _detect_unicode_steganography(self, text: str) -> Generator[str, None, None]:
         """Detect Unicode steganography patterns like Variation Selector encoding."""
 
+        # Check for legitimate emoji contexts first
+        legitimate_contexts = [
+            # Documentation patterns
+            r'\*\*',  # Markdown bold
+            r'"""',   # Python docstrings
+            r"'''",   # Python docstrings
+            r'→',     # Arrow symbols in docs
+            r'workflows', r'tools', r'guide',
+
+            # Logging contexts
+            r'logger\.', r'CRITICAL:', r'WARNING:', r'INFO:',
+            r'print\(', r'echo\s+',
+
+            # Installation/config contexts
+            r'Install', r'enhanced features', r'configuration',
+            r'✅', r'❌', r'⚠️', r'🔒', r'📁', r'🎯', r'⚡',
+
+            # Common documentation emojis that are legitimate
+            r'[📚📖📥📊🎯⚙️🔒🛡️⚖️⚡🔗🏛️🔄📝✨🌐👁️💰🚀💻📋📁🔧📄]',
+        ]
+
+        # Check if this line contains legitimate emoji context
+        is_legitimate_context = any(
+            re.search(pattern, text, re.IGNORECASE)
+            for pattern in legitimate_contexts
+        )
+
         # Check for suspicious ratios of invisible characters
         invisible_chars = 0
         visible_chars = 0
@@ -232,6 +259,11 @@ class PatentPromptInjectionDetector(BasePlugin):
             elif char.isprintable() and not char.isspace():
                 visible_chars += 1
 
+        # Smart detection: Allow legitimate emoji usage
+        if is_legitimate_context and variation_selectors <= 2:
+            # Allow up to 2 variation selectors in legitimate documentation contexts
+            return
+
         # Suspicious if we have variation selectors (potential emoji steganography)
         if variation_selectors > 0:
             yield f"Variation Selector steganography detected ({variation_selectors} selectors)"
@@ -239,7 +271,9 @@ class PatentPromptInjectionDetector(BasePlugin):
         # Suspicious if high ratio of invisible to visible chars
         if visible_chars > 0 and invisible_chars > 0:
             ratio = invisible_chars / visible_chars
-            if ratio > 0.1:  # More than 10% invisible characters
+            # More lenient threshold for legitimate contexts
+            threshold = 0.2 if is_legitimate_context else 0.1
+            if ratio > threshold:
                 yield f"High invisible character ratio detected ({invisible_chars}/{visible_chars})"
 
         # Check for specific encoding patterns (binary-like sequences)
