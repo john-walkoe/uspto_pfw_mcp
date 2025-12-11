@@ -33,7 +33,7 @@ Follow these steps to obtain your API keys:
 - Verification options: Self-service or Video Call
 - See: https://help.id.me/hc/en-us/articles/360051696334-Upload-your-ID-documents-to-ID-me
 
-![ID.me Verification Options](documentation_photos\USPTO-API_1.jpg)
+![ID.me Verification Options](documentation_photos/USPTO-API_1.jpg)
 
 ---
 
@@ -42,11 +42,11 @@ Follow these steps to obtain your API keys:
 5. Once both your USPTO.gov account and ID.me verification are complete, return to https://data.uspto.gov/myodp/landing
 6. Click the button **"Log in using USPTO.gov account"** in the section "I have a USPTO.gov account, and it's verified with ID.me"
 
-![USPTO Login Button](documentation_photos\USPTO-API_2.jpg)
+![USPTO Login Button](documentation_photos/USPTO-API_2.jpg)
 
 7. Once logged in, you should see your API Key displayed on the dashboard
 
-![USPTO API Key Dashboard](documentation_photos\USPTO-API_3.jpg)
+![USPTO API Key Dashboard](documentation_photos/USPTO-API_3.jpg)
 
 ---
 
@@ -79,7 +79,7 @@ Follow these steps to obtain your API keys:
    - Receive verification email
    - Enter the code from the email
 
-![Mistral Login Options](documentation_photos\Mistral_API_1.jpg)
+![Mistral Login Options](documentation_photos/Mistral_API_1.jpg)
 
 ---
 
@@ -89,7 +89,7 @@ Follow these steps to obtain your API keys:
 4. Create your organization
 5. Read and accept the Terms of Service and Privacy Policy
 
-![Mistral Organization Setup](documentation_photos\Mistral_API_2.jpg)
+![Mistral Organization Setup](documentation_photos/Mistral_API_2.jpg)
 
 ---
 
@@ -98,11 +98,11 @@ Follow these steps to obtain your API keys:
 6. Navigate to API Keys section
 7. Click **"Choose a plan"**
 
-![Choose Plan Button](documentation_photos\Mistral_API_3.jpg)
+![Choose Plan Button](documentation_photos/Mistral_API_3.jpg)
 
 8. Review available plans and select the one that fits your needs
 
-![Mistral Plans](documentation_photos\Mistral_API_4.jpg)
+![Mistral Plans](documentation_photos/Mistral_API_4.jpg)
 
 9. Read and accept the Terms of Service and Privacy Policy (only if you agree)
 
@@ -124,7 +124,7 @@ Then the **free tier may not be appropriate** due to the terms of service statin
 
 10. Verify your phone number
 
-![Phone Verification](documentation_photos\Mistral_API_5.jpg)
+![Phone Verification](documentation_photos/Mistral_API_5.jpg)
 
 ---
 
@@ -132,14 +132,14 @@ Then the **free tier may not be appropriate** due to the terms of service statin
 
 11. Return to API Keys section - the **"Create new key"** button should now be clickable
 
-![Create New Key Button](documentation_photos\Mistral_API_6.jpg)
+![Create New Key Button](documentation_photos/Mistral_API_6.jpg)
 
 12. Fill out the key creation form:
     - **Key name**: Descriptive name (e.g., "USPTO PFW MCP OCR")
     - **Workspace**: Select appropriate workspace (e.g., "Default Workspace")
     - **Expiration**: Optional but recommended for security
 
-![Key Creation Form](documentation_photos\Mistral_API_7.jpg)
+![Key Creation Form](documentation_photos/Mistral_API_7.jpg)
 
 13. Click **"Create new key"**
 
@@ -149,7 +149,7 @@ Then the **free tier may not be appropriate** due to the terms of service statin
 
 14. Copy your API Key immediately - **it is only displayed once**
 
-![API Key Display](documentation_photos\Mistral_API_8.jpg)
+![API Key Display](documentation_photos/Mistral_API_8.jpg)
 
 15. Store the key in a secure location
 
