@@ -50,6 +50,8 @@ Thumbs.db
 *API_KEY*
 # Exception for API key management scripts (no actual keys)
 !*manage_api_keys*
+# Exception for API key documentation (no actual keys)
+!API_KEY_GUIDE.md
 *.key
 secrets.json
 .env.local
