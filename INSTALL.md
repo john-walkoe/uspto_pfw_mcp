@@ -33,7 +33,7 @@ Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process
 The PowerShell script will:
 - ✅ Check for and auto-install uv (via winget or PowerShell script)
 - ✅ Install dependencies and create executable
-- ✅ Prompt for USPTO API key (required) and Mistral API key (optional)
+- ✅ Prompt for USPTO API key (required) and Mistral API key (optional) - See **[API_KEY_GUIDE.md](API_KEY_GUIDE.md)** for detailed API key setup instructions
 - 🔒 **Automatically store API keys securely using Windows DPAPI encryption**
 - ✅ Ask if you want Claude Desktop integration configured
 - 🔒 **Offer secure configuration method (recommended) or traditional method**
@@ -318,7 +318,7 @@ The Linux script will:
 
 - ✅ Check for and auto-install uv package manager
 - ✅ Install dependencies and create executable
-- ✅ Prompt for USPTO API key (required) and Mistral API key (optional)
+- ✅ Prompt for USPTO API key (required) and Mistral API key (optional) - See **[API_KEY_GUIDE.md](API_KEY_GUIDE.md)** for detailed API key setup instructions
 - ✅ Ask if you want Claude Code integration configured
 - ✅ Automatically merge with existing Claude Code config (preserves other MCP servers)
 - ✅ Create timestamped backups before modifying existing configs
@@ -555,7 +555,7 @@ The n8n integration enables powerful automation workflows combining USPTO patent
 ### Environment Variables
 
 **Required:**
-- `USPTO_API_KEY`: Your USPTO Open Data Portal API key (required, free from [USPTO Open Data Portal](https://data.uspto.gov/myodp/))
+- `USPTO_API_KEY`: Your USPTO Open Data Portal API key (required, free from [USPTO Open Data Portal](https://data.uspto.gov/myodp/)) - See **[API_KEY_GUIDE.md](API_KEY_GUIDE.md)** for step-by-step setup instructions
 
 **Optional with defaults:**
 - `MISTRAL_API_KEY`: For OCR on scanned documents (Default: none - uses free PyPDF2 extraction)
@@ -644,8 +644,8 @@ claude mcp add uspto_pfw -s user \
 ### Prerequisites
 
 - **uv Package Manager** - Handles Python installation automatically
-- **USPTO API Key** (required) - Free from [USPTO Open Data Portal](https://data.uspto.gov/myodp/)
-- **Mistral API Key** (optional) - For OCR functionality from [Mistral AI](https://mistral.ai/solutions/document-ai)
+- **USPTO API Key** (required) - Free from [USPTO Open Data Portal](https://data.uspto.gov/myodp/) - See **[API_KEY_GUIDE.md](API_KEY_GUIDE.md)** for step-by-step setup instructions
+- **Mistral API Key** (optional) - For OCR functionality from [Mistral AI](https://mistral.ai/solutions/document-ai) - See **[API_KEY_GUIDE.md](API_KEY_GUIDE.md)** for setup instructions
 - **Claude Desktop or Claude Code** - For MCP integration
 
 > **Note:** The Mistral API key is optional. Without it, document extraction uses free PyPDF2 (works for text-based PDFs). With it, OCR is available for scanned documents (~$0.001/page).

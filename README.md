@@ -12,6 +12,7 @@ A high-performance Model Context Protocol (MCP) server for the USPTO Patent File
 | Document | Description |
 |----------|-------------|
 | **[📥 Installation Guide](INSTALL.md)** | Complete cross-platform setup with automated scripts |
+| **[🔑 API Key Guide](API_KEY_GUIDE.md)** | Step-by-step instructions for obtaining USPTO and Mistral API keys with screenshots |
 | **[📖 Usage Examples](USAGE_EXAMPLES.md)** | Function examples, workflows, and integration patterns |
 | **[🎯 Prompt Templates](PROMPTS.md)** | Detailed guide to sophisticated prompt templates for legal & research workflows |
 | **[⚙️ Field Customization](CUSTOMIZATION.md)** | Comprehensive guidance on customizing field sets for the minimal and balanced tools |
@@ -720,6 +721,14 @@ The author makes no representations or warranties, express or implied, including
 - [Claude](https://claude.ai)
 - [uv Package Manager](https://github.com/astral-sh/uv)
 - [Mistral OCR](https://mistral.ai/solutions/document-ai)
+
+## 💝 Support This Project
+
+If you find this USPTO Patent File Wrapper MCP Server useful, please consider supporting the development! This project was developed during my personal time over many hours to provide a comprehensive, production-ready tool for the patent community.
+
+[![Donate with PayPal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://paypal.me/walkoe)
+
+Your support helps maintain and improve this open-source tool for everyone in the patent community. Thank you!
 
 ##  Acknowledgments
 
