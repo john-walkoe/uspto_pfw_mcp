@@ -99,6 +99,15 @@ Common prompt injection patterns detected:
         print("No files specified. Use --help for usage.", file=sys.stderr)
         return 2
 
+    def safe_print(text):
+        """Print text with Unicode character handling for Windows console"""
+        try:
+            print(text)
+        except UnicodeEncodeError:
+            # Replace problematic Unicode characters with their representation
+            safe_text = text.encode('ascii', errors='replace').decode('ascii')
+            print(safe_text)
+
     detector = PatentPromptInjectionDetector()
     total_issues = 0
     total_files_checked = 0
@@ -128,11 +137,11 @@ Common prompt injection patterns detected:
                     print(f"\n[!] Prompt injection patterns found in {file_path}:")
                     for line_num, match in findings:
                         if args.verbose:
-                            print(f"  Line {line_num:4d}: {match}")
+                            safe_print(f"  Line {line_num:4d}: {match}")
                         else:
                             # Truncate long matches
                             display_match = match[:60] + "..." if len(match) > 60 else match
-                            print(f"  Line {line_num:4d}: {display_match}")
+                            safe_print(f"  Line {line_num:4d}: {display_match}")
 
     # Summary
     if not args.quiet or total_issues > 0:
