@@ -153,7 +153,7 @@ for patent in granted:
     patent_num = patent.get('applicationMetaData', {{}}).get('patentNumber')
     if patent_num:
         try:
-            ptab_results = await ptab_search_proceedings_minimal(
+            ptab_results = await ptab_search_proceedings_minimal(  # Wrapper for search_trials_minimal
                 patent_number=patent_num,
                 limit=5
             )

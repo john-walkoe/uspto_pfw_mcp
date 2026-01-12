@@ -622,76 +622,82 @@ if len(vulnerabilities) > 1:
 - Evaluating whether to file IPR/PGR/CBM
 
 **Tools:**
-1. Search for PTAB proceedings:
+1. Search for PTAB trials (discovery phase):
    ```python
    # Check for IPR/PGR proceedings on target patent
-   ptab_search_trials(
+   trials = search_trials_minimal(
        patent_number='10123456',
        limit=10
    )
 
-   # Search by technology area for analogous cases
-   ptab_search_trials(
-       query='software authentication blockchain',
+   # Search by patent owner for portfolio risk assessment
+   trials = search_trials_minimal(
+       patent_owner_name='Example Corp',
+       trial_type='IPR',
        limit=20
    )
 
-   # Find trials involving same patent owner
-   ptab_search_trials(
-       patent_owner='Example Corp',
-       limit=15
-   )
-   ```
-
-2. Retrieve trial details:
-   ```python
-   # Get comprehensive trial information
-   ptab_get_trial_details(
-       trial_number='IPR2023-00123'
-   )
-   ```
-
-3. Analyze trial documents:
-   ```python
-   # Get petition, institution decision, final written decision
-   ptab_get_trial_documents(
-       trial_number='IPR2023-00123',
+   # Technology area analysis for precedents
+   trials = search_trials_minimal(
+       tech_center='2600',
+       trial_type='IPR',
+       filing_date_from='2022-01-01',
        limit=50
    )
    ```
 
-4. Search for precedential decisions (if trials found):
+2. Get detailed trial information (analysis phase):
    ```python
-   # Search for decisions related to this proceeding
-   ptab_search_decisions(
-       proceeding_number='IPR2023-00123',  # If specific trial found
-       limit=10
+   # Comprehensive trial details with all metadata
+   details = search_trials_balanced(
+       trial_number='IPR2023-00123',
+       limit=1
    )
 
-   # Or search by technology for precedential guidance
-   ptab_search_decisions(
-       search_text='software authentication eligibility',
-       issue_types=['103'],  # 35 USC 103 obviousness
-       limit=10
+   # Extract key information:
+   # - trialMetaData.trialStatusCategory (current status)
+   # - institutionDecisionData (institution decision details)
+   # - finalWrittenDecisionData (FWD outcome if available)
+   # - petitionerData, patentOwnerData (party information)
+   ```
+
+3. Retrieve and analyze trial documents:
+   ```python
+   # List all documents for the trial
+   docs = ptab_get_documents(
+       identifier='IPR2023-00123',
+       identifier_type='trial'
    )
 
-   # Or search for decisions on specific patent
-   ptab_search_decisions(
-       patent_number='10123456',
-       limit=10
+   # Get browser download links for key documents
+   petition_download = ptab_get_document_download(
+       document_id=docs['documents'][0]['document_id'],
+       identifier='IPR2023-00123',
+       identifier_type='trial'
+   )
+
+   # Extract text for LLM analysis (Final Written Decision)
+   fwd_text = ptab_get_document_content(
+       document_id=fwd_doc_id,
+       identifier='IPR2023-00123',
+       identifier_type='trial',
+       use_ocr='auto'  # PyPDF2 first, Mistral OCR fallback
    )
    ```
 
 **Analysis Points:**
 - **Prior Challenges:** Has this patent survived PTAB before?
 - **Claim Construction:** How did PTAB construe key claim terms?
-- **Prior Art Applied:** What references were successful/unsuccessful?
-- **Estoppel Issues:** Are certain grounds now foreclosed?
-- **Precedential Decisions:** What PTAB precedents apply to this technology?
-- **Strategic Insights:** Learn from previous petitioner mistakes
+- **Prior Art Applied:** What references were successful/unsuccessful at PTAB vs prosecution?
+- **Institution Decision:** Which grounds were instituted vs denied?
+- **Final Written Decision:** Which claims survived? Which were invalidated?
+- **Estoppel Issues:** Are certain grounds now foreclosed due to prior PTAB proceedings?
+- **Settlement Patterns:** Did parties settle before FWD? Common in this tech area?
 
-**Cross-Reference with PFW:**
-- Compare PTAB claim constructions with prosecution history
+**Cross-MCP Integration:**
+- Compare PTAB prior art to prosecution citations (PFW + Citations MCP)
+- Check if examiner considered same references (different reasoning?)
+- Analyze prosecution arguments that could strengthen PTAB defense
 - Identify amendments made during reexamination
 - Check for post-grant modifications (certificates of correction)
 
@@ -1367,7 +1373,7 @@ The examiner finds that the combination of references would not have been obviou
 **4C. PTAB Proceedings Check**
 
 ```python
-ptab_search_trials(
+search_trials_minimal(
     patent_number='10123456',
     limit=10
 )

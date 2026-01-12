@@ -193,7 +193,7 @@ for company, patent_count in top_companies:
         patent_num = app.get('applicationMetaData', {{}}).get('patentNumber')
         if patent_num:
             try:
-                ptab_results = await ptab_search_proceedings_minimal(
+                ptab_results = await ptab_search_proceedings_minimal(  # Wrapper for search_trials_minimal
                     patent_number=patent_num,
                     limit=5
                 )
@@ -207,6 +207,12 @@ for company, patent_count in top_companies:
         print(f"- **{{company}}**: {{ptab_count}} PTAB challenges on {{patent_count}} patents ({{challenge_rate:.0f}}% challenge rate)")
     else:
         print(f"- **{{company}}**: No PTAB challenges found")
+
+# Historical technology context (pre-AIA, rare but valuable for older tech)
+interferences = await search_interferences_minimal(
+    patent_number=patent_num,
+    limit=5
+)
 ```
 
 ### Step 8: FPD Prosecution Difficulty Analysis

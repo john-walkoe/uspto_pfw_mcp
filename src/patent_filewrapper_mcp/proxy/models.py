@@ -118,8 +118,8 @@ class PTABDocumentRegistration(BaseModel):
     )
     proceeding_number: str = Field(
         ...,
-        description="PTAB proceeding number (AIA Trials: IPR2025-00895, PGR2025-00456; Appeals: 2025000950)",
-        min_length=10,
+        description="PTAB proceeding number (AIA Trials: IPR2025-00895, PGR2025-00456; Appeals: 2025000950; Interferences: 106048)",
+        min_length=6,
         max_length=15
     )
     document_identifier: str = Field(
@@ -204,17 +204,25 @@ class PTABDocumentRegistration(BaseModel):
         """Validate PTAB proceeding number format"""
         import re
 
+        # Normalize: remove commas (interferences may use comma separators)
+        normalized = v.replace(',', '')
+
         # AIA Trials: TYPE[4-digit-year]-[5-digit-number]
         aia_trial_pattern = r'^(IPR|PGR|CBM|DER)\d{4}-\d{5}$'
-        if re.match(aia_trial_pattern, v.upper()):
-            return v.upper()
+        if re.match(aia_trial_pattern, normalized.upper()):
+            return normalized.upper()
 
         # Appeals: 10-digit numeric (e.g., 2025000950)
         appeal_pattern = r'^\d{10}$'
-        if re.match(appeal_pattern, v):
-            return v  # Keep numeric format as-is
+        if re.match(appeal_pattern, normalized):
+            return normalized  # Keep numeric format as-is
 
-        raise ValueError('Proceeding number must match format: AIA Trials (IPR2025-00895, PGR2025-00456) or Appeals (2025000950)')
+        # Interferences: 6-digit numeric (e.g., 106048)
+        interference_pattern = r'^\d{6}$'
+        if re.match(interference_pattern, normalized):
+            return normalized  # Keep numeric format as-is
+
+        raise ValueError('Proceeding number must match format: AIA Trials (IPR2025-00895), Appeals (2025000950), or Interferences (106048)')
 
 
 class PTABDocumentRegistrationResponse(BaseModel):

@@ -2387,17 +2387,28 @@ def _get_workflows_ptab_section() -> str:
     """PTAB integration workflows"""
     return """## PTAB Integration Workflows
 
-### PTAB to PFW Linking
-**Scenario:** Starting from PTAB proceeding, need prosecution history
+### PTAB Identifier Formats
+**Trials** (IPR/PGR/CBM/DER): `IPR2025-00895`, `PGR2025-00456`, `CBM2025-00789`, `DER2025-00012`
+**Appeals**: `2025000943` (10-digit numeric, NO hyphens)
+**Interferences**: `106048` (6-digit numeric)
+
+### PTAB to PFW Linking (Trials Focus)
+**Scenario:** Starting from PTAB trial proceeding, need prosecution history
 
 **Workflow:**
-1. **Find PTAB proceeding**: `ptab_search_proceedings_balanced(patent_number='11123456')`
-2. **Extract application number** from PTAB metadata (`applicationNumberText`)
-3. **Get prosecution history**: `search_applications_balanced(query='applicationNumberText:16123456')`
-4. **Document analysis**: `get_application_documents(app_number='16123456')`
-5. **Compare reasoning**: Extract NOA vs PTAB decision analysis
+1. **Find PTAB trial**: `search_trials_balanced(patent_number='11123456')`
+2. **Extract application number** from trial metadata (`respondentData.applicationNumber`)
+3. **Get prosecution history**: `pfw_search_applications_balanced(query='applicationNumberText:16123456')`
+4. **Document analysis**: `pfw_get_application_documents(app_number='16123456')`
+5. **Compare reasoning**: Extract NOA vs PTAB Institution/FWD analysis
 
-**Key Fields:** applicationNumberText, patentNumber, examinerNameText, groupArtUnitNumber"""
+**Key Linking Fields:**
+- `respondentData.applicationNumber` (PTAB → PFW)
+- `respondentData.patentNumber` (PTAB → PFW)
+- `applicationNumberText` (PFW → PTAB)
+- `patentNumber` (PFW → PTAB)
+
+**Appeals/Interferences**: Use `search_appeals_minimal()` or `search_interferences_minimal()` for non-trial proceedings"""
 
 def _get_workflows_fpd_section() -> str:
     """FPD integration workflows"""

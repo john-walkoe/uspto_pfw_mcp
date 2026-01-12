@@ -83,7 +83,14 @@ PHASE 3: Cross-MCP Integration
 
 **PTAB Integration**: Search for post-grant challenges
 ```python
+# IPR/PGR/CBM trials (most common for litigation)
 ptab_proceedings = await ptab_search_proceedings_balanced(patent_number=patent_number)
+
+# Ex parte appeals (if prosecution rejected)
+appeals = await search_appeals_minimal(
+    application_number=app_number,
+    limit=10
+)
 ```
 
 **FPD Integration**: Check petition history

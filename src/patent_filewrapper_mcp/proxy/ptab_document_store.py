@@ -221,6 +221,7 @@ class PTABDocumentStore:
         PTAB proceeding numbers have formats:
         - AIA Trials: IPR2025-00895, PGR2025-00456, CBM2025-00789, DER2025-00012
         - Appeals: 2025000950 (10-digit numeric)
+        - Interferences: 106048, 103751 (6-digit numeric, may have commas: 106,048)
 
         Args:
             identifier: String to check
@@ -228,14 +229,22 @@ class PTABDocumentStore:
         Returns:
             True if matches PTAB proceeding pattern
         """
+        # Normalize identifier: remove commas (interferences may use comma separators)
+        normalized = identifier.replace(',', '')
+
         # AIA Trials: TYPE[4-digit-year]-[5-digit-number]
         aia_trial_pattern = r'^(IPR|PGR|CBM|DER)\d{4}-\d{5}$'
-        if re.match(aia_trial_pattern, identifier.upper()):
+        if re.match(aia_trial_pattern, normalized.upper()):
             return True
 
         # Appeals: 10-digit numeric (e.g., 2025000950)
         appeal_pattern = r'^\d{10}$'
-        if re.match(appeal_pattern, identifier):
+        if re.match(appeal_pattern, normalized):
+            return True
+
+        # Interferences: 6-digit numeric (e.g., 106048)
+        interference_pattern = r'^\d{6}$'
+        if re.match(interference_pattern, normalized):
             return True
 
         return False

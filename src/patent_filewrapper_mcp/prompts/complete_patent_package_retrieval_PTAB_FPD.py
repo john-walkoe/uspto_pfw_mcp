@@ -255,7 +255,7 @@ except:
 # PTAB: Check for post-grant challenges (if patented)
 if patent_num:
     try:
-        ptab = await ptab_search_proceedings_minimal(
+        ptab = await ptab_search_proceedings_minimal(  # Wrapper for search_trials_minimal
             patent_number=patent_num,
             limit=10
         )
@@ -291,7 +291,8 @@ except:
 
 **PTAB MCP Integration:**
 - Tool: `ptab_search_proceedings_minimal(patent_number='...')`
-- Detects: IPR (Inter Partes Review), PGR (Post-Grant Review), CBM (Covered Business Method)
+  (Wrapper for `search_trials_minimal` - trials are most common post-grant proceedings)
+- Detects: IPR, PGR, CBM challenges
 - Red Flags: Any active or instituted challenges to patent validity
 
 **FPD MCP Integration:**
