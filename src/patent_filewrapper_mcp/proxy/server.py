@@ -512,7 +512,7 @@ def create_proxy_app() -> FastAPI:
                     "User-Agent": "USPTO-PFW-MCP/1.0 (PTAB Document Proxy)"
                 }
 
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(follow_redirects=True) as client:
                     async with client.stream("GET", download_url, headers=headers) as response:
                         response.raise_for_status()
                         async for chunk in response.aiter_bytes():
