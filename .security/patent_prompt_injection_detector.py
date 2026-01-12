@@ -121,7 +121,8 @@ class PatentPromptInjectionDetector(BasePlugin):
             r'[\u200E\u200F]',   # Left-to-right/right-to-left marks
         ]
 
-        # Compile all patterns
+        # Compile all patterns EXCEPT unicode_steganography_patterns
+        # (those are handled separately in _detect_unicode_steganography with context filtering)
         self.all_patterns = []
         pattern_groups = [
             self.instruction_override_patterns,
@@ -129,7 +130,8 @@ class PatentPromptInjectionDetector(BasePlugin):
             self.format_manipulation_patterns,
             self.patent_specific_patterns,
             self.social_engineering_patterns,
-            self.unicode_steganography_patterns
+            # NOTE: unicode_steganography_patterns NOT included here
+            # They're checked in _detect_unicode_steganography() with legitimate context filtering
         ]
 
         for group in pattern_groups:
@@ -223,6 +225,16 @@ class PatentPromptInjectionDetector(BasePlugin):
 
             # Installation/config contexts
             r'Install', r'enhanced features', r'configuration',
+
+            # Documentation emoji formatting patterns (explicit patterns first)
+            r'⚠️\s+(AVOID|WARNING|SKIP|CAUTION|NOTE|CRITICAL)',
+            r'✅\s+(DO|RECOMMENDED|SUCCESS|YES|CORRECT|GOOD)',
+            r'❌\s+(DON\'?T|AVOID|NO|FAILURE|WRONG|BAD)',
+            r'📝\s+(NOTE|NOTES|REMINDER)',
+            r'🔒\s+(SECURE|SECURITY|PRIVATE)',
+            r'[⚠️✅❌📝🔒]\s+[A-Z]{2,}:',  # Generic: emoji + CAPS WORD + colon
+
+            # Individual emoji (keep for other contexts)
             r'✅', r'❌', r'⚠️', r'🔒', r'📁', r'🎯', r'⚡',
 
             # Common documentation emojis that are legitimate
