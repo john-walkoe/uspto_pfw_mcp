@@ -4,6 +4,7 @@ FastAPI HTTP server for secure document downloads
 Provides browser-accessible download URLs while keeping USPTO API keys secure.
 """
 import logging
+import os
 from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
@@ -1317,7 +1318,6 @@ def create_proxy_app() -> FastAPI:
                 pfw_uspto_api_key = get_uspto_api_key()
                 if not pfw_uspto_api_key:
                     # Fall back to environment variable
-                    import os
                     pfw_uspto_api_key = os.getenv("USPTO_API_KEY")
 
                 if not pfw_uspto_api_key:
