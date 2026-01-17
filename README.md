@@ -113,6 +113,61 @@ The PowerShell script will:
 - **💻 Cross-Platform** - Works seamlessly on Linux and Windows
 - **📋 Complete API Coverage** - All USPTO Patent File Wrapper endpoints supported
 
+## 🔍 Tool Search Optimization (Claude Code v2.1.7+)
+
+**NEW**: PFW MCP now supports Claude Code's built-in tool search optimization, reducing context window usage by **65-75%** through dynamic tool discovery.
+
+### How It Works
+
+- **Automatic Activation**: When MCP tools exceed 10% of context, tool search activates automatically
+- **Smart Discovery**: Claude loads only essential tools upfront, discovering others on-demand via MCPSearch
+- **Token Savings**: ~8-12K tokens → ~2-3K tokens (saves 5-10K tokens for actual work)
+- **Zero Configuration**: Works out of the box with Claude Code v2.1.7+
+
+### Entry Point Tools (Always Available)
+
+These 3 tools are loaded immediately for fast access:
+
+1. **`search_applications_minimal`** - Primary discovery for patent applications
+2. **`PFW_get_guidance`** - Workflow guidance and documentation
+3. **get_application_documents** - Document lists for patent applications
+
+### Progressive Tool Discovery
+
+Claude discovers additional tools as needed:
+
+- **Tier 1 (Minimal)**: Fast, essential fields only (~10 fields)
+- **Tier 2 (Balanced)**: Common use cases (~25 fields)
+- **Tier 3 (Complete)**: All available data (~50+ fields)
+
+### Enable Tool Search
+
+If tool search isn't activating automatically:
+
+**Windows**:
+```powershell
+$env:ENABLE_TOOL_SEARCH = "true"
+claude
+```
+
+**Linux/Mac**:
+```bash
+export ENABLE_TOOL_SEARCH=true
+claude
+```
+
+### Verify It's Working
+
+Run `/context` in Claude Code:
+
+```
+MCP tools: loaded on-demand (N servers)  ← Tool search IS working
+```
+
+For complete documentation, see [PFW_TOOL_SEARCH_CONFIG.md](../Claude_Documents/PFW_TOOL_SEARCH_CONFIG.md).
+
+---
+
 ### Workflow Design - All preformed by the LLM with Minimal User Guidance
 
 **User Requests the following:**
