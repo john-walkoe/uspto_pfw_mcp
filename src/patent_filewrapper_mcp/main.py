@@ -22,7 +22,39 @@ from .util.input_processing import process_identifier_inputs, format_input_guida
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stderr)])
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("patent-filewrapper-mcp")
+# Server instructions for Claude Code tool search optimization
+# This guides Claude's MCPSearch tool to discover the right tools progressively
+SERVER_INSTRUCTIONS = """
+PFW MCP provides USPTO Patent File Wrapper data through 12 tools.
+
+ALWAYS-AVAILABLE TOOLS (non-deferred, immediate access):
+1. search_applications_minimal - Primary discovery for patent applications
+2. PFW_get_guidance - Workflow guidance and documentation
+3. get_application_documents - Document lists for patent applications
+
+PROGRESSIVE WORKFLOW:
+1. Discovery: Use search_applications_minimal or search_inventor_minimal
+2. Analysis: Search for balanced/complete search tools for detailed data
+3. Documents: Use get_application_documents to list available documents
+4. Content: Search for PFW_get_document_content_with_mistral_ocr or download tools
+5. Advanced: Search for get_patent_or_application_xml for full patent data
+
+TOOL TIERS:
+- minimal: Fast, essential fields only (~10 fields)
+- balanced: Common use cases (~25 fields)
+- complete: All available data (~50+ fields)
+
+INVENTOR SEARCH:
+- search_inventor_minimal: Find applications by inventor name
+- search_inventor_balanced: Detailed inventor attribution data
+
+DOCUMENT ACCESS:
+- PFW_get_document_content_with_mistral_ocr: OCR extraction (requires Mistral API key)
+- PFW_get_document_download: Download PDF/image documents
+- get_granted_patent_documents_download: Bulk download for granted patents
+"""
+
+mcp = FastMCP("patent-filewrapper-mcp", instructions=SERVER_INSTRUCTIONS)
 
 # API client initialization with lazy loading and fallback
 # This prevents entire server failure if API client initialization fails
