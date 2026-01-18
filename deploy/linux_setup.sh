@@ -278,7 +278,10 @@ try:
             'run',
             'patent-filewrapper-mcp'
         ],
-        'env': {}
+        'env': {
+            'PFW_PROXY_PORT': '8080',
+            'ENABLE_ALWAYS_ON_PROXY': 'true'
+        }
     }
 
     config['mcpServers']['uspto_pfw'] = server_config
@@ -322,7 +325,10 @@ try:
                     'run',
                     'patent-filewrapper-mcp'
                 ],
-                'env': {}
+                'env': {
+                    'PFW_PROXY_PORT': '8080',
+                    'ENABLE_ALWAYS_ON_PROXY': 'true'
+                }
             }
         }
     }

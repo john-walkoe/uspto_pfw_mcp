@@ -210,7 +210,7 @@ During the Windows setup, you'll be presented with two configuration methods:
 - ⚡ **Direct Python execution with built-in secure storage**
 - ✅ **No PowerShell execution policy requirements**
 
-**Example Configuration Generated:**
+**Example Quick Start Windows DPAPI Configuration Generated:**
 
 ```json
 {
@@ -220,7 +220,8 @@ During the Windows setup, you'll be presented with two configuration methods:
       "args": ["-m", "patent_filewrapper_mcp.main"],
       "cwd": "C:/Users/YOUR_USERNAME/uspto_pfw_mcp",
       "env": {
-        "PROXY_PORT": "8080"
+        "PROXY_PORT": "8080",
+        "INTERNAL_AUTH_SECRET": "[RANDOM GENERATED SHARED SECRET ACROSS ALL AUTHOR'S USPTO MCPS]"
       }
     }
   }
@@ -234,7 +235,7 @@ During the Windows setup, you'll be presented with two configuration methods:
 - ⚡ **Direct Python execution**
 - ✅ **Simpler setup**
 
-**Example Configuration Generated:**
+**Example Quick Start Windows Traditional Configuration Generated:**
 
 ```json
 {
@@ -428,7 +429,7 @@ Checking MCP server health...
 uspto_pfw: uv --directory /USER/uspto_pfw_mcp run patent-filewrapper-mcp - ✓ Connected
 ```
 
-**Example Configuration Generated:**
+**Example Quick Start Linux Configuration Generated:**
 
 ```json
 {
@@ -443,9 +444,8 @@ uspto_pfw: uv --directory /USER/uspto_pfw_mcp run patent-filewrapper-mcp - ✓ C
         "patent-filewrapper-mcp"
       ],
       "env": {
-        "USPTO_API_KEY": "your_actual_api_key_here",
-        "MISTRAL_API_KEY": "your_mistral_api_key_here_OPTIONAL",
-        "PROXY_PORT": "8080"
+        "PROXY_PORT": "8080",
+        "ENABLE_ALWAYS_ON_PROXY": "true"
       }
     }
   }
@@ -499,7 +499,13 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
 
    n8n MCP Configuration Example
 
-   ![n8n Patent File Wrapper Interface](documentation_photos/n8n_PFW.jpg)
+   **Environment Variables Configuration (Installed using Linux Quick Start Script):**
+
+   ![n8n PFW Environment Variables](documentation_photos/n8n_PFW_1.jpg)
+
+   **Complete Configuration with API Keys (When installed using traditional PIP Install):**
+
+   ![n8n Patent File Wrapper Interface](documentation_photos/n8n_PFW_2.jpg)
 
    - **Connection Type**: `Command-line Based Transport (STDIO)`
    - **Command**: `/home/YOUR_USERNAME/uspto_pfw_mcp/.venv/bin/patent-filewrapper-mcp` (see below step 4 on how to get)
@@ -532,14 +538,18 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
    Use this full path as your command in the n8n MCP configuration.
 
 5. **Add MCP Client Node:**
+
    - In n8n workflow editor, add "MCP Client (STDIO) API" node
    - Select your configured credentials
    - Choose operation (List Tools, Execute Tool, etc.)
 
 6. **Test Connection:**
+
+   ![n8n Execute Tool Operation](documentation_photos/n8n_PFW_3.jpg)
+
    - Use "List Tools" operation to see available USPTO PFW functions
-   - Use "Execute Tool" operation with `pfw_search_applications_minimal`
-   - Parameters example: `{"query": "artificial intelligence", "limit": 5}`
+   - Use "Execute Tool" operation with `search_applications_minimal`
+   - Parameters example: `{"query": "patentNumber:10701173"}`
 
 ### Example n8n Workflow Use Cases
 
@@ -768,7 +778,8 @@ Then use this Claude Desktop config:
       ],
       "env": {
         "USPTO_API_KEY": "your_actual_api_key_here",
-        "MISTRAL_API_KEY": "your_mistral_api_key_here_OPTIONAL"
+        "MISTRAL_API_KEY": "your_mistral_api_key_here_OPTIONAL",
+        "PROXY_PORT": "8080"
       }
     }
   }

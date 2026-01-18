@@ -28,7 +28,7 @@ This document details the sophisticated prompt templates included with the USPTO
 
    ![Step 4 - Fill in parameters](documentation_photos/Prompts-Step4.jpg)
 
-5. **Execute** - Claude will automatically run the complete workflow
+5. **Execute - (Recommendation: Type in "Perform the Prompt" before hitting Execute)** - Claude will automatically run the complete workflow
 
    ![Step 5 - Execute workflow](documentation_photos/Prompts-Step5.jpg)
 
