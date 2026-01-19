@@ -9,14 +9,15 @@ import sys
 import os
 import logging
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # Add the source directory to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(current_dir, 'src')
 sys.path.insert(0, src_dir)
+
+from patent_filewrapper_mcp.shared.safe_logger import get_safe_logger
+
+# Set up logging
+logger = get_safe_logger(__name__)
 
 def main():
     """Main entry point for standalone launcher"""

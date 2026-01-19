@@ -14,8 +14,9 @@ from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
 
 from ..models.constants import IdentifierType
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 @dataclass

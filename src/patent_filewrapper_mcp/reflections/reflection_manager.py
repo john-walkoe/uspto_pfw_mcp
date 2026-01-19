@@ -9,8 +9,9 @@ import logging
 from typing import Dict, List, Optional, Any
 from .base_reflection import BaseReflection
 from .pfw_reflections import PFWReflection
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 class ReflectionManager:

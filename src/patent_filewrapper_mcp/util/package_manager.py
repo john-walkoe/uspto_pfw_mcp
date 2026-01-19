@@ -15,8 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from ..models.constants import DocumentDirection
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 @dataclass

@@ -8,8 +8,9 @@ from typing import Dict, Any, List, Optional
 
 from ..exceptions import ValidationError
 from .field_constants import USPTOFields, QueryFieldNames
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 def validate_app_number(app_number: str) -> str:
     """

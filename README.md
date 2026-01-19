@@ -492,7 +492,8 @@ uspto_pfw_mcp/
 ├── launcher.py                     # Entry point launcher
 ├── .security/                      # Security scanning components
 │   ├── patent_prompt_injection_detector.py # Enhanced prompt injection detection
-│   └── check_prompt_injections.py # Standalone scanning script
+│   ├── check_prompt_injections.py # Standalone scanning script with baseline support
+│   └── .prompt_injections.baseline # Baseline tracking for prompt injection findings
 ├── src/
 │   └── patent_filewrapper_mcp/
 │       ├── main.py                 # MCP server with 11+ tools
@@ -503,7 +504,8 @@ uspto_pfw_mcp/
 │       ├── shared_secure_storage.py
 │       ├── config/
 │       │   ├── field_manager.py   # Configuration management
-│       │   └── tool_reflections.py # Migration notices (guidance moved to pfw_get_guidance)
+│       │   ├── tool_reflections.py # Migration notices (guidance moved to pfw_get_guidance)
+│       │   └── log_config.py      # 🆕 Logging configuration with file-based rotation
 │       ├── api/
 │       │   ├── enhanced_client.py  # Enhanced client with field mapping
 │       │   ├── field_constants.py # Field constant definitions
@@ -538,7 +540,9 @@ uspto_pfw_mcp/
 │       ├── services/
 │       │   └── ocr_service.py     # OCR quality detection and processing
 │       ├── shared/
-│       │   └── internal_auth.py   # Shared authentication
+│       │   ├── internal_auth.py   # Shared authentication
+│       │   ├── log_sanitizer.py   # 🆕 Automatic sensitive data sanitization
+│       │   └── safe_logger.py     # 🆕 Safe logger with auto-sanitization
 │       ├── util/
 │       │   ├── database.py
 │       │   ├── dpapi_utils.py
@@ -700,6 +704,9 @@ rm -f proxy_link_cache.db fpd_documents.db ptab_documents.db
 - **Automated secret scanning** - CI/CD and pre-commit hooks prevent API key leaks (detect-secrets)
 - **20+ secret types detected** - AWS keys, GitHub tokens, JWT, private keys, API keys, and more
 - **Baseline management** - Tracks known placeholders while catching real secrets
+- **🆕 SafeLogger with auto-sanitization** - Automatically masks API keys, JWTs, passwords, IPs, emails in all log messages (CWE-532)
+- **🆕 File-based logging with rotation** - Persistent audit trail with 10MB rotation, 5/10 backups (CWE-778)
+- **🆕 Prompt injection baseline system** - Tracks known findings, only flags NEW patterns with SHA256 fingerprinting
 - **Prompt injection detection** - 70+ pattern detection system protects against AI-specific attacks
 - **Patent-specific security** - Custom patterns detect USPTO API bypass and data extraction attempts
 - **Enhanced filtering** - Minimizes false positives while maintaining comprehensive threat coverage

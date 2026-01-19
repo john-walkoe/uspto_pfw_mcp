@@ -6,8 +6,9 @@ Provides secure connection management with proper timeouts and security PRAGMAs.
 import sqlite3
 import logging
 from typing import Optional
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 def create_secure_connection(db_path: str, timeout: float = 30.0) -> sqlite3.Connection:

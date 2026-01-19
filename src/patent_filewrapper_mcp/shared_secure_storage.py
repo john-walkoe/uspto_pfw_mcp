@@ -48,8 +48,9 @@ from typing import Optional
 
 # Import shared DPAPI utilities
 from .util.dpapi_utils import DATA_BLOB, get_data_from_blob, is_windows, check_dpapi_available
+from .shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 def _encrypt_with_dpapi(data: bytes, entropy: bytes) -> bytes:

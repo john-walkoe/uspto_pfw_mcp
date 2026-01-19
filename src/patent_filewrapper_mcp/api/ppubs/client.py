@@ -13,9 +13,10 @@ import httpx
 import logging
 from pathlib import Path
 from ...util.logging import LoggingTransport
+from ...shared.safe_logger import get_safe_logger
 
 # Set up logging
-logger = logging.getLogger('ppubs_uspto_gov')
+logger = get_safe_logger('ppubs_uspto_gov')
 
 # Constants
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"

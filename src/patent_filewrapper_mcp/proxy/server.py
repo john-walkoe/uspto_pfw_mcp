@@ -22,8 +22,9 @@ from .fpd_document_store import get_fpd_store
 from .ptab_document_store import get_ptab_store
 from .models import FPDDocumentRegistration, FPDDocumentRegistrationResponse, PTABDocumentRegistration, PTABDocumentRegistrationResponse
 from ..shared.internal_auth import pfw_auth
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 # Request size limit configuration
 MAX_REQUEST_SIZE = 1024 * 1024  # 1MB limit

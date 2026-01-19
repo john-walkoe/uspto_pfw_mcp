@@ -12,8 +12,9 @@ from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
 from ..models.constants import TechnologyKeyword
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 @dataclass

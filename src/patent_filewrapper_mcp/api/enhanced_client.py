@@ -23,6 +23,7 @@ from typing import Dict, Any, List, Optional, Union, Tuple
 from urllib.parse import quote
 from .helpers import validate_app_number, format_error_response, generate_request_id, create_inventor_queries, map_user_fields_to_api_fields, escape_lucene_query_term, create_error_response
 from ..exceptions import AuthenticationError, USPTOAPIError, TimeoutError, ValidationError, OCRRateLimitError, NotFoundError
+from ..shared.safe_logger import get_safe_logger
 
 try:
     import PyPDF2
@@ -31,7 +32,7 @@ try:
 except ImportError:
     PDF_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 class CircuitState(Enum):

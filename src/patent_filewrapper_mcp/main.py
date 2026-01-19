@@ -11,6 +11,7 @@ from mcp.types import TextContent, PromptMessage, Resource
 from .api.enhanced_client import EnhancedPatentClient
 from .api.helpers import validate_app_number, format_error_response, escape_lucene_query_term, create_error_response, map_query_field_names
 from .config.field_manager import field_manager
+from .config.log_config import setup_logging
 # Removed: from .config.tool_reflections import get_all_tool_reflections, get_tool_reflection
 # These functions have been migrated to pfw_get_guidance() for context efficiency
 from .models.search_params import SearchParameters, InventorSearchParameters
@@ -18,9 +19,11 @@ from .util.identifier_normalization import normalize_identifier, resolve_identif
 from .util.package_manager import PackageManager, get_claim_evolution, format_package_summary
 from .models.constants import DocumentDirection, IdentifierType, SearchStrategy
 from .util.input_processing import process_identifier_inputs, format_input_guidance, create_fuzzy_search_strategy
+from .shared.safe_logger import get_safe_logger
 
-logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stderr)])
-logger = logging.getLogger(__name__)
+# Set up logging with file-based rotation and sanitization
+setup_logging()
+logger = get_safe_logger(__name__)
 
 # Server instructions for Claude Code tool search optimization
 # This guides Claude's MCPSearch tool to discover the right tools progressively

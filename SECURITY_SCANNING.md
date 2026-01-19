@@ -25,11 +25,13 @@ The project uses multiple security scanning technologies:
 - Tracks known placeholder keys and false positives
 - Location: `.secrets.baseline`
 
-### 4. **Prompt Injection Detection** (Enhanced Security)
+### 4. **Prompt Injection Detection with Baseline System** (Enhanced Security)
 - Scans for 70+ malicious prompt patterns
+- **Baseline system** to track known findings and only flag NEW patterns
+- SHA256 fingerprinting for finding identification
 - Detects patent-specific attack vectors (API bypass, data extraction)
 - Integrated with pre-commit hooks and CI/CD pipeline
-- Location: `.security/patent_prompt_injection_detector.py`
+- Location: `.security/check_prompt_injections.py`
 
 **Attack Categories Detected:**
 - Instruction override attempts ("ignore previous instructions")
@@ -62,6 +64,64 @@ The enhanced detector now includes comprehensive Unicode steganography detection
 - Text with embedded zero-width characters for prompt manipulation
 - Emoji sequences with suspicious Variation Selector patterns
 - High ratios of invisible formatting characters
+
+### Prompt Injection Baseline System
+
+The enhanced prompt injection scanner uses a **baseline system** to track known findings and only flag **NEW** patterns that are not in the baseline. This solves the problem of false positives from legitimate code and documentation while maintaining protection against malicious prompt injection attacks.
+
+#### How It Works
+
+1. **Baseline File**: `.prompt_injections.baseline` stores known findings
+2. **Fingerprinting**: Each finding gets a unique SHA256 hash fingerprint
+3. **Comparison**: Scanner checks if each finding is in the baseline
+4. **Exit Codes**:
+   - `0` - No NEW findings (all findings in baseline)
+   - `1` - NEW findings detected (not in baseline)
+   - `2` - Error occurred
+
+#### Usage
+
+**First run - Create baseline:**
+```bash
+uv run python .security/check_prompt_injections.py --update-baseline src/ tests/ *.md *.yml *.yaml *.json
+```
+
+**Normal run - Check against baseline:**
+```bash
+uv run python .security/check_prompt_injections.py --baseline src/ tests/ *.yml *.yaml *.json
+```
+
+**Update baseline to include new legitimate findings:**
+```bash
+uv run python .security/check_prompt_injections.py --update-baseline src/ tests/ *.md *.yml *.yaml *.json
+```
+
+**Force new baseline (overwrite existing):**
+```bash
+uv run python .security/check_prompt_injections.py --force-baseline src/ tests/ *.md *.yml *.yaml *.json
+```
+
+#### Command Line Options
+
+| Option | Purpose |
+|--------|---------|
+| `--baseline` | Use existing baseline (only NEW findings fail) |
+| `--update-baseline` | Add new findings to baseline |
+| `--force-baseline` | Create new baseline (overwrite existing) |
+| `--verbose, -v` | Show detailed output with full matches |
+| `--quiet, -q` | Only show summary (suppress individual findings) |
+
+#### When to Update Baseline
+
+**DO Update Baseline When:**
+- New legitimate code is flagged (variable names, class names, documentation)
+- Approved refactoring changes line numbers
+- Baseline is outdated
+
+**DON'T Update Baseline When:**
+- Malicious pattern detected (remove the code instead)
+- You're unsure (ask for review first)
+- Security-related finding (review carefully first)
 
 ## Setup
 

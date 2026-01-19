@@ -12,8 +12,9 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from pathlib import Path
 from ..util.database import create_secure_connection
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 class FPDDocumentStore:

@@ -12,8 +12,9 @@ from typing import Dict, Any, Optional
 
 from ..api.helpers import format_error_response, generate_request_id
 from ..exceptions import OCRRateLimitError
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 class OCRService:

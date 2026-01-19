@@ -19,8 +19,9 @@ from ..exceptions import (
     USPTOAPIError,
     PatentFileWrapperError
 )
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 
 def _handle_exception(e: Exception, func_name: str) -> Dict[str, Any]:

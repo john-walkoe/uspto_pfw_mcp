@@ -7,8 +7,9 @@ import time
 from collections import defaultdict, deque
 from typing import Dict, Deque
 import logging
+from ..shared.safe_logger import get_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_safe_logger(__name__)
 
 class RateLimiter:
     """Rate limiter for USPTO document downloads"""
