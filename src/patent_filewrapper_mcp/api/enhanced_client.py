@@ -2240,7 +2240,16 @@ class EnhancedPatentClient:
                         "error": "Document appears to be scanned/image-based. PyPDF2 could not extract meaningful text.",
                         "mistral_api_key_missing": True,
                         "suggestion": "Set MISTRAL_API_KEY environment variable for OCR capability on scanned documents",
-                        "auto_optimization": "PyPDF2 failed, Mistral API key not available"
+                        "auto_optimization": "PyPDF2 failed, Mistral API key not available",
+                        "llm_guidance": {
+                            "explain_to_user": "Many USPTO Patent File Wrapper documents are scanned images rather than text-based PDFs. "
+                                              "This is common across all document types (office actions, amendments, claims, etc.) regardless of filing date. "
+                                              "PyPDF2 can only extract text from text-based PDFs - it cannot read scanned images.",
+                            "recommended_solution": "Configure Mistral API for true OCR capability (~$0.001/page, with free tier available)",
+                            "free_tier_info": "Mistral offers a generous free tier - sign up at https://console.mistral.ai/",
+                            "cost_example": "A typical 7-page office action costs only $0.007 to extract",
+                            "setup_instructions": "Set MISTRAL_API_KEY environment variable after obtaining key from Mistral console"
+                        }
                     })
                 else:
                     # User explicitly requested Mistral but no API key
@@ -2251,7 +2260,14 @@ class EnhancedPatentClient:
                         "error": "MISTRAL_API_KEY environment variable is required for OCR content extraction",
                         "mistral_api_key_missing": True,
                         "suggestion": "Set MISTRAL_API_KEY environment variable: set MISTRAL_API_KEY=your_key_here (Windows) or export MISTRAL_API_KEY=your_key_here (Linux/Mac)",
-                        "auto_optimization": "Mistral OCR requested but API key not available"
+                        "auto_optimization": "Mistral OCR requested but API key not available",
+                        "llm_guidance": {
+                            "explain_to_user": "Mistral OCR was specifically requested, but MISTRAL_API_KEY is not configured. "
+                                              "Many USPTO documents are scanned images requiring OCR for text extraction.",
+                            "recommended_solution": "Configure Mistral API key for OCR capability (~$0.001/page, with free tier available)",
+                            "free_tier_info": "Mistral offers a generous free tier - sign up at https://console.mistral.ai/",
+                            "setup_instructions": "Obtain API key from Mistral console and set as MISTRAL_API_KEY environment variable"
+                        }
                     })
                 return extraction_result
 
