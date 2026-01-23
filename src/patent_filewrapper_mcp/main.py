@@ -1050,10 +1050,29 @@ Example workflow:
 2. pfw_get_document_content(app_number='17896175', document_identifier='ABC123XYZ')
 For document selection strategies and cost optimization, use pfw_get_guidance (see quick reference chart for section selection)."""
     try:
+        # Ensure API client is initialized (critical fix for async lifecycle issues)
+        global api_client
+        if api_client is None:
+            logger.info("Initializing API client for document content extraction")
+            api_client = get_api_client()
+
         return await api_client.extract_document_content_hybrid(
             app_number, document_identifier, auto_optimize
         )
+    except RuntimeError as e:
+        # Catch async lifecycle errors specifically
+        error_msg = str(e)
+        if "cannot schedule new futures" in error_msg or "interpreter shutdown" in error_msg:
+            logger.error(f"Async lifecycle error in document extraction: {error_msg}")
+            return format_error_response(
+                "Document extraction failed due to async runtime issue. This may be an environment-specific problem. "
+                "Try restarting the MCP server or check if MISTRAL_API_KEY is properly configured. "
+                f"Technical details: {error_msg}"
+            )
+        else:
+            return format_error_response(f"Runtime error during document extraction: {str(e)}")
     except Exception as e:
+        logger.exception("Unexpected error in document content extraction")
         return format_error_response(f"Failed to extract document content: {str(e)}")
 
 @mcp.tool(name="PFW_get_document_download")
@@ -1093,6 +1112,12 @@ Example workflow for multiple downloads:
 
 For document selection strategies and multi-document workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
     try:
+        # Ensure API client is initialized
+        global api_client
+        if api_client is None:
+            logger.info("Initializing API client for document download")
+            api_client = get_api_client()
+
         # Use environment variable if proxy_port not specified
         if proxy_port is None:
             # Check PFW_PROXY_PORT first (MCP-specific), then PROXY_PORT (generic)
@@ -1264,6 +1289,12 @@ Returns document identifiers needed for pfw_get_document_download or pfw_get_doc
 
 For cross-MCP workflows, use pfw_get_guidance (see quick reference chart)."""
     try:
+        # Ensure API client is initialized
+        global api_client
+        if api_client is None:
+            logger.info("Initializing API client for document retrieval")
+            api_client = get_api_client()
+
         # Input validation
         if not app_number or len(app_number.strip()) == 0:
             return format_error_response("Application number cannot be empty", 400)
@@ -1442,6 +1473,12 @@ References:
 
 For field selection guidance and token estimates, use pfw_get_guidance(section='tools')."""
     try:
+        # Ensure API client is initialized
+        global api_client
+        if api_client is None:
+            logger.info("Initializing API client for XML content retrieval")
+            api_client = get_api_client()
+
         return await api_client.get_patent_or_application_xml(identifier, content_type, include_fields, include_raw_xml)
 
     except Exception as e:
@@ -1489,6 +1526,12 @@ async def pfw_get_granted_patent_documents_download(
     For complex workflows, see pfw_get_guidance (quick reference chart available).
     """
     try:
+        # Ensure API client is initialized
+        global api_client
+        if api_client is None:
+            logger.info("Initializing API client for granted patent documents")
+            api_client = get_api_client()
+
         # Use environment variable if proxy_port not specified
         if proxy_port is None:
             # Check PFW_PROXY_PORT first (MCP-specific), then PROXY_PORT (generic)
