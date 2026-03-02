@@ -1856,10 +1856,27 @@ def _handle_background_task_exception(task: asyncio.Task):
 
 
 async def _ensure_proxy_server_running(port: int = 8080):
-    """Ensure the proxy server is running"""
+    """Ensure the proxy server is running.
+
+    If the port is already in use (e.g. Claude Desktop has a copy running),
+    skip starting a second instance so MCP tools remain fully operational.
+    """
     global _proxy_server_running, _proxy_server_task
 
     if not _proxy_server_running:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            port_free = s.connect_ex(("127.0.0.1", port)) != 0
+
+        if not port_free:
+            logger.info(
+                "Port %d already in use — skipping proxy server startup "
+                "(another instance is running; MCP tools are still fully available)",
+                port,
+            )
+            _proxy_server_running = True  # treat as running so tools work
+            return
+
         logger.info(f"Starting HTTP proxy server on port {port}")
         _proxy_server_task = asyncio.create_task(_run_proxy_server(port))
 
