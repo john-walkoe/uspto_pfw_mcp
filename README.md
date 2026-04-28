@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/john-walkoe-uspto-pfw-mcp-badge.png)](https://mseep.ai/app/john-walkoe-uspto-pfw-mcp)
+
 # USPTO Patent File Wrapper MCP Server
 
 A high-performance Model Context Protocol (MCP) server for the USPTO Patent File Wrapper API with token saving **context reduction** capabilities, smart field mapping, and **secure browser-accessible downloads**.
