@@ -1,0 +1,327 @@
+Office Action Rejections
+This API allows for daily refresh and retrieval of rejection data from Office Actions mailed from October 1, 2017, to 30 days prior to the current date. It contains document level data including the type of actions taken on claims in the office action.​
+
+The United States Patent and Trademark Office (USPTO) Office Action Research Dataset for Patents contains detailed information derived from the Office actions issued by patent examiners to applicants during the patent examination process. The “Office action” is a written notification to the applicant of the examiner’s decision on patentability. It generally discloses the reasons for any rejections, objections, or requirements and includes relevant information or references that the applicant may find useful for responding to the examiner and deciding whether to continue prosecuting the application.
+
+DH Legacy Dataset: Office Action Rejections V2
+
+DH Legacy Description: USPTO Office Action Rejection API (will be migrated to ODP) | United States Patent and Trademark Office - Open Data Portal​
+
+POST https://api.uspto.gov/api/v1/patent/oa/oa_rejections/v2/records
+
+Returns a list of all OA Rejections that match your search term.
+
+Note: API Key is required. Obtain an API key.
+
+POST See Swagger documentation
+
+If you have any questions or errors, please visit the Support page for assistance.
+
+Response
+Successful request.
+
+Data Property	Description	Type
+actionTypeCategory ​	Includes the type of office action issued by the examiner such as rejected, cancelled, withdrawn, interpreted, objected or allowed events that indicate the procedural state of a patent application during examination ​	String
+bilskiIndicator	Bilski Decision The bilski_in field indicates if the form paragraph and/or text in the action references the Supreme Court decision in Bilski v. Kappos. Equals True if Bilski decision referenced in Office action text, False otherwise​	String
+actionTypeCategory ​	Includes the type of office action issued by the examiner such as rejected, cancelled, withdrawn, interpreted, objected or allowed events that indicate the procedural state of a patent application during examination ​	Boolean
+legacyDocumentCodeIdentifier​	A legacy document code identifier refers to an older or outdated code that was previously used by the USPTO to classify or identify specific document types such as office actions, notices or publication​	String
+hasRej101	Indicates whether a rejection 101 has issued in the application. A 101 rejection refers to a rejection under 35 U.S.C. 101 which governs subject matter eligibility for U.S. patent applications​	Float
+hasRej103	103 Rejection – Obviousness The rejection_103 field indicates whether a 35 U.S.C. 103 rejection is raised in the Office action. Generally, an examiner rejects a claim as obvious under 35 U.S.C. 103 if she determines the claimed invention would have been obvious to a person having ordinary skill in the field to which the invention pertains. She must provide objective evidence to support her rejection. 46 If such a rejection appears, it will be further specified in the rejections data file into different subtypes based on the identified statute paragraph, principally 103(a). Equals 1 if 35 USC 103 rejection(s) raised, 0 otherwise​	Float
+hasRejDP	Double Patenting Rejection The rejection_dp field indicates whether a non-statutory double patenting rejection is raised in the Office action. Generally, non-statutory double patenting occurs when similar, but not identical, scope is claimed by a common inventor and/or assignee. Equals 1 if non-statutory double patenting rejection(s) raised, 0 otherwise​	Float
+mayoIndicator	Mayo Decision The mayo_in field indicates if the form paragraph and/or text in the action references the Supreme Court decision in Mayo v. Prometheus. Equals True if Mayo decision referenced in Office action text, False otherwise​	Boolean
+hasRej102	102 Rejection – Lack of Novelty The rejection_102 field indicates whether a 35 U.S.C. 102 rejection is raised in the Office action. In general, an examiner rejects a claim as not novel under 35 U.S.C. 102 if she finds it is anticipated, i.e., expressly or inherently described, by a single prior art reference.45 If such a rejection appears, it will be further specified into different subtypes based on the identified statute paragraph, such as 102(a), 102(b), etc. Equals 1 if 35 USC 102 rejection(s) raised, 0 otherwise​	Float
+nationalClass	When the USPTO processes new patent applications, they assign the application into one primary US Patent Classification (USPC) technology class and subclass. Classification of new applications is used in (1) the assignment of the applications to the most relevant examiner group art units and (2) the searches for relevant prior art during patent examination. The USPTO began transitioning to the Cooperative Patent Classification system in 2013 to enable prior art searching, but continues to use the USPC system for routing applications to examiners. Since the data files capture examiner-issued Office actions, the USPC class is more relevant. Each USPC class and subclass is identified by a code, provided in uspc_class and uspc_subclass fields, respectively. ​	String
+closingMissing	Closing Paragraph Missing At the end of the Office action, the examiner is to provide specific contact information, such as a phone number and alternative contact. The closing_missing field is an indicator that identifies if such information is missing from the Office action. Equals 1 if Office action has no closing paragraph, 0 otherwise​	Long
+cite103Max ​	Indicates the largest number of references included in a statement of rejection as being relied upon as prior art to reject certain claim(s) under 35 U.S.C. 103 in the Office action. For example, if claim 1 is rejected under 103 based on two prior art references, claim 3 is rejected under 103 based on four prior art references, and no other 103 rejections are raised, then this field will contain the value 4 as it is the highest number of references cited for any of the claims. Note that, in certain cases, the algorithm for generating the cite103_max field is less precise. Specifically, when an examiner relies upon non-patent literature with author names recorded individually or lists chemical compound codes, the algorithm tends to overcount the number of references, resulting in an overestimated value in the cite103_max field. ​	Long
+cite103EQ1	Indicates when only one reference is included in a statement of rejection as being relied upon as prior art to reject certain claim(s) under 35 U.S.C. 103 in the Office action. Note that examiners may rely on “common knowledge” in the art or “Examiner’s official notice”, per MPEP 2144.03, to support a 103 rejection based on a single prior art reference. Note, examiners may rely on legal precedent, per MPEP 2144.04, as a source of supporting rationale in addition to the single reference included in the statement of rejection. Equals 1 if only 1 prior art citation referenced in 103 rejection, 0 otherwise.​	Long
+obsoleteDocumentIdentifier​	A document number or code that once was used to identify a cited reference but is no longer valid, current or recognized due to changes in classification, publication systems or formats​	String
+Id	unique identifier​	String
+createUserIdentifier​	The Job Identifier of the job that initiated the insert of the entity into the database.​	String
+claimNumberArrayDocument​	Indicates a list or array of claim numbers from a patent application or document that are referenced, amended, rejected, or otherwise relevant to the associated record. ​	String
+patentApplicationNumber​ ​	Unique identifier assigned to a patent application when it’s filed with a patent office​	String
+legalSectionCode	Indicates the category or nature of the action taken on the patent application, such as filing, office action, amendment, allowance, or abandonment. Legal section code indicates the specific legal provision or statute under which a particular action, rejection, or decision is made in the patent application process​	String
+submissionDate	An official date when the USPTO sends or issues a communication related to a patent application to the applicant or their attorney/agent​	Date
+groupArtUnitNumber	A specialized division within USPTO where patent examiners with expertise in similar technical fields review and examine patent applications​	String
+hasRej112	Indicates whether a rejection 112 has issued in the application. A 112 rejection refers to a rejection under 35 U.S.C. 112 which governs subject matter eligibility for U.S. patent applications​	Float
+nationalSubclass	A subdivision of a national class used by patent to further categorized inventions or goods/services with more technical or commercial specificity ​	String
+createDateTime	The date and time that entity is inserted in the database.​	Date
+rejectFormMissmatch​	The content of the form doesn’t match the expected format, required fields, or document code type ​	Long
+formParagraphMissing	A section of text or required explanation that is missing from a document, usually one that is expected to contain specific legal or technical content​	Long
+aliceIndicator	Indicates whether the application has been flagged for a 101 patent eligibility review based on the Alice/Mayo framework for abstract ideas and judicial expectations. The Alice indicator shows whether a patent application has been identified for review under the Alice/Mayo framework, which assess if the invention is eligible for patent by determining if it claims an abstract idea or other judicial exception under 35 U.S.C 101.​	Boolean
+allowedClaimIndicator ​	Indicates whether the application contains claims that have been allowed by the USPTO examiner. Allowed claims are the specific claims in a patent application that a USPTO examiner has approved as patentable after examination. ​	Boolean
+paragraphNumber	Indicates the specific number paragraph within a patent document or office action that is being referenced or cited​	String
+cite103GT3	Indicates when more than three references are included in a statement of rejection as being relied upon as prior art to reject certain claim(s) under 35 U.S.C. 103 in the Office action. Equals 1 if more than 3 prior art citations referenced in 103 rejection, 0 otherwise.​	Long
+myriadIndicator	Indicates whether the application is flagged for subject matter eligibility review concerning naturally occurring substances or genetic material under the Myriad decision. The Myriad indicator shows whether a patent application is being examined for subject matter eligibility issues related to a naturally occurring products or genetic material based on the Myriad Genetics Supreme Court decision ​	Boolean
+headerMissing	A document that doesn’t include the standard metadata headers such as application number, filing date, inventor name or document code at the top of the page or in its digital metadata​	Long
+
+ENDPOINT
+https://api.uspto.gov/api/v1/patent/oa/oa_rejections/v2/records
+JSON RESPONSE SAMPLE
+{
+  "response": {
+    "start": 0,
+    "numFound": 4,
+    "docs": [
+      {
+        "applicationDeemedWithdrawnDate": "2017-06-29T00:00:00",
+        "workGroup": [
+          "1710"
+        ],
+        "filingDate": "2014-10-03T00:00:00",
+        "documentActiveIndicator": [
+          "0"
+        ],
+        "legacyDocumentCodeIdentifier": [
+          "CTFR"
+        ],
+        "applicationStatusNumber": 161,
+        "nationalClass": [
+          "134"
+        ],
+        "effectiveFilingDate": "0001-01-03T00:00:00",
+        "bodyText": [
+          "The present application is being examined under the pre-AIA  first to invent provisions..... "
+        ],
+        "obsoleteDocumentIdentifier": [
+          "IOEU2JMBRXEAPX0"
+        ],
+        "accessLevelCategory": [
+          "PUBLIC"
+        ],
+        "id": "e2dbe4766f92e4454cf57b18abc3de4c36070e1cd4239f94b50e79b5",
+        "applicationTypeCategory": [
+          "REGULAR"
+        ],
+        "patentNumber": [
+          "null"
+        ],
+        "patentApplicationNumber": [
+          "14390655"
+        ],
+        "grantDate": "0001-01-03T00:00:00",
+        "submissionDate": "2016-05-23T00:00:00",
+        "customerNumber": 25944,
+        "groupArtUnitNumber": 1711,
+        "inventionTitle": [
+          "METHOD FOR CLEANING SEMICONDUCTOR WAFER"
+        ],
+        "nationalSubclass": [
+          "002000"
+        ],
+        "patentApplicationConfirmationNumber": 1167,
+        "lastModifiedTimestamp": "2021-01-21T18:45:36",
+        "examinerEmployeeNumber": [
+          "72492"
+        ],
+        "createDateTime": "2024-12-05T09:29:15",
+        "techCenter": [
+          "1700"
+        ],
+        "inventionSubjectMatterCategory": [
+          "UTL"
+        ],
+        "sourceSystemName": [
+          "OACS"
+        ],
+        "legacyCMSIdentifier": [
+          "PATENT-14390655-OACS-IOEU2JMBRXEAPX0"
+        ]
+      },
+      {
+        "applicationDeemedWithdrawnDate": "2017-06-29T00:00:00",
+        "workGroup": [
+          "1710"
+        ],
+        "filingDate": "2014-10-03T00:00:00",
+        "documentActiveIndicator": [
+          "0"
+        ],
+        "legacyDocumentCodeIdentifier": [
+          "CTNF"
+        ],
+        "applicationStatusNumber": 161,
+        "nationalClass": [
+          "134"
+        ],
+        "effectiveFilingDate": "0001-01-03T00:00:00",
+        "bodyText": [
+          "The present application is being examined under the pre-AIA  first to invent provisions...."
+        ],
+        "obsoleteDocumentIdentifier": [
+          "IUZN9U6TRXEAPX5"
+        ],
+        "accessLevelCategory": [
+          "PUBLIC"
+        ],
+        "id": "ff25db558cfff7abca5ba4b5d4cca65174be99ff445eb72e9c54473b",
+        "applicationTypeCategory": [
+          "REGULAR"
+        ],
+        "patentNumber": [
+          "null"
+        ],
+        "patentApplicationNumber": [
+          "14390655"
+        ],
+        "grantDate": "0001-01-03T00:00:00",
+        "submissionDate": "2016-11-03T00:00:00",
+        "customerNumber": 25944,
+        "groupArtUnitNumber": 1711,
+        "inventionTitle": [
+          "METHOD FOR CLEANING SEMICONDUCTOR WAFER"
+        ],
+        "nationalSubclass": [
+          "002000"
+        ],
+        "patentApplicationConfirmationNumber": 1167,
+        "lastModifiedTimestamp": "2021-01-21T18:45:36",
+        "examinerEmployeeNumber": [
+          "72492"
+        ],
+        "createDateTime": "2024-12-05T09:29:15",
+        "techCenter": [
+          "1700"
+        ],
+        "inventionSubjectMatterCategory": [
+          "UTL"
+        ],
+        "sourceSystemName": [
+          "OACS"
+        ],
+        "legacyCMSIdentifier": [
+          "PATENT-14390655-OACS-IUZN9U6TRXEAPX5"
+        ]
+      },
+      {
+        "applicationDeemedWithdrawnDate": "2017-06-29T00:00:00",
+        "workGroup": [
+          "1710"
+        ],
+        "filingDate": "2014-10-03T00:00:00",
+        "documentActiveIndicator": [
+          "0"
+        ],
+        "legacyDocumentCodeIdentifier": [
+          "CTFR"
+        ],
+        "applicationStatusNumber": 161,
+        "nationalClass": [
+          "134"
+        ],
+        "effectiveFilingDate": "0001-01-03T00:00:00",
+        "bodyText": [
+          "The present application is being examined under the pre-AIA  first to invent provisions....."
+        ],
+        "obsoleteDocumentIdentifier": [
+          "J0NWHNU8RXEAPX1"
+        ],
+        "accessLevelCategory": [
+          "PUBLIC"
+        ],
+        "id": "b2e7fa381cb8ea3acd57ab21488903e75adad3c73b1bee7078c8b050",
+        "applicationTypeCategory": [
+          "REGULAR"
+        ],
+        "patentNumber": [
+          "null"
+        ],
+        "patentApplicationNumber": [
+          "14390655"
+        ],
+        "grantDate": "0001-01-03T00:00:00",
+        "submissionDate": "2017-03-28T00:00:00",
+        "customerNumber": 25944,
+        "groupArtUnitNumber": 1711,
+        "inventionTitle": [
+          "METHOD FOR CLEANING SEMICONDUCTOR WAFER"
+        ],
+        "nationalSubclass": [
+          "002000"
+        ],
+        "patentApplicationConfirmationNumber": 1167,
+        "lastModifiedTimestamp": "2021-01-21T18:45:36",
+        "examinerEmployeeNumber": [
+          "72492"
+        ],
+        "createDateTime": "2024-12-05T09:29:15",
+        "techCenter": [
+          "1700"
+        ],
+        "inventionSubjectMatterCategory": [
+          "UTL"
+        ],
+        "sourceSystemName": [
+          "OACS"
+        ],
+        "legacyCMSIdentifier": [
+          "PATENT-14390655-OACS-J0NWHNU8RXEAPX1"
+        ]
+      },
+      {
+        "applicationDeemedWithdrawnDate": "2017-06-29T00:00:00",
+        "workGroup": [
+          "1710"
+        ],
+        "filingDate": "2014-10-03T00:00:00",
+        "documentActiveIndicator": [
+          "0"
+        ],
+        "legacyDocumentCodeIdentifier": [
+          "CTNF"
+        ],
+        "applicationStatusNumber": 161,
+        "nationalClass": [
+          "134"
+        ],
+        "effectiveFilingDate": "0001-01-03T00:00:00",
+        "bodyText": [
+          "The present application is being examined under the pre-AIA  first to invent provisions...."
+        ],
+        "obsoleteDocumentIdentifier": [
+          "II1QDC59PXXIFW4"
+        ],
+        "accessLevelCategory": [
+          "PUBLIC"
+        ],
+        "id": "466b99142bff15163c1481aea1c9ca4a00efe41b45b519034a619a29",
+        "applicationTypeCategory": [
+          "REGULAR"
+        ],
+        "patentNumber": [
+          "null"
+        ],
+        "patentApplicationNumber": [
+          "14390655"
+        ],
+        "grantDate": "0001-01-03T00:00:00",
+        "submissionDate": "2015-12-15T00:00:00",
+        "customerNumber": 25944,
+        "groupArtUnitNumber": 1711,
+        "inventionTitle": [
+          "METHOD FOR CLEANING SEMICONDUCTOR WAFER"
+        ],
+        "nationalSubclass": [
+          "002000"
+        ],
+        "patentApplicationConfirmationNumber": 1167,
+        "lastModifiedTimestamp": "2021-01-21T18:45:36",
+        "examinerEmployeeNumber": [
+          "72492"
+        ],
+        "createDateTime": "2024-12-05T09:29:15",
+        "techCenter": [
+          "1700"
+        ],
+        "inventionSubjectMatterCategory": [
+          "UTL"
+        ],
+        "sourceSystemName": [
+          "OACS"
+        ],
+        "legacyCMSIdentifier": [
+          "PATENT-14390655-OACS-II1QDC59PXXIFW4"
+        ]
+      }
+    ]
+  }
+}

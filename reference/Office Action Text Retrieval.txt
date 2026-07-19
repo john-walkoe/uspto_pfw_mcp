@@ -1,0 +1,371 @@
+Office Action Text Retrieval
+The full-text of public Office Actions - a written notification to the applicant of the examiner’s decision on patentability - can be obtained through this API. This API refreshes daily and contains publicly available Office Actions starting with 12 series applications.​
+
+The United States Patent and Trademark Office (USPTO) Office Action Retrieval API provides access to the full-text information of Office Actions issued by patent examiners to applicants during the patent examination process. The “Office action” is a written notification to the applicant of the examiner’s decision on patentability. It generally discloses the reasons for any rejections, objections, or requirements and includes relevant information or references that the applicant may find useful for responding to the examiner and deciding whether to continue prosecuting the application.
+
+DH Legacy Dataset: USPTO Office Action Text Retrieval API v1​
+
+DH Legacy Description: USPTO Office Action Text Retrieval API (will be migrated to ODP) | United States Patent and Trademark Office - Open Data Portal
+
+POST https://api.uspto.gov/api/v1/patent/oa/oa_actions/v1/records
+
+Returns a list of all OA actions that match your search term.
+
+Note: API Key is required. Obtain an API key.
+
+POST See Swagger documentation
+
+If you have any questions or errors, please visit the Support page for assistance.
+
+Response
+Successful request.
+
+Data Property	Description	Type
+applicationDeemedWithdrawnDate	The date that the application is currently abandoned. An application can be abandoned more than once. The history of abandonments is recorded in Patent Case Action.	Date
+workGroup	A subdivision within a group art unit. It represents a smaller team of patent examiners that share similar technical expertise. Usually associated with examiner IDs.	String
+filingDate	The date of receipt in the Office of an application which includes (1) a specification containing a description and, if the application is a nonprovisional application, at least one claim, and (2) any required drawings.	Date
+documentActiveIndicator	The code that denotes the status of the document. Status code can be 0, 1 to indicate Inactive or Active.​	Boolean
+legacyDocumentCodeIdentifier​	A legacy document code identifier refers to an older or outdated code that was previously used by the USPTO to classify or identify specific document types such as office actions, notices or publication​	String
+applicationStatusNumber​	A character string that uniquely identifies the Application Patent Case among others that are either US domestic or international applications.​	Long
+effectiveFilingDate	The date according to PTO criteria that the patent case qualified as having been filed. The effective filing date is the same or later than the Filing Date. The filing date can be changed due to a subsequent action on an application patent case.​	Date
+nationalClass	When the USPTO processes new patent applications, they assign the application into one primary US Patent Classification (USPC) technology class and subclass. Classification of new applications is used in (1) the assignment of the applications to the most relevant examiner group art units and (2) the searches for relevant prior art during patent examination. The USPTO began transitioning to the Cooperative Patent Classification system in 2013 to enable prior art searching, but continues to use the USPC system for routing applications to examiners. Since the data files capture examiner-issued Office actions, the USPC class is more relevant. Each USPC class and subclass is identified by a code, provided in uspc_class and uspc_subclass fields, respectively. ​ ​	String
+bodyText	Patent body text​	String
+obsoleteDocumentIdentifier	(Key) A unique identifier for a document stored in the IFW repository. ​ ​	String
+accessLevelCategory	Access level values include: Private, Public, and Internal.​	String
+id	unique identifier​	String
+applicationTypeCategory	The nature of the patent application submission relative to the action requested of the patent office.​	String
+patentNumber	The unique number assigned to a patent application when it is filed. The application number includes a two-digit series code and a six-digit serial number.​	String
+grantDate	Date on which the patent was granted.​	Date
+patentApplicationNumber	The unique number assigned to a patent application when it is filed. The application number includes a two-digit series code and a six-digit serial number.​	String
+submissionDate	An official date when the USPTO sends or issues a communication related to a patent application to the applicant or their attorney/agent​	Date
+customerNumber	Customer number for correspondence.​	Long
+groupArtUnitNumber	a four-digit code used by USPTO to categorize and assign patent applications to specialized examiner teams based on technical subject matter. It helps ensure that applications are reviewed y examiners with relevant expertise. the first two digits represent the technology center and the last two-digit identifies the specific art unit team within that center​	Long
+inventionTitle	The title of the invention within the patent case.​	String
+nationalSubclass ​	A subdivision of a national class used by patent to further categorized inventions or goods/services with more technical or commercial specificity ​	String
+createDateTime	The date and time that entity is inserted in the database.​	Date
+patentApplicationConfirmationNumber	Unique numeric identifier assigned to confirm a patent application submission​	Long
+lastModifiedTimestamp	Timestamp of the last update to the record​	Date
+sections.withdrawalRejectionText	The grounds of the appeal of the rejection of the application​	String
+sections.proceedingAppendixText	The proceeding of the appendix​	String
+sections.filingDate	Official filing date of the application.​	Date
+sections.section102RejectionText ​	Text describing rejections under section 102 of the patent application	String
+sections.legacyDocumentCodeIdentifier	This is a generated surrogate key in the Document Code Table.​	String
+sections.section102RejectionFormParagraphText ​	Standardized text used for section 102 obviousness rejection​	String
+sections.section103RejectionText	Text describing rejections under section 103 of the patent application​	String
+sections.nationalClass	USPC main class code​	String
+sections.section112RejectionFormParagraphText	Standardized text used for section 112 obviousness rejection​	String
+sections.summaryText	Summary of the office action, decision, or section contents.​	String
+sections.terminalDisclaimerStatusText	Text describing the terminal disclaimer status (e.g., filed, accepted, pending)​	String
+sections.section101RejectionText	Text describing rejections under section 101 of the patent application​	String
+sections.obsoleteDocumentIdentifier	A unique identifier for a document stored in the IFW repository.​	String
+sections.officeActionIdentifier	The unique id of the record​.​	String
+sections.section101RejectionFormParagraphText	Standardized text used for section 101 obviousness rejection​	String
+sections.section112RejectionText ​	Text describing rejections under section 112 of the patent application​	String
+sections.workGroupNumber	This holds Work group number.​	String
+sections.grantDate	Application grant date​	Date
+sections.patentApplicationNumber	The unique number assigned to a patent application when it is filed. The application number includes a two-digit series code and a six-digit serial number.​	String
+sections.submissionDate	Application submission date​	Date
+sections.groupArtUnitNumber	Examiner art unit number​	String
+sections.nationalSubclass	USPC sub class code​	String
+sections.examinerEmployeeNumber	The name of Author who contributes to the cited non-patent literature (NPL)​	String
+sections.specificationTitleText	The status of the specification of the application​	String
+sections.section103RejectionFormParagraphText	Standardized text used for section 103 obviousness rejection​	String
+sections.detailCitationText ​	Text from the header "Detail Action" ​	String
+sections.techCenterNumbe​r​	Technology center number assigned to the application​	Date
+examinerEmployeeNumber​	The name of Author who contributes to the cited non-patent literature (NPL)​	String
+techCenter	a four-digit code used by USPTO to categorize and assign patent applications to specialized examiner teams based on technical subject matter. It helps ensure that applications are reviewed by examiners with relevant expertise. the first two digits represent the technology center​	String
+inventionSubjectMatterCategory	Refers to the code patents that are legally eligible to be patented under U.S law (eg. Codes UTL, DES, PLT)​	String
+sourceSystemName	The name of the system where the document originates. For example, OACS, EFSWeb.​	String
+legacyCMSIdentifier	Idenfifier with the combination of PATENT-<Patent Application Number>-OACS-<obsoleteDocumentIdentifier​>​	String
+
+ENDPOINT
+https://api.uspto.gov/api/v1/patent/oa/oa_actions/v1/records
+JSON RESPONSE SAMPLE
+{
+  "response": {
+    "start": 0,
+    "numFound": 8,
+    "docs": [
+      {
+        "bilskiIndicator": false,
+        "actionTypeCategory": "rejected",
+        "legacyDocumentCodeIdentifier": "CTFR",
+        "hasRej101": 1,
+        "hasRejDP": 0,
+        "hasRej103": 1,
+        "mayoIndicator": false,
+        "hasRej102": 1,
+        "nationalClass": "392",
+        "closingMissing": 0,
+        "cite103Max": 4,
+        "cite103EQ1": 0,
+        "obsoleteDocumentIdentifier": "JS1TFLIVRXEAPX0",
+        "id": "669138a52f79fbbc86488af950b0ded2",
+        "createUserIdentifier": "ETL_SYS",
+        "claimNumberArrayDocument": [
+          "25,26"
+        ],
+        "patentApplicationNumber": "14832202",
+        "legalSectionCode": "103",
+        "submissionDate": "2019-02-14T00:00:00",
+        "groupArtUnitNumber": "3761",
+        "hasRej112": 1,
+        "nationalSubclass": "397000",
+        "rejectFormMissmatch": 0,
+        "createDateTime": "2024-12-16T14:36:20",
+        "formParagraphMissing": 0,
+        "aliceIndicator": false,
+        "allowedClaimIndicator": false,
+        "paragraphNumber": "102",
+        "cite103GT3": 1,
+        "myriadIndicator": false,
+        "headerMissing": 0
+      },
+      {
+        "bilskiIndicator": false,
+        "actionTypeCategory": "rejected",
+        "legacyDocumentCodeIdentifier": "CTNF",
+        "hasRej101": 0,
+        "hasRejDP": 0,
+        "hasRej103": 1,
+        "mayoIndicator": false,
+        "hasRej102": 0,
+        "nationalClass": "392",
+        "closingMissing": 0,
+        "cite103Max": 4,
+        "cite103EQ1": 0,
+        "obsoleteDocumentIdentifier": "K3G0RR7URXEAPX0",
+        "id": "db116102ab6409a190be15764028e35a",
+        "createUserIdentifier": "ETL_SYS",
+        "claimNumberArrayDocument": [
+          "10,12,13,15,20,22,23,24,25,26"
+        ],
+        "patentApplicationNumber": "14832202",
+        "legalSectionCode": "112",
+        "submissionDate": "2019-11-29T00:00:00",
+        "groupArtUnitNumber": "3761",
+        "hasRej112": 1,
+        "nationalSubclass": "397000",
+        "rejectFormMissmatch": 0,
+        "createDateTime": "2024-12-16T14:36:20",
+        "formParagraphMissing": 0,
+        "aliceIndicator": false,
+        "allowedClaimIndicator": false,
+        "paragraphNumber": "48",
+        "cite103GT3": 1,
+        "myriadIndicator": false,
+        "headerMissing": 0
+      },
+      {
+        "bilskiIndicator": false,
+        "actionTypeCategory": "rejected",
+        "legacyDocumentCodeIdentifier": "CTNF",
+        "hasRej101": 0,
+        "hasRejDP": 0,
+        "hasRej103": 1,
+        "mayoIndicator": false,
+        "hasRej102": 0,
+        "nationalClass": "392",
+        "closingMissing": 0,
+        "cite103Max": 4,
+        "cite103EQ1": 0,
+        "obsoleteDocumentIdentifier": "K3G0RR7URXEAPX0",
+        "id": "b13ea81d47550198d69c9b890707c1e0",
+        "createUserIdentifier": "ETL_SYS",
+        "claimNumberArrayDocument": [
+          "10,12,13,20,22,23,24,25,26"
+        ],
+        "patentApplicationNumber": "14832202",
+        "legalSectionCode": "103",
+        "submissionDate": "2019-11-29T00:00:00",
+        "groupArtUnitNumber": "3761",
+        "hasRej112": 1,
+        "nationalSubclass": "397000",
+        "rejectFormMissmatch": 0,
+        "createDateTime": "2024-12-16T14:36:20",
+        "formParagraphMissing": 0,
+        "aliceIndicator": false,
+        "allowedClaimIndicator": false,
+        "paragraphNumber": "65",
+        "cite103GT3": 1,
+        "myriadIndicator": false,
+        "headerMissing": 0
+      },
+      {
+        "bilskiIndicator": false,
+        "actionTypeCategory": "rejected",
+        "legacyDocumentCodeIdentifier": "CTFR",
+        "hasRej101": 1,
+        "hasRejDP": 0,
+        "hasRej103": 1,
+        "mayoIndicator": false,
+        "hasRej102": 1,
+        "nationalClass": "392",
+        "closingMissing": 0,
+        "cite103Max": 4,
+        "cite103EQ1": 0,
+        "obsoleteDocumentIdentifier": "JS1TFLIVRXEAPX0",
+        "id": "ae0e2239331b3c9eebf0543c6c00e411",
+        "createUserIdentifier": "ETL_SYS",
+        "claimNumberArrayDocument": [
+          "10,12,13,14,15,16,20,22,23,24,25,26"
+        ],
+        "patentApplicationNumber": "14832202",
+        "legalSectionCode": "112",
+        "submissionDate": "2019-02-14T00:00:00",
+        "groupArtUnitNumber": "3761",
+        "hasRej112": 1,
+        "nationalSubclass": "397000",
+        "rejectFormMissmatch": 0,
+        "createDateTime": "2024-12-16T14:36:20",
+        "formParagraphMissing": 0,
+        "aliceIndicator": false,
+        "allowedClaimIndicator": false,
+        "paragraphNumber": "45",
+        "cite103GT3": 1,
+        "myriadIndicator": false,
+        "headerMissing": 0
+      },
+      {
+        "bilskiIndicator": false,
+        "actionTypeCategory": "rejected",
+        "legacyDocumentCodeIdentifier": "CTFR",
+        "hasRej101": 1,
+        "hasRejDP": 0,
+        "hasRej103": 1,
+        "mayoIndicator": false,
+        "hasRej102": 1,
+        "nationalClass": "392",
+        "closingMissing": 0,
+        "cite103Max": 4,
+        "cite103EQ1": 0,
+        "obsoleteDocumentIdentifier": "JS1TFLIVRXEAPX0",
+        "id": "f7b65758f66dc79acb676852d9c44b44",
+        "createUserIdentifier": "ETL_SYS",
+        "claimNumberArrayDocument": [
+          "10,12,13,14,15,16,20,22,23,24"
+        ],
+        "patentApplicationNumber": "14832202",
+        "legalSectionCode": "103",
+        "submissionDate": "2019-02-14T00:00:00",
+        "groupArtUnitNumber": "3761",
+        "hasRej112": 1,
+        "nationalSubclass": "397000",
+        "rejectFormMissmatch": 0,
+        "createDateTime": "2024-12-16T14:36:20",
+        "formParagraphMissing": 0,
+        "aliceIndicator": false,
+        "allowedClaimIndicator": false,
+        "paragraphNumber": "68",
+        "cite103GT3": 1,
+        "myriadIndicator": false,
+        "headerMissing": 0
+      },
+      {
+        "bilskiIndicator": false,
+        "actionTypeCategory": "rejected",
+        "legacyDocumentCodeIdentifier": "CTFR",
+        "hasRej101": 1,
+        "hasRejDP": 0,
+        "hasRej103": 1,
+        "mayoIndicator": false,
+        "hasRej102": 1,
+        "nationalClass": "392",
+        "closingMissing": 0,
+        "cite103Max": 4,
+        "cite103EQ1": 0,
+        "obsoleteDocumentIdentifier": "JS1TFLIVRXEAPX0",
+        "id": "e058a3327dd9cc6ffc870aa9992a15c7",
+        "createUserIdentifier": "ETL_SYS",
+        "claimNumberArrayDocument": [
+          "10,12,13,14,15,16,20,22,23,24,25,26"
+        ],
+        "patentApplicationNumber": "14832202",
+        "legalSectionCode": "112",
+        "submissionDate": "2019-02-14T00:00:00",
+        "groupArtUnitNumber": "3761",
+        "hasRej112": 1,
+        "nationalSubclass": "397000",
+        "rejectFormMissmatch": 0,
+        "createDateTime": "2024-12-16T14:36:20",
+        "formParagraphMissing": 0,
+        "aliceIndicator": false,
+        "allowedClaimIndicator": false,
+        "paragraphNumber": "37",
+        "cite103GT3": 1,
+        "myriadIndicator": false,
+        "headerMissing": 0
+      },
+      {
+        "bilskiIndicator": false,
+        "actionTypeCategory": "rejected",
+        "legacyDocumentCodeIdentifier": "CTNF",
+        "hasRej101": 0,
+        "hasRejDP": 0,
+        "hasRej103": 1,
+        "mayoIndicator": false,
+        "hasRej102": 0,
+        "nationalClass": "392",
+        "closingMissing": 0,
+        "cite103Max": 4,
+        "cite103EQ1": 0,
+        "obsoleteDocumentIdentifier": "K3G0RR7URXEAPX0",
+        "id": "38322bc5d6d293b7a0b1607ebb3f4d2d",
+        "createUserIdentifier": "ETL_SYS",
+        "claimNumberArrayDocument": [
+          "15"
+        ],
+        "patentApplicationNumber": "14832202",
+        "legalSectionCode": "103",
+        "submissionDate": "2019-11-29T00:00:00",
+        "groupArtUnitNumber": "3761",
+        "hasRej112": 1,
+        "nationalSubclass": "397000",
+        "rejectFormMissmatch": 0,
+        "createDateTime": "2024-12-16T14:36:20",
+        "formParagraphMissing": 0,
+        "aliceIndicator": false,
+        "allowedClaimIndicator": false,
+        "paragraphNumber": "89",
+        "cite103GT3": 1,
+        "myriadIndicator": false,
+        "headerMissing": 0
+      },
+      {
+        "bilskiIndicator": false,
+        "actionTypeCategory": "rejected",
+        "legacyDocumentCodeIdentifier": "CTNF",
+        "hasRej101": 0,
+        "hasRejDP": 0,
+        "hasRej103": 1,
+        "mayoIndicator": false,
+        "hasRej102": 0,
+        "nationalClass": "392",
+        "closingMissing": 0,
+        "cite103Max": 4,
+        "cite103EQ1": 0,
+        "obsoleteDocumentIdentifier": "K3G0RR7URXEAPX0",
+        "id": "3f683cd4086e1137b76ccab3e6ff9ec5",
+        "createUserIdentifier": "ETL_SYS",
+        "claimNumberArrayDocument": [
+          "10,12,13,15,20,22,23,24,25,26"
+        ],
+        "patentApplicationNumber": "14832202",
+        "legalSectionCode": "112",
+        "submissionDate": "2019-11-29T00:00:00",
+        "groupArtUnitNumber": "3761",
+        "hasRej112": 1,
+        "nationalSubclass": "397000",
+        "rejectFormMissmatch": 0,
+        "createDateTime": "2024-12-16T14:36:20",
+        "formParagraphMissing": 0,
+        "aliceIndicator": false,
+        "allowedClaimIndicator": false,
+        "paragraphNumber": "40",
+        "cite103GT3": 1,
+        "myriadIndicator": false,
+        "headerMissing": 0
+      }
+    ]
+  }
+}

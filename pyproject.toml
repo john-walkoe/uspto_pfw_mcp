@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "patent-filewrapper-mcp"
+version = "0.1.0"
+description = "MCP server for USPTO Patent File Wrapper API"
+authors = [
+    {name = "John Walkoe"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp[apps]>=3.4",
+    "aiosqlite>=0.20",
+    "structlog>=24.0",
+    "httpx[http2]>=0.25.0",
+    "aiofiles>=0.8.0",
+    "PyYAML>=6.0",
+    "PyPDF2>=3.0.1",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "starlette>=0.38.0",
+    "cryptography>=41.0.0",
+    "defusedxml>=0.7.1",
+]
+
+[project.scripts]
+patent-filewrapper-mcp = "patent_filewrapper_mcp.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patent_filewrapper_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/patent_filewrapper_mcp",
+    "/README.md",
+    "/pyproject.toml"
+]
+
+[dependency-groups]
+dev = [
+    "detect-secrets>=1.5.0",
+    "pre-commit>=4.5.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.15",
+    "mypy>=1.13",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90"]  # C90 = mccabe complexity
+# E501: ~270 pre-existing long lines (docstrings/guidance text) — not worth
+# the churn; complexity and correctness rules are the point of this config.
+ignore = ["E501"]
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+follow_imports = "silent"

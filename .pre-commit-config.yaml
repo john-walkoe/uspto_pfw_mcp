@@ -1,0 +1,52 @@
+# Pre-commit hooks for Patent File Wrapper MCP
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - '--baseline'
+          - '.secrets.baseline'
+          - '--exclude-files'
+          - 'configs/.*\.json'
+          - '--exclude-files'
+          - '\.md$'
+          - '--exclude-files'
+          - 'package-lock\.json'
+        exclude: ^\.secrets\.baseline$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^\.secrets\.baseline$
+      - id: end-of-file-fixer
+        exclude: ^\.secrets\.baseline$
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-json
+        exclude: ^configs/.*\.json$  # Allow placeholder keys in example configs
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: env-file-perms-check
+        name: Check .env* files are untracked and 0600
+        entry: uv run python .security/check_env_file_perms.py
+        language: system
+        always_run: true
+        pass_filenames: false
+      - id: prompt-injection-check
+        name: Check for prompt injection patterns
+        entry: uv run python .security/check_prompt_injections.py
+        language: system
+        files: \.(py|txt|md|yml|yaml|json|js|ts|html|xml|csv)$
+        # tests/test_injection_scan.py carries the canned injection string the
+        # RUNTIME scanner (shared/injection_scan.py) is tested against —
+        # excluded for the same reason as the .security/ detectors themselves.
+        exclude: (\.security/.*_detector\.py|tests/test_injection_scan\.py)$
