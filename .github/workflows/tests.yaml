@@ -44,9 +44,12 @@ jobs:
         env:
           SKIP_PROXY_TESTS: '1'
         run: |
+          # Exit code 5 is "no tests collected": a file whose module-level
+          # skip fired (the destructive key-management test) is not a failure.
           for f in tests/test_*.py; do
             echo "== $f"
-            uv run pytest -q "$f" || exit 1
+            uv run pytest -q "$f"; rc=$?
+            [ "$rc" -eq 0 ] || [ "$rc" -eq 5 ] || exit 1
           done
 
   audit:
