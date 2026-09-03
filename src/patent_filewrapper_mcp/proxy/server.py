@@ -22,6 +22,7 @@ from .fpd_document_store import get_fpd_store
 from .ptab_document_store import get_ptab_store
 from ..shared.safe_logger import get_safe_logger
 from ..shared.uspto_shared_rate_limiter import get_shared_limiter
+from ..shared.uspto_hosts import USPTO_KEY_EVENT_HOOKS
 
 logger = get_safe_logger(__name__)
 
@@ -58,6 +59,13 @@ def _safe_filename(raw: Optional[str]) -> str:
     if not safe.strip():
         return "document.pdf"
     if not safe.lower().endswith(".pdf"):
+        # Replace a foreign extension rather than appending to it (audit
+        # L-21): "report.html" became "report.html.pdf", a double extension
+        # that misrepresents what the body is. Interior dots in a real name
+        # are preserved; only a trailing extension-looking suffix is dropped.
+        stem, dot, ext = safe.rpartition(".")
+        if dot and stem and 1 <= len(ext) <= 5 and ext.isalnum():
+            safe = stem
         safe += ".pdf"
     return safe[:200]
 
@@ -69,16 +77,49 @@ def _safe_filename(raw: Optional[str]) -> str:
 _PROXY_TOKEN: Optional[str] = None
 
 
+#: Minimum entropy for an operator-supplied PROXY_TOKEN. Only one of the five
+#: operator secrets had a length floor (audit L-5).
+_MIN_PROXY_TOKEN_LENGTH = 16
+
+
 def _get_proxy_token() -> str:
-    """Get or generate the proxy auth token."""
+    """Get or generate the proxy auth token.
+
+    Auto-generation is a per-PROCESS value, so when the tools and the proxy
+    are separate processes — an explicitly supported deployment, see
+    server_bootstrap._port_serves_healthy_proxy — the tool's
+    /api/register-download POST authenticates against a different random
+    token, 401s, and is swallowed, so Recent Downloads silently stops
+    updating (audit M-11, initial-software-design F-3).
+
+    So: with ENABLE_ALWAYS_ON_PROXY set, PROXY_TOKEN is REQUIRED and we fail
+    loudly rather than generating an unknowable credential. Elsewhere
+    (in-process stdio, tests) auto-generation stays, because there the
+    generated value never has to be known by anything outside this process.
+    """
     global _PROXY_TOKEN
     if _PROXY_TOKEN is None:
-        _PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
-        if not _PROXY_TOKEN:
+        _PROXY_TOKEN = os.getenv("PROXY_TOKEN", "").strip()
+        if _PROXY_TOKEN:
+            if len(_PROXY_TOKEN) < _MIN_PROXY_TOKEN_LENGTH:
+                raise RuntimeError(
+                    f"PROXY_TOKEN must be at least {_MIN_PROXY_TOKEN_LENGTH} "
+                    "characters. Generate one with:  python -c \"import secrets; "
+                    "print(secrets.token_urlsafe(32))\""
+                )
+            logger.info("Proxy token loaded from PROXY_TOKEN env var")
+        elif os.getenv("ENABLE_ALWAYS_ON_PROXY", "true").lower() == "true" and \
+                os.getenv("FASTMCP_TRANSPORT", "stdio") == "http":
+            raise RuntimeError(
+                "PROXY_TOKEN is required when the download proxy runs as a "
+                "separate process (ENABLE_ALWAYS_ON_PROXY=true on the HTTP "
+                "transport). An auto-generated token differs per process, so "
+                "download registration would 401 silently. Generate one with: "
+                "python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+        else:
             _PROXY_TOKEN = secrets.token_urlsafe(32)
             logger.info("Proxy token auto-generated (set PROXY_TOKEN env var to override)")
-        else:
-            logger.info("Proxy token loaded from PROXY_TOKEN env var")
     return _PROXY_TOKEN
 
 
@@ -252,7 +293,14 @@ async def _open_upstream_pdf_stream(download_url: str, headers: dict, request_id
     """
     # Bulkhead (audit F46): reuse the API client's download pool limits so
     # proxy download traffic can't starve tool traffic of connections
-    client_kwargs = {"timeout": 60.0, "follow_redirects": True}
+    # `event_hooks` drops X-API-KEY on any hop that is not https on
+    # uspto.gov: this URL 302s to signed storage, and httpx strips only
+    # Authorization and Cookie across origins.
+    client_kwargs = {
+        "timeout": 60.0,
+        "follow_redirects": True,
+        "event_hooks": USPTO_KEY_EVENT_HOOKS,
+    }
     download_limits = getattr(api_client, "download_limits", None)
     if download_limits is not None:
         client_kwargs["limits"] = download_limits
@@ -379,7 +427,13 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
     # additional origins — e.g. when behind a reverse proxy or MCP gateway.
     # Format: comma-separated URLs, e.g. "https://mcp.example.com,https://proxy.internal"
     import re as _re
-    _proxy_cors_origins = ["http://localhost:*", "http://127.0.0.1:*"]
+    # Starlette matches allow_origins EXACTLY; it has no port-wildcard syntax,
+    # so "http://localhost:*" matched nothing and the localhost defaults were
+    # silently dead (audit L-16). The port wildcard is expressed as a regex,
+    # which Starlette does support, and the exact list keeps the operator's
+    # explicit origins.
+    _proxy_cors_origins = []
+    _proxy_cors_origin_regex = r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
     _extra = os.getenv("CORS_EXTRA_ORIGIN", "").strip()
     if _extra:
         for _origin in _extra.split(","):
@@ -393,6 +447,7 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_proxy_cors_origins,
+        allow_origin_regex=_proxy_cors_origin_regex,
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["Accept", "User-Agent", "Content-Type"],
@@ -435,9 +490,8 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
             security_logger.log_auth_failure(
                 str(request.url.path),
                 client_ip,
-                "ip_not_whitelisted",
-                f"IP {client_ip} not in allowed list",
-                request_id
+                f"ip_not_whitelisted: IP {client_ip} not in allowed list",
+                request_id=request_id,
             )
             return JSONResponse(
                 status_code=403,
@@ -451,12 +505,18 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next):
         """Add standard security headers to all responses"""
+        # One owner for the shared set (audit L-15): the two apps' header
+        # sets had diverged with neither a superset of the other — the MCP
+        # side had HSTS and the proxy did not, the proxy had Referrer-Policy
+        # and the MCP side did not. Assignment replaces, so this is
+        # replace-not-append as L-14 requires. X-XSS-Protection is gone: a
+        # dead header in every current browser (I-6).
+        from ..middleware import COMMON_SECURITY_HEADERS, PROXY_CSP
+
         response = await call_next(request)
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Content-Security-Policy"] = "default-src 'none'"
+        for name, value in COMMON_SECURITY_HEADERS:
+            response.headers[name] = value
+        response.headers["Content-Security-Policy"] = PROXY_CSP
         return response
 
     # =========================================================================

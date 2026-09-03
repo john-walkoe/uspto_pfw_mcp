@@ -2,39 +2,46 @@
 
 ## Start Here: Manual End-to-End Tests
 
-**[TEST_SUITE.md](TEST_SUITE.md)** — 19 manual tests covering all 14 tools against the live USPTO API. Run these first after setup, upgrades, or code changes.
+**[TEST_SUITE.md](TEST_SUITE.md)** - 21 manual tests (Test 0 through Test 20) covering 12 of the 16 data tools against the live USPTO API. Run these first after setup, upgrades, or code changes.
 
 These tests confirm real API behavior with verified expected outputs. They run via Claude Desktop — no code required. See `TEST_SUITE.md` for the full prompt to paste.
 
-**Last validated:** 2026-03-29 (Claude Desktop, STDIO)
+**Last validated:** 2026-03-29 (Claude Desktop, STDIO); document counts and OA expectations re-verified 2026-09-03
 
 ---
 
-## Available MCP Tools (14 Total)
+## Available MCP Tools (16, plus one admin tool)
 
 The server provides these tools for patent research:
 
 ### Search Tools
-- **`pfw_search_applications`** - Full search with custom field selection
-- **`pfw_search_applications_minimal`** - Minimal fields (95-99% context reduction) — always loaded
-- **`pfw_search_applications_balanced`** - Balanced fields (85-95% context reduction)
-- **`pfw_search_inventor`** - Full inventor search with custom fields
-- **`pfw_search_inventor_minimal`** - Minimal inventor search
-- **`pfw_search_inventor_balanced`** - Balanced inventor search
+- **`PFW_search_applications`** - Full search with custom field selection
+- **`PFW_search_applications_minimal`** - Minimal fields (95-99% context reduction) — always loaded
+- **`PFW_search_applications_balanced`** - Balanced fields (85-95% context reduction)
+- **`PFW_search_inventor`** - Full inventor search with custom fields
+- **`PFW_search_inventor_minimal`** - Minimal inventor search
+- **`PFW_search_inventor_balanced`** - Balanced inventor search
 
 ### Document Tools
-- **`pfw_get_application_documents`** - Get prosecution documents (documentBag) — always loaded
-- **`pfw_get_document_content_with_ocr`** - Extract text with 3-tier chain: PyPDF2 → Mistral OCR → Docling
-- **`pfw_get_document_download`** - Secure browser-accessible download URLs
-- **`pfw_get_patent_or_application_xml`** - Clean XML content for patents/applications with 91-99% token reduction
-- **`pfw_get_granted_patent_documents_download`** - All granted patent components (abstract, claims, drawings, spec)
+- **`PFW_get_application_documents`** - Get prosecution documents (documentBag) — always loaded
+- **`PFW_get_document_content_with_ocr`** - Extract text through four capability tiers: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR
+- **`PFW_get_document_download`** - Secure browser-accessible download URLs
+- **`PFW_get_patent_or_application_xml`** - Clean XML content for patents/applications with 91-99% token reduction
+- **`PFW_get_granted_patent_documents_download`** - All granted patent components (abstract, claims, drawings, spec)
 
 ### Office Action Tools (OA APIs)
-- **`pfw_get_oa_rejections`** - Rejection indicators from OA Rejections API (§101/§102/§103/§112, Alice, Bilski, etc.) — coverage from Oct 1, 2017
-- **`pfw_get_oa_text`** - Full office action body text or section-filtered rejection text, directly from USPTO ODP text API
+- **`PFW_get_oa_rejections`** - Rejection indicators from OA Rejections API (§101/§102/§103/§112, Alice, Bilski, etc.) — coverage from Oct 1, 2017
+- **`PFW_get_oa_text`** - Full office action body text or section-filtered rejection text, directly from USPTO ODP text API
+
+### Family & Term Tools
+- **`PFW_get_family`** - Normalized continuity graph (parents, children, CON/CIP/DIV) plus foreign priority claims
+- **`PFW_get_term_adjustment`** - Patent Term Adjustment days and event history (no expiration date is computed)
 
 ### Utility Tools
-- **`pfw_get_guidance`** - Workflow guidance, tool descriptions, document code reference — always loaded
+- **`PFW_get_guidance`** - Workflow guidance, tool descriptions, document code reference — always loaded
+
+### Admin Tool (OAuth deployments only)
+- **`pfw_manage_users`** - Registered-user management; registered only when `PFW_ENABLE_USER_MANAGEMENT=true` and gated on the `pfw:admin` scope
 
 ---
 
@@ -42,46 +49,74 @@ The server provides these tools for patent research:
 
 These tests cover unit logic, security, proxy server, and integration patterns. They do not replace the manual `TEST_SUITE.md` tests — both serve different purposes.
 
-### Core Functionality Tests
-- **`test_fields_fix.py`** - Tests core search functionality and field mapping
-- **`test_proxy_simple.py`** - Tests the secure browser download proxy server
-- **`test_mcp_server.py`** - Tests basic MCP server startup and configuration
-- **`test_quality_detection.py`** - Tests document extraction quality detection logic
+### How to run them
 
-### Integration Tests
-- **`test_fpd_integration.py`** - Tests FPD MCP centralized proxy integration
-- **`test_ptab_simple.py`** - Tests PTAB future Open Data Portal integration readiness
+```bash
+# Whole suite. test_unified_key_management.py is excluded because it overwrites
+# the REAL secure-storage keys mid-test - only run that one deliberately.
+uv run pytest --ignore=tests/test_unified_key_management.py
 
-### Additional Tests
-- **`test_granted_patent_documents_download.py`** - Tests granted patent document retrieval functionality
-- **`test_download.py`** - Tests document download functionality
-- **`simple_test.py`** - Basic functionality test
-- **`test_mistral_key_logic.py`** - Tests optional Mistral API key handling logic
-- **`test_optional_mistral.py`** - Tests document extraction without Mistral API key
-- **`test_placeholder_detection.py`** - Tests placeholder API key detection and validation
-- **`test_resilience_features.py`** - Tests circuit breaker and retry logic functionality
-- **`test_utils.py`** - Test utilities for standardized configuration and API key management
+# No download proxy running on port 8080? Skip the proxy integration test:
+SKIP_PROXY_TESTS=1 uv run pytest --ignore=tests/test_unified_key_management.py
 
-### Diagnostic & Demonstration Tests
-- **`test_field_mapping_diagnostic.py`** - Demonstrates field mapping functionality (user-friendly → API field names)
-- **`test_include_fields.py`** - Demonstrates XML field selection and token reduction with `include_fields` and `include_raw_xml` parameters
-- **`test_document_codes_section.py`** - Tests document_codes section in pfw_get_guidance tool
+# One file
+uv run pytest tests/test_identifier_resolution_order.py
+```
 
-### Cross-MCP Integration Tests
-- **`test_enhanced_filename.py`** - Tests FPD enhanced filename integration for petition documents
-- **`test_unified_key_management.py`** - Tests unified secure storage system across USPTO MCPs (PFW, FPD, PTAB, Citations)
+Live-API tests are gated OFF by default. They run only with an explicit opt-in
+(`PFW_RUN_LIVE_TESTS=1` plus a real `USPTO_API_KEY`); the presence of a key is
+deliberately not treated as consent.
 
-### Legacy Development Tests (Can Be Archived)
-These tests were created to diagnose and fix specific issues during development. The fixes have been validated and integrated. Consider moving to `archive/` directory:
+### What the files cover
 
-- **`test_all_convenience_parameters.py`** - Comprehensive test of all 7 convenience parameters (one-time validation)
-- **`test_art_unit_fix.py`** - Art unit search colon escaping fix (✅ fixed and working)
-- **`test_audit_fixes.py`** - Lucene escaping and circuit breaker tests (✅ fixed and working)
-- **`test_date_ranges.py`** - Date range query construction validation (✅ fixed and working)
-- **`test_examiner_search.py`** - Examiner name tokenization debugging (✅ fixed and working)
-- **`test_exact_query_construction.py`** - Query construction debugging (✅ fixed and working)
-- **`test_quote_escaping.py`** - Quote escaping in queries debugging (✅ fixed and working)
-- **`test_final_escape_fix.py`** - Final Lucene escape fix validation (✅ fixed and working)
+**Search, fields and identifiers**
+- `test_fields_fix.py` - core search and field mapping
+- `test_identifier_logic.py`, `test_identifier_resolution_order.py`,
+  `test_content_type_validation.py` - patent-vs-application lane resolution, the
+  resolve-then-validate order, and `content_type` rejection
+- `test_free_text_variants.py`, `test_no_matches_404.py`
+
+**Documents, extraction and downloads**
+- `test_ocr_hybrid_tiers.py`, `test_quality_detection.py` - the extraction tier waterfall
+- `test_mistral_key_logic.py`, `test_optional_mistral.py`, `test_placeholder_detection.py`
+- `test_download.py`, `test_download_url_validation.py`, `test_safe_filename.py`,
+  `test_enhanced_filename.py`, `test_granted_component_selection.py`,
+  `test_granted_patent_documents_download.py`
+- `test_doc_codes_parser.py`, `test_document_codes_section.py`
+
+**Family, term and office actions**
+- `test_family_normalizer.py`, `test_family_ambiguity_note.py`, `test_family_tools_registration.py`
+- `test_term_adjustment_normalizer.py`
+
+**Response bounds and paging**
+- `test_response_bounds.py`, `test_documents_response_bound.py`,
+  `test_bounds_bug_fixes.py`, `test_ingress_bounds.py`, `test_persistent_link_bounds.py`
+
+**Proxy and downloads ingress**
+- `test_proxy_simple.py`, `test_proxy_routes.py`, `test_proxy_route_hardening.py`,
+  `test_proxy_startup_gate.py`, `test_proxy_token.py`, `test_registration_token_binding.py`
+
+**Auth, secrets and logging**
+- `test_auth_provider.py`, `test_user_management_gate.py`, `test_spend_and_scoping.py`
+- `test_linux_secret_store.py`, `test_key_and_alert_lifecycle.py`,
+  `test_rotate_internal_auth_secret.py`, `test_unified_key_management.py` (excluded by default)
+- `test_logging_hardening.py`, `test_security_log_attribution.py`,
+  `test_rate_limit_and_log_perms.py`, `test_injection_scan.py`, `test_ui_view_escaping.py`
+
+**Server contract and resilience**
+- `test_defer_loading_annotation.py`, `test_probe_middleware_accept.py`,
+  `test_prompts_gate.py`, `test_tool_reflections.py`
+- `test_resilience_features.py`, `test_client_hardening.py`,
+  `test_error_and_header_handling.py`, `test_shared_rate_limiter.py`
+- `test_medium_security_fixes.py`, `test_open_items_fixes.py`, `test_evals_findings_fixes.py`
+
+**Cross-MCP**
+- `test_fpd_integration.py` (needs a live proxy on 8080; `SKIP_PROXY_TESTS=1` to skip),
+  `test_ptab_integration.py`, `test_ptab_simple.py`,
+  `test_cross_repo_internal_auth_compat.py` (skips when the sibling repos are not checked out alongside this one)
+
+**Helpers**
+- `test_utils.py`, `conftest.py`
 
 ---
 
@@ -91,12 +126,12 @@ These tests were created to diagnose and fix specific issues during development.
 
 API keys can be stored in unified secure storage (shared across USPTO MCPs) which is encrypted and persistent:
 
-```bash
-# View stored keys across all USPTO MCPs (shows metadata only, not actual values)
-uv run python tests/test_unified_key_management.py
-```
+Keys are automatically loaded from secure storage with environment variable
+fallback. See `SECURITY_GUIDELINES.md` for setup instructions.
 
-Keys are automatically loaded from secure storage with environment variable fallback. See `SECURITY_GUIDELINES.md` for setup instructions.
+> Do NOT run `tests/test_unified_key_management.py` to inspect stored keys: it
+> WRITES to the shared secure store and overwrites the real keys. It is
+> excluded from the default pytest run for that reason.
 
 ### Option 2: Environment Variables
 
@@ -104,12 +139,12 @@ Keys are automatically loaded from secure storage with environment variable fall
 # Windows Command Prompt
 set USPTO_API_KEY=your_api_key_here
 set MISTRAL_API_KEY=your_mistral_api_key_here_OPTIONAL
-set DOCLING_SERVE_URL=http://localhost:5001_OPTIONAL
+set DOCLING_SERVE_URL=http://localhost:5001  REM optional, for Docling OCR
 
 # Windows PowerShell
 $env:USPTO_API_KEY="your_api_key_here"
 $env:MISTRAL_API_KEY="your_mistral_api_key_here_OPTIONAL"
-$env:DOCLING_SERVE_URL="http://localhost:5001_OPTIONAL"
+$env:DOCLING_SERVE_URL="http://localhost:5001"  # optional, for Docling OCR
 
 # Linux/macOS
 export USPTO_API_KEY=your_api_key_here
@@ -118,8 +153,10 @@ export DOCLING_SERVE_URL=http://localhost:5001  # optional, for Docling OCR
 ```
 
 **Notes on optional keys:**
-- `MISTRAL_API_KEY` — enables Mistral OCR (~$0.001/page). Preferred for scanned USPTO docs. Without it, falls back to Docling (free) or returns a message recommending one of the two.
-- `DOCLING_SERVE_URL` — enables Docling OCR (free self-hosted fallback). Requires a running [Docling-serve](https://github.com/DS4SD/docling-serve) instance. Without it, extraction falls back to PyPDF2 (text-only PDFs) or returns an actionable message.
+- `MISTRAL_API_KEY` - enables the Mistral OCR tier for scanned USPTO documents. Optional.
+- `DOCLING_SERVE_URL` - enables the self-hosted Docling OCR tier. Requires a running [docling-serve](https://github.com/docling-project/docling-serve) instance. Optional.
+
+Both are OCR backends for the same tier of the waterfall, and neither is required: without either, extraction still runs the USPTO free-text and PyPDF2 native-text-layer tiers and returns an actionable message when a scanned page cannot be read. With both configured, Mistral runs first and Docling is the next tier; with only Docling configured, Docling is the OCR tier.
 
 ### Option 3: Testing Without Real API Key
 
@@ -129,40 +166,26 @@ If you don't have a USPTO API key yet, test files will use a placeholder key for
 
 ## Running Developer Tests
 
-### With uv (Recommended)
+The suite is pytest with `asyncio_mode=auto`. Run it through pytest, not by
+executing individual files as scripts.
+
 ```bash
-# Core functionality tests
-uv run python tests/test_fields_fix.py
-uv run python tests/test_proxy_simple.py
-uv run python tests/test_mcp_server.py
-uv run python tests/test_quality_detection.py
+# Everything except the key-overwriting file
+uv run pytest --ignore=tests/test_unified_key_management.py
 
-# Integration tests
-uv run python tests/test_fpd_integration.py
-uv run python tests/test_ptab_simple.py
+# Quiet, and skipping the proxy integration test when no proxy is on 8080
+SKIP_PROXY_TESTS=1 uv run pytest -q --ignore=tests/test_unified_key_management.py
 
-# Additional functionality tests
-uv run python tests/test_granted_patent_documents_download.py
-uv run python tests/test_download.py
-uv run python tests/simple_test.py
+# One file, or one test
+uv run pytest tests/test_response_bounds.py
+uv run pytest tests/test_identifier_resolution_order.py -k validate
 
-# Diagnostic & demonstration tests
-uv run python tests/test_field_mapping_diagnostic.py
-uv run python tests/test_include_fields.py
-uv run python tests/test_document_codes_section.py
-
-# Cross-MCP integration tests
-uv run python tests/test_enhanced_filename.py
-uv run python tests/test_unified_key_management.py
+# Lint
+uv run ruff check src tests
 ```
 
-### With traditional Python
-```bash
-python tests/test_fields_fix.py
-python tests/test_proxy_simple.py
-python tests/test_mcp_server.py
-python tests/test_quality_detection.py
-```
+`test_unified_key_management.py` is excluded by default because it overwrites
+the REAL secure-storage keys while it runs. Run it only when you mean to.
 
 ---
 
@@ -182,8 +205,3 @@ python tests/test_quality_detection.py
 
 **Security Note:** Never commit API keys to version control.
 
----
-
-## Archive
-
-The `archive/` folder contains legacy test scripts from development iterations. Preserved for reference but not required for normal operation.

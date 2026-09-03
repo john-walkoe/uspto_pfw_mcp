@@ -3,12 +3,13 @@
 Registration-gated by PFW_ENABLE_USER_MANAGEMENT (default off — audit H1)."""
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from fastmcp.server.apps import AppConfig
+from fastmcp.apps import AppConfig
 
 from ..shared.safe_logger import get_safe_logger
 from ..util.error_handlers import mcp_error_handler
+from ..util.security_logger import security_logger
 from ..app_uris import _USER_MANAGEMENT_URI
 
 logger = get_safe_logger(__name__)
@@ -41,6 +42,43 @@ def _get_user_store():
     return McpUserStore(AuthSettings.from_env().auth_db_path)
 
 
+def _actor() -> str:
+    """Authenticated identity of the caller, for the audit record.
+
+    Returns "local-process" outside OAuth mode, where the transport itself is
+    the identity."""
+    try:
+        from fastmcp.server.dependencies import get_access_token
+        token = get_access_token()
+        if token is not None:
+            claims = getattr(token, "claims", None) or {}
+            return claims.get("email") or getattr(token, "client_id", None) or "internal"
+    except Exception:
+        pass
+    return "local-process"
+
+
+def _audit_user_management(actor: str, action: str, target: str, role: str,
+                          success: bool, detail: Optional[str] = None) -> None:
+    """Emit a security-log record for every mcp_users mutation (M-15).
+
+    `list` is a read and is not audited. Never raises: a failed audit write
+    must not turn a successful grant into a tool error, but it is logged."""
+    if action == "list":
+        return
+    try:
+        security_logger.log_admin_action(
+            actor=actor,
+            action=action,
+            target=target,
+            success=success,
+            role=role if action in ("add", "set_role") else None,
+            detail=detail,
+        )
+    except Exception as audit_error:
+        logger.error("Admin audit write failed: %s", type(audit_error).__name__)
+
+
 async def pfw_manage_users(
     action: str = "list",
     email: str = "",
@@ -49,6 +87,7 @@ async def pfw_manage_users(
     notes: str = "",
 ) -> Dict[str, Any]:
     """Manage the registered-user list for OAuth sign-in (ADMIN ONLY).
+    Users, accounts, admin, permissions, roles, access, allowlist, add user, deactivate, sign-in.
 
     Lists, adds, activates, deactivates, or changes the role of registered
     users. A user may sign in via Google / Microsoft only while their row is
@@ -78,6 +117,7 @@ async def pfw_manage_users(
         return {"error": f"action must be one of {valid_actions}, got {action!r}"}
 
     store = _get_user_store()
+    actor = _actor()
     message = ""
     try:
         if action != "list":
@@ -100,15 +140,18 @@ async def pfw_manage_users(
                 return {"error": f"role must be 'user' or 'admin', got {role!r}"}
             existing = await store.get_user(email)
             if existing is None:
+                _audit_user_management(actor, action, email, role, False, "no such user")
                 return {"error": f"no such user: {email}"}
             await store.upsert_user(email, role=role, active=existing["active"])
             message = f"{email} role set to '{role}'."
         elif action in ("activate", "deactivate"):
             active = action == "activate"
             if not await store.set_active(email, active):
+                _audit_user_management(actor, action, email, role, False, "no such user")
                 return {"error": f"no such user: {email}"}
             message = f"{email} is now {'active' if active else 'deactivated'}."
 
+        _audit_user_management(actor, action, email, role, True)
         users = await store.list_users()
         return {
             "action": action,
@@ -131,6 +174,7 @@ async def pfw_manage_users(
         }
     except Exception as e:
         logger.error("User management action failed: %s", type(e).__name__)
+        _audit_user_management(actor, action, email, role, False, type(e).__name__)
         return {"error": f"User management failed: {e}"}
 
 
@@ -140,21 +184,23 @@ def register(mcp, auth_provider=None) -> None:
     global _auth_provider
     _auth_provider = auth_provider
     if USER_MANAGEMENT_ENABLED:
+        if _auth_provider is None and os.getenv("FASTMCP_TRANSPORT", "stdio") == "http":
+            # Enabled on the HTTP surface without OAuth, the only protection on
+            # this tool would be the shared INTERNAL_AUTH_SECRET — anyone
+            # holding that ecosystem-wide secret could self-grant admin across
+            # PFW/PTAB/FPD via the shared user DB. Refuse to start rather than
+            # register it ungated (this used to log a warning and continue).
+            # stdio stays allowed: there the OS process boundary is the gate.
+            raise RuntimeError(
+                "PFW_ENABLE_USER_MANAGEMENT=true requires PFW_AUTH_MODE=oauth in "
+                "HTTP mode; the shared INTERNAL_AUTH_SECRET is not a per-identity "
+                "gate. Use scripts/manage_mcp_users.py for out-of-band administration."
+            )
         mcp.tool(
             name="pfw_manage_users",
             app=AppConfig(resource_uri=_USER_MANAGEMENT_URI),
             annotations={"defer_loading": True},
         )(mcp_error_handler(pfw_manage_users))
-        if _auth_provider is None:
-            # Enabled without OAuth: the only protection on this tool is the
-            # transport itself (stdio) or the shared INTERNAL_AUTH_SECRET (HTTP
-            # mode=none) — anyone holding that ecosystem-wide secret could
-            # self-grant admin across PFW/PTAB/FPD via the shared user DB.
-            logger.warning(
-                "pfw_manage_users is ENABLED without OAuth per-identity gating "
-                "(PFW_ENABLE_USER_MANAGEMENT=true, PFW_AUTH_MODE!=oauth). "
-                "Recommended: leave it disabled and use scripts/manage_mcp_users.py."
-            )
     else:
         logger.info(
             "pfw_manage_users not registered (PFW_ENABLE_USER_MANAGEMENT is off; "

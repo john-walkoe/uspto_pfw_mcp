@@ -1,7 +1,8 @@
 """USPTO Office Action Text Retrieval API client (v1)
 
-Provides full-text content of public office actions starting with 12-series applications.
-Dataset refreshed daily.
+Provides full-text content of public office actions. Coverage observed to reach office
+actions mailed roughly 2008 onward (10-series applications and later) — materially broader
+than the Oct 1, 2017 floor on the OA Rejections v2 dataset. Refreshed daily.
 """
 import os
 from typing import Any, Dict, Optional

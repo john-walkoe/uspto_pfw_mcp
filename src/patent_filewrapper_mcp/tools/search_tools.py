@@ -3,10 +3,11 @@
 
 from typing import Any, Dict, List, Optional
 
-from fastmcp.server.apps import AppConfig
+from fastmcp.apps import AppConfig
 
 from ..api.enhanced_client import EnhancedPatentClient
 from ..api.helpers import (
+    annotate_earliest_priority,
     create_error_response,
     escape_lucene_query_term,
     format_error_response,
@@ -25,6 +26,71 @@ from ..util.error_handlers import mcp_error_handler
 from ..app_uris import _SEARCH_URI
 
 logger = get_safe_logger(__name__)
+
+
+def _clamp_search_limit(limit: int):
+    """(limit_applied, clamp_marker_or_None) — the search ceiling CLAMPS.
+
+    Description/behaviour drift found by the evals harness 2026-08-31: every
+    tool description, `PFW_get_guidance('limits')` and CLAUDE.md called
+    MAX_SEARCH_LIMIT a clamp, and the wire layer has always clamped
+    (`enhanced_client.search_applications` sends `min(limit, 100)`). Only the
+    TOOL layer disagreed, answering `limit=500` with a 400 and no `paging`
+    block, so an agent that believed the description spent a turn on an error.
+    The ceiling is now applied and SAID: `limit_clamped` carries the requested
+    value, the applied value and why.
+
+    `limit_clamped` is ABSENT when the clamp did not fire — same
+    absent-on-a-no-op rule as `_bounds` and `_window`. A limit below 1 is
+    still a 400: there is no honest value to clamp it to.
+    """
+    ceiling = EnhancedPatentClient.MAX_SEARCH_LIMIT
+    if limit <= ceiling:
+        return limit, None
+    return ceiling, {
+        "limit_clamped": {
+            "requested": limit,
+            "applied": ceiling,
+            "note": (
+                f"limit={limit} is above the USPTO search ceiling of {ceiling}, so it was "
+                f"CLAMPED to {ceiling} rather than rejected. `paging.limit_requested` "
+                "carries the same requested value; page past the ceiling with offset= on "
+                "the application searches."
+            ),
+        }
+    }
+
+
+def _stamp_limit_clamp(result, clamp_marker):
+    """Merge the `_clamp_search_limit` marker into a tool response.
+
+    A no-op when the clamp did not fire, and it touches nothing else in an
+    error envelope. `paging.limit_requested` is restored to what the CALLER
+    asked for: the wire layer only ever saw the clamped value, so the envelope
+    would otherwise report `limit_requested: 100` for a `limit=500` call, which
+    is the same echo-the-wrong-number dishonesty the paging block exists to
+    prevent.
+    """
+    if clamp_marker and isinstance(result, dict):
+        result.update(clamp_marker)
+        paging = result.get("paging")
+        if isinstance(paging, dict):
+            paging["limit_requested"] = clamp_marker["limit_clamped"]["requested"]
+    return result
+
+
+#: Stamped on every balanced response that carries per-record
+#: `earliest_priority_date` / `priority_basis` (OPEN_ITEMS #13).
+PRIORITY_NOTE = (
+    "Each application carries `earliest_priority_date` (the minimum over its "
+    "foreignPriorityBag, its parentContinuityBag including provisionals, and its own "
+    "filingDate) plus `priority_basis` naming what produced it. "
+    "applicationMetaData.effectiveFilingDate is NOT the earliest priority date: it is "
+    "the 371 national-stage ENTRY date for a national-stage case and the child's own "
+    "filing date for a continuation, so an AIA or prior-art cutoff built on it inverts. "
+    "The computation uses only the chain links this field set returns — call "
+    "PFW_get_family for the full graph before relying on it."
+)
 
 
 # Filter helper functions for readability
@@ -106,6 +172,25 @@ def _matches_grant_date_range(
 
 
 # Helper functions using parameter object pattern
+def _require_iso_dates(**dates) -> None:
+    """Reject any date parameter that is not YYYY-MM-DD.
+
+    Raises:
+        ParameterValidationError: naming the offending field, so the caller
+            gets the field name rather than a substring-matchable message.
+    """
+    from ..models.search_params import _ISO_DATE
+
+    for field, value in dates.items():
+        if value is None or value == "":
+            continue
+        if not _ISO_DATE.match(str(value)):
+            raise ParameterValidationError(
+                field,
+                f"{field} must be an ISO date in YYYY-MM-DD form, got {value!r}",
+            )
+
+
 def _build_query_from_params(
     query: str = "",
     art_unit: Optional[str] = None,
@@ -122,7 +207,7 @@ def _build_query_from_params(
     Build Lucene query string from convenience parameters.
 
     Centralizes query building logic to eliminate duplication across
-    search_applications, search_applications_minimal, and search_applications_balanced.
+    PFW_search_applications, PFW_search_applications_minimal, and PFW_search_applications_balanced.
 
     This function applies field name mapping and escaping to build a complete
     Lucene query string from user-friendly convenience parameters.
@@ -175,14 +260,27 @@ def _build_query_from_params(
         escaped_status = escape_lucene_query_term(str(status_code))
         query_parts.append(f"applicationMetaData.applicationStatusCode:{escaped_status}")
 
+    # Dates are NOT escaped: they go into structured range clauses, where a
+    # backslash-escaped hyphen would break the query. What makes that safe is
+    # the SHAPE check below, not the old comment's assumption that the value
+    # is "in known format" — nothing enforced it, so a value like
+    # `2020-01-01] OR applicationMetaData.patentNumber:[* TO *` closed the
+    # clause and appended a disjunction (audit M-8). Checked here, at the one
+    # place that interpolates them, because two of the three search tiers
+    # reach this function without building a SearchParameters.
+    _require_iso_dates(
+        filing_date_start=filing_date_start,
+        filing_date_end=filing_date_end,
+        grant_date_start=grant_date_start,
+        grant_date_end=grant_date_end,
+    )
+
     if filing_date_start or filing_date_end:
-        # Dates are NOT escaped - they're in known format (YYYY-MM-DD) for structured range queries
         start = filing_date_start if filing_date_start else "*"
         end = filing_date_end if filing_date_end else "*"
         query_parts.append(f"applicationMetaData.filingDate:[{start} TO {end}]")
 
     if grant_date_start or grant_date_end:
-        # Dates are NOT escaped - they're in known format (YYYY-MM-DD) for structured range queries
         start = grant_date_start if grant_date_start else "*"
         end = grant_date_end if grant_date_end else "*"
         query_parts.append(f"applicationMetaData.grantDate:[{start} TO {end}]")
@@ -251,7 +349,7 @@ async def _search_applications_with_params(params: SearchParameters) -> Dict[str
                     'grant_date_range': f"{params.grant_date_start or '*'} to {params.grant_date_end or '*'}"
                 },
                 'search_tier': 'full (custom fields)',
-                'recommendation': 'Consider using pfw_search_applications_minimal for token efficiency'
+                'recommendation': 'Consider using PFW_search_applications_minimal for token efficiency'
             }
 
         return result
@@ -295,7 +393,7 @@ async def _search_inventor_with_params(params: InventorSearchParameters) -> Dict
 
 def register(mcp) -> None:
     """Register the six search tools."""
-    @mcp.tool(name="search_applications", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
+    @mcp.tool(name="PFW_search_applications", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
     @mcp_error_handler
     async def pfw_search_applications(
         query: str = "",
@@ -314,26 +412,30 @@ def register(mcp) -> None:
         grant_date_end: Optional[str] = None
     ) -> Dict[str, Any]:
         """Full-featured search with all convenience parameters and custom field selection.
+    Find patent applications, search by examiner, art unit, applicant or company, customer number, status, filing or grant date; prosecution portfolio lookup.
 
-    **RECOMMENDATION: Use pfw_search_applications_minimal instead for most searches (95-99% token reduction).**
+    **RECOMMENDATION: Use PFW_search_applications_minimal instead for most searches (95-99% token reduction).**
     This tool provides all search capabilities including convenience parameters and custom field selection.
 
-    **Convenience parameters - see pfw_search_applications_minimal for details:**
+    **Convenience parameters - see PFW_search_applications_minimal for details:**
     - `art_unit`, `examiner_name`, `applicant_name`, `customer_number`, `status_code`, `filing_date_start/end`, `grant_date_start/end`
 
     **Examples:**
     ```python
     # Art unit search with custom fields
-    pfw_search_applications(art_unit='2128', fields=['applicationNumberText', 'inventionTitle'], limit=50)
+    PFW_search_applications(art_unit='2128', fields=['applicationNumberText', 'inventionTitle'], limit=50)
 
     # Hybrid: keywords + convenience + custom fields
-    pfw_search_applications(query='artificial intelligence', art_unit='2128', fields=['applicationNumberText', 'patentNumber', 'inventionTitle'], limit=50)
+    PFW_search_applications(query='artificial intelligence', art_unit='2128', fields=['applicationNumberText', 'patentNumber', 'inventionTitle'], limit=50)
     ```
 
-    For complex search strategies and cross-MCP workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
+    For complex search strategies and cross-MCP workflows, use PFW_get_guidance (see quick reference chart for section selection)."""
 
         # Create SearchParameters object and delegate to helper function
         try:
+            # Clamp before the parameter object, which REJECTS anything over the
+            # ceiling — the tool layer clamps and says so (_clamp_search_limit).
+            limit, limit_clamp = _clamp_search_limit(limit)
             params = SearchParameters(
                 query=query,
                 limit=limit,
@@ -349,7 +451,9 @@ def register(mcp) -> None:
                 grant_date_start=grant_date_start,
                 grant_date_end=grant_date_end
             )
-            return await _search_applications_with_params(params)
+            return _stamp_limit_clamp(
+                await _search_applications_with_params(params), limit_clamp
+            )
         except ParameterValidationError as e:
             # Typed field mapping (audit F24 — no more substring-matching the
             # exception text, which misfiled e.g. "rate limit exceeded")
@@ -359,7 +463,7 @@ def register(mcp) -> None:
             return format_error_response(f"Search failed: {str(e)}", error_type="search_error")
 
 
-    @mcp.tool(name="search_inventor", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
+    @mcp.tool(name="PFW_search_inventor", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
     @mcp_error_handler
     async def pfw_search_inventor(
         name: str,
@@ -378,24 +482,25 @@ def register(mcp) -> None:
         grant_date_end: Optional[str] = None
     ) -> Dict[str, Any]:
         """Custom field selection inventor search for power users who need non-preset field combinations.
+    Find applications by inventor name, who invented, inventor portfolio, name variants and spelling variations, filings by a person.
 
-    **RECOMMENDATION: Use pfw_search_inventor_minimal instead for most searches (95-99% token reduction).**
+    **RECOMMENDATION: Use PFW_search_inventor_minimal instead for most searches (95-99% token reduction).**
 
     Supports exact, fuzzy, and comprehensive name matching strategies. Returns customizable field sets.
 
-    **Convenience parameters - see pfw_search_inventor_minimal for details:**
+    **Convenience parameters - see PFW_search_inventor_minimal for details:**
     - `art_unit`, `examiner_name`, `applicant_name`, `customer_number`, `status_code`, `filing_date_start/end`, `grant_date_start/end`
 
     **Examples:**
     ```python
     # Inventor in specific art unit with custom fields
-    pfw_search_inventor(name='Smith', art_unit='2128', fields=['applicationNumberText', 'inventionTitle'], limit=50)
+    PFW_search_inventor(name='Smith', art_unit='2128', fields=['applicationNumberText', 'inventionTitle'], limit=50)
 
     # Inventor's granted patents only with specific fields
-    pfw_search_inventor(name='John Smith', status_code='150', fields=['applicationNumberText', 'patentNumber'], limit=20)
+    PFW_search_inventor(name='John Smith', status_code='150', fields=['applicationNumberText', 'patentNumber'], limit=20)
     ```
 
-    For advanced inventor analysis and cross-MCP workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
+    For advanced inventor analysis and cross-MCP workflows, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
             # Input validation
             if not name or len(name.strip()) == 0:
@@ -404,8 +509,9 @@ def register(mcp) -> None:
                 return format_error_response(f"Inventor name too long (max {EnhancedPatentClient.MAX_NAME_LENGTH} characters)", 400)
             if not SearchStrategy.is_valid(strategy):
                 return format_error_response(f"Strategy must be one of: {', '.join(SearchStrategy.all())}", 400)
-            if limit < 1 or limit > EnhancedPatentClient.MAX_SEARCH_LIMIT:
-                return format_error_response(f"Limit must be between 1 and {EnhancedPatentClient.MAX_SEARCH_LIMIT}", 400)
+            if limit < 1:
+                return format_error_response("Limit must be 1 or greater", 400)
+            limit, limit_clamp = _clamp_search_limit(limit)
 
             if fields is None:
                 fields = ["applicationNumberText", "applicationMetaData.inventionTitle",
@@ -467,12 +573,12 @@ def register(mcp) -> None:
                     'results_after_filter': len(filtered_apps)
                 }
 
-            return result
+            return _stamp_limit_clamp(result, limit_clamp)
         except Exception as e:
             return format_error_response(f"Inventor search failed: {str(e)}")
 
 
-    @mcp.tool(name="search_applications_minimal", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": False, "readOnlyHint": True})
+    @mcp.tool(name="PFW_search_applications_minimal", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": False, "readOnlyHint": True})
     @mcp_error_handler
     async def pfw_search_applications_minimal(
         query: str = "",
@@ -497,7 +603,7 @@ def register(mcp) -> None:
     Use for high-volume discovery (20-50 results) when exploring broad topics or finding
     applications to analyze in detail later. Default returns 15 core fields from field_configs.yaml:
     application number, title, inventors, applicant, USPTO and Cooperative Patent Classifications, patent number, parent
-    patents, XML metadata (for use with pfw_get_patent_or_application_xml), art unit, examiner name, filing/grant dates, customer number, status.
+    patents, XML metadata (for use with PFW_get_patent_or_application_xml), art unit, examiner name, filing/grant dates, customer number, status.
 
     **NEW: Custom Fields Override (Ultra-Minimal Mode - 99% reduction)**
     Use for high-volume discovery (50-200 results) when exploring broad topics or finding
@@ -517,17 +623,17 @@ def register(mcp) -> None:
     **Examples:**
     ```python
     # Examiner portfolio analysis (preset 15 fields)
-    pfw_search_applications_minimal(examiner_name='SMITH, EMILIE ALINE', limit=20)
+    PFW_search_applications_minimal(examiner_name='SMITH, EMILIE ALINE', limit=20)
 
     # Ultra-minimal: only 2 specific fields for citation analysis (50-200 results)
-    pfw_search_applications_minimal(
+    PFW_search_applications_minimal(
         examiner_name='SMITH, EMILIE ALINE',
         fields=['applicationNumberText', 'examinerNameText'],
         limit=100
     )
 
     # Hybrid: keywords + convenience + custom fields (ultra-minimal mode)
-    pfw_search_applications_minimal(
+    PFW_search_applications_minimal(
         query='artificial intelligence',
         art_unit='2128',
         status_code='150',
@@ -536,13 +642,18 @@ def register(mcp) -> None:
     )
     ```
 
+    LIMIT: 1-100 per call. A larger `limit` (the ultra-minimal examples above ask
+    for 150) is CLAMPED to 100 and the response says so in `limit_clamped`
+    {`requested`, `applied`, `note`}; it is not rejected. Page past 100 by feeding
+    `paging.next_offset` back as `offset=`.
+
     **Progressive Disclosure Workflow:**
     1. Use THIS TOOL for discovery with convenience params (20-50 results or Ultra-Minimal Mode 50-200 results)
     2. Present top results to user for selection
-    3. Use pfw_search_applications_balanced for detailed analysis (10-20 selected)
-    4. Use pfw_get_application_documents for document access (1-5 applications)
+    3. Use PFW_search_applications_balanced for detailed analysis (10-20 selected)
+    4. Use PFW_get_application_documents for document access (1-5 applications)
 
-    For complex workflows and cross-MCP integration, use pfw_get_guidance (see quick reference chart for section selection)."""
+    For complex workflows and cross-MCP integration, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
             # Build query from convenience parameters using centralized helper
             final_query = _build_query_from_params(
@@ -554,11 +665,9 @@ def register(mcp) -> None:
             if len(final_query) > EnhancedPatentClient.MAX_QUERY_LENGTH:
                 return create_error_response("query_too_long",
                     custom_message=f"Query too long (max {EnhancedPatentClient.MAX_QUERY_LENGTH} characters)")
-            if limit < 1 or limit > EnhancedPatentClient.MAX_SEARCH_LIMIT:
-                return format_error_response(
-                    f"Limit must be between 1 and {EnhancedPatentClient.MAX_SEARCH_LIMIT}",
-                    400
-                )
+            if limit < 1:
+                return format_error_response("Limit must be 1 or greater", 400)
+            limit, limit_clamp = _clamp_search_limit(limit)
             if offset < 0:
                 return format_error_response("Offset must be non-negative", 400)
 
@@ -595,23 +704,23 @@ def register(mcp) -> None:
                     },
                     'search_tier': 'minimal',
                     'recommended_workflow': {
-                        'full_analysis': 'minimal → pfw_get_patent_or_application_xml',
-                        'claims_analysis': 'minimal → get_application_documents(document_code=CLM) → PFW_get_document_content_with_ocr (both initial and final claims)',
-                        'office_action_analysis': 'minimal → get_application_documents(document_code=CTFR|CTNF) → PFW_get_document_content_with_ocr',
-                        'examiner_citations': 'minimal → get_application_documents(document_code=892) → PFW_get_document_content_with_ocr',
-                        'applicant_citations': 'minimal → get_application_documents(document_code=IDS|1449) → PFW_get_document_content_with_ocr (for Citations MCP)',
-                        'noa_analysis': 'minimal → get_application_documents(document_code=NOA) → PFW_get_document_content_with_ocr',
-                        'user_downloads': 'minimal → get_application_documents(document_code=NOA|CTFR) → get_document_download OR get_granted_patent_documents_download',
+                        'full_analysis': 'minimal → PFW_get_patent_or_application_xml',
+                        'claims_analysis': 'minimal → PFW_get_application_documents(document_code=CLM) → PFW_get_document_content_with_ocr (both initial and final claims)',
+                        'office_action_analysis': 'minimal → PFW_get_oa_rejections (triage which OAs matter) → PFW_get_oa_text(action_type=CTFR|CTNF, section=101|102|103|112) — one call, no OCR. Fall back to PFW_get_application_documents(document_code=CTFR|CTNF) → PFW_get_document_content_with_ocr only for OAs older than ~2008 or when a PDF is needed',
+                        'examiner_citations': 'minimal → Citations_search_oa_citations_minimal (raw Form 892 list, broadest coverage) → PFW_get_application_documents(document_code=892) → PFW_get_document_content_with_ocr only if the form image itself is needed',
+                        'applicant_citations': 'minimal → Citations_search_oa_citations_minimal (raw Form 1449/IDS list) → PFW_get_application_documents(document_code=IDS|1449) → PFW_get_document_content_with_ocr only if the form image itself is needed',
+                        'noa_analysis': 'minimal → PFW_get_oa_text(action_type=NOA) for the allowance reasoning — no OCR. PFW_get_application_documents(document_code=NOA) → PFW_get_document_content_with_ocr is the fallback',
+                        'user_downloads': 'minimal → PFW_get_application_documents(document_code=NOA|CTFR) → PFW_get_document_download OR PFW_get_granted_patent_documents_download',
                         'cross_mcp': 'minimal → balanced → PTAB/FPD/Citations MCPs'
                     }
                 }
 
-            return enhanced_results
+            return _stamp_limit_clamp(enhanced_results, limit_clamp)
 
         except Exception as e:
             return format_error_response(f"Minimal search failed: {str(e)}")
 
-    @mcp.tool(name="search_applications_balanced", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
+    @mcp.tool(name="PFW_search_applications_balanced", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
     @mcp_error_handler
     async def pfw_search_applications_balanced(
         query: str = "",
@@ -629,11 +738,12 @@ def register(mcp) -> None:
         grant_date_start: Optional[str] = None,
         grant_date_end: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Balanced search returning 18 key fields for detailed analysis (85-95% context reduction).
+        """Balanced search returning 24 key fields for detailed analysis (85-95% context reduction).
+    Find patent applications, search by examiner, art unit, applicant or company, customer number, status, filing or grant date; prosecution portfolio lookup.
 
     **Use after minimal search for analyzing selected applications (10-20 results).**
 
-    Returns 18 key fields including all minimal fields plus applicantBag, assignmentBag,
+    Returns 24 key fields including all minimal fields plus applicantBag, assignmentBag,
     and application status description for detailed analysis.
 
     **NEW: Custom Fields Override - same as minimal tier**
@@ -643,12 +753,12 @@ def register(mcp) -> None:
     - `art_unit`, `examiner_name`, `applicant_name`, etc.
 
     **Typical Workflow:**
-    1. Discovery: pfw_search_applications_minimal(art_unit='2128', limit=100, fields=["applicationNumberText", "inventionTitle", "groupArtUnitNumber"])
+    1. Discovery: PFW_search_applications_minimal(art_unit='2128', limit=100, fields=["applicationNumberText", "inventionTitle", "groupArtUnitNumber"])
     2. User selects 10 interesting applications
-    3. Optional Get additional fields: pfw_search_applications_balanced(query='applicationNumberText:X OR ...', limit=10)
-    4. Analysis - Use cross-reference fields for other USPTO MCP integrations or pfw_get_patent_or_application_xml to pull the text of the application or patent into context for Analysis
+    3. Optional Get additional fields: PFW_search_applications_balanced(query='applicationNumberText:X OR ...', limit=10)
+    4. Analysis - Use cross-reference fields for other USPTO MCP integrations or PFW_get_patent_or_application_xml to pull the text of the application or patent into context for Analysis
 
-    For complex workflows and cross-MCP integration, use pfw_get_guidance (see quick reference chart for section selection)."""
+    For complex workflows and cross-MCP integration, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
             # Build query from convenience parameters using centralized helper
             final_query = _build_query_from_params(
@@ -662,11 +772,9 @@ def register(mcp) -> None:
                     f"Query too long (max {EnhancedPatentClient.MAX_QUERY_LENGTH} characters)",
                     400
                 )
-            if limit < 1 or limit > EnhancedPatentClient.MAX_SEARCH_LIMIT:
-                return format_error_response(
-                    f"Limit must be between 1 and {EnhancedPatentClient.MAX_SEARCH_LIMIT}",
-                    400
-                )
+            if limit < 1:
+                return format_error_response("Limit must be 1 or greater", 400)
+            limit, limit_clamp = _clamp_search_limit(limit)
 
             # Get field set: use custom fields if provided, otherwise use preset balanced fields
             use_fields = fields if fields is not None else field_manager.get_field_set("applications_balanced")
@@ -683,10 +791,14 @@ def register(mcp) -> None:
             if search_results.get("success"):
                 enhanced_results = await _client().enhance_search_results_with_associated_docs(search_results)
 
+                annotated = annotate_earliest_priority(enhanced_results.get("applications"))
+                enhanced_results["earliest_priority_annotated"] = annotated
+                enhanced_results["priority_note"] = PRIORITY_NOTE
+
                 # Add metadata
                 enhanced_results["documentBagsIncluded"] = False
                 enhanced_results["prosecutionDocsGuidance"] = {
-                    "access_method": "Use pfw_get_application_documents(applicationNumberText) for prosecution documents",
+                    "access_method": "Use PFW_get_application_documents(applicationNumberText) for prosecution documents",
                     "optimization": "DocumentBag removed to prevent token explosion",
                     "workflow": "Discovery → Analysis (you are here) → Documents (targeted access)"
                 }
@@ -705,14 +817,14 @@ def register(mcp) -> None:
                     'search_tier': 'balanced'
                 }
 
-                return enhanced_results
+                return _stamp_limit_clamp(enhanced_results, limit_clamp)
             else:
-                return search_results
+                return _stamp_limit_clamp(search_results, limit_clamp)
 
         except Exception as e:
             return format_error_response(f"Balanced search failed: {str(e)}")
 
-    @mcp.tool(name="search_inventor_minimal", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
+    @mcp.tool(name="PFW_search_inventor_minimal", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
     @mcp_error_handler
     async def pfw_search_inventor_minimal(
         name: str,
@@ -731,13 +843,14 @@ def register(mcp) -> None:
         grant_date_end: Optional[str] = None
     ) -> Dict[str, Any]:
         """Ultra-fast inventor search returning only essential fields (95-99% context reduction).
+    Find applications by inventor name, who invented, inventor portfolio, name variants and spelling variations, filings by a person.
 
     **RECOMMENDED: Use this tool first with convenience parameters for high-volume inventor discovery.**
 
     Use for high-volume inventor discovery (20-50 results) when exploring inventor portfolios
     or finding applications to analyze in detail later. Default returns 15 core fields per application
     from field_configs.yaml: application number, title, inventors, applicant, USPTO and Cooperative Patent Classifications,
-    patent number, parent patents, XML metadata (for use with pfw_get_patent_or_application_xml), art unit, examiner name, filing/grant dates,
+    patent number, parent patents, XML metadata (for use with PFW_get_patent_or_application_xml), art unit, examiner name, filing/grant dates,
     customer number, status.
 
     **NEW: Custom Fields Override (Ultra-Minimal Mode - 99% reduction)**
@@ -757,17 +870,17 @@ def register(mcp) -> None:
     **Examples:**
     ```python
     # Inventor's granted patents only (preset 15 fields)
-    pfw_search_inventor_minimal(name='John Smith', status_code='150', limit=20)
+    PFW_search_inventor_minimal(name='John Smith', status_code='150', limit=20)
 
     # Ultra-minimal: only 2 specific fields for portfolio analysis (50-200 results)
-    pfw_search_inventor_minimal(
+    PFW_search_inventor_minimal(
         name='Smith',
         fields=['applicationNumberText', 'examinerNameText'],
         limit=100
     )
 
     # Hybrid: inventor + convenience + custom fields (ultra-minimal mode)
-    pfw_search_inventor_minimal(
+    PFW_search_inventor_minimal(
         name='Smith',
         art_unit='2128',
         status_code='150',
@@ -776,14 +889,26 @@ def register(mcp) -> None:
     )
     ```
 
+    LIMIT: 1-100 per call. A larger `limit` (the ultra-minimal examples above ask
+    for 150) is CLAMPED to 100 and the response says so in `limit_clamped`
+    {`requested`, `applied`, `note`}; it is not rejected. Page past 100 by feeding
+    `paging.next_offset` back as `offset=`.
+
     **Progressive Disclosure Workflow:**
     1. Use THIS TOOL for inventor discovery with convenience params (20-50 results or Ultra-Minimal Mode 50-200 results)
     2. Present top results to user for selection
-    3. Use pfw_search_inventor_balanced for detailed analysis (10-20 selected)
-    4. Use pfw_get_application_documents for document access (1-5 applications)
+    3. Use PFW_search_inventor_balanced for detailed analysis (10-20 selected)
+    4. Use PFW_get_application_documents for document access (1-5 applications)
 
-    For advanced inventor research workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
+    For advanced inventor research workflows, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
+            # Input validation (audit: the inventor tiers had NO limit check of
+            # their own — an out-of-range limit only failed later, inside the
+            # delegated PFW_search_inventor, so the error named the wrong tool)
+            if limit < 1:
+                return format_error_response("Limit must be 1 or greater", 400)
+            limit, limit_clamp = _clamp_search_limit(limit)
+
             # Get field set: use custom fields if provided, otherwise use preset inventor_minimal fields
             use_fields = fields if fields is not None else field_manager.get_field_set("inventor_minimal")
 
@@ -837,12 +962,12 @@ def register(mcp) -> None:
                     search_results['query_info'] = {}
                 search_results['query_info']['search_tier'] = 'inventor_minimal'
 
-            return search_results
+            return _stamp_limit_clamp(search_results, limit_clamp)
 
         except Exception as e:
             return format_error_response(f"Minimal inventor search failed: {str(e)}")
 
-    @mcp.tool(name="search_inventor_balanced", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
+    @mcp.tool(name="PFW_search_inventor_balanced", app=AppConfig(resource_uri=_SEARCH_URI), annotations={"defer_loading": True, "readOnlyHint": True})
     @mcp_error_handler
     async def pfw_search_inventor_balanced(
         name: str,
@@ -860,11 +985,12 @@ def register(mcp) -> None:
         grant_date_start: Optional[str] = None,
         grant_date_end: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Balanced inventor search returning 18 key fields per application (85-95% context reduction).
+        """Balanced inventor search returning 24 key fields per application (85-95% context reduction).
+    Find applications by inventor name, who invented, inventor portfolio, name variants and spelling variations, filings by a person.
 
     **Use for detailed inventor portfolio analysis after minimal search.**
 
-    Returns 18 key fields including all minimal fields plus applicantBag, assignmentBag, and application
+    Returns 24 key fields including all minimal fields plus applicantBag, assignmentBag, and application
     status description for detailed portfolio analysis.
 
     **NEW: Custom Fields Override - same as minimal tier**
@@ -874,13 +1000,18 @@ def register(mcp) -> None:
     - `art_unit`, `examiner_name`, `applicant_name`, etc.
 
     **Typical Workflow:**
-    1. Discovery: pfw_search_inventor_minimal(name='John Smith', limit=50, fields=["applicationNumberText", "inventionTitle"])
+    1. Discovery: PFW_search_inventor_minimal(name='John Smith', limit=50, fields=["applicationNumberText", "inventionTitle"])
     2. User selects 10 interesting applications
-    3. Optional Get additional fields: pfw_search_inventor_balanced(name='John Smith', limit=10)
-    4. Analysis - Use cross-reference fields for other USPTO MCP integrations or pfw_get_patent_or_application_xml to pull the text of the application or patent into context for Analysis
+    3. Optional Get additional fields: PFW_search_inventor_balanced(name='John Smith', limit=10)
+    4. Analysis - Use cross-reference fields for other USPTO MCP integrations or PFW_get_patent_or_application_xml to pull the text of the application or patent into context for Analysis
 
-    For complex workflows and cross-MCP integration, use pfw_get_guidance (see quick reference chart for section selection)."""
+    For complex workflows and cross-MCP integration, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
+            # Input validation (see PFW_search_inventor_minimal — same gap)
+            if limit < 1:
+                return format_error_response("Limit must be 1 or greater", 400)
+            limit, limit_clamp = _clamp_search_limit(limit)
+
             # Get field set: use custom fields if provided, otherwise use preset inventor_balanced fields
             use_fields = fields if fields is not None else field_manager.get_field_set("inventor_balanced")
 
@@ -910,7 +1041,7 @@ def register(mcp) -> None:
                 }
 
                 # Session 4 Change: Remove document bag enhancement to prevent token explosion
-                # Use pfw_get_application_documents for targeted document access instead
+                # Use PFW_get_application_documents for targeted document access instead
 
                 # Add associated documents (XML files for content analysis)
                 enhanced_temp = await _client().enhance_search_results_with_associated_docs(temp_results)
@@ -922,6 +1053,12 @@ def register(mcp) -> None:
 
             # Add search tier metadata and context info
             if search_results.get('success'):
+                annotated = annotate_earliest_priority(
+                    search_results.get('unique_applications')
+                )
+                search_results['earliest_priority_annotated'] = annotated
+                search_results['priority_note'] = PRIORITY_NOTE
+
                 # Add context_info with fields used
                 estimated_chars = len(str(search_results.get('unique_applications', [])))
                 search_results['context_info'] = {
@@ -934,7 +1071,7 @@ def register(mcp) -> None:
                     search_results['query_info'] = {}
                 search_results['query_info']['search_tier'] = 'inventor_balanced'
 
-            return search_results
+            return _stamp_limit_clamp(search_results, limit_clamp)
 
         except Exception as e:
             return format_error_response(f"Enhanced inventor balanced search failed: {str(e)}")

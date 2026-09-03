@@ -27,7 +27,7 @@ async def technology_landscape_mapping_PTAB_prompt(
 
 ```python
 # Use minimal search for discovery with strategic fields
-results = await pfw_search_applications_minimal(
+results = await PFW_search_applications_minimal(
     query='{technology_keywords}',
     status_code='150',  # Granted patents only
     {f"art_unit='{art_units}'," if art_units else ""}
@@ -193,7 +193,7 @@ for company, patent_count in top_companies:
         patent_num = app.get('applicationMetaData', {{}}).get('patentNumber')
         if patent_num:
             try:
-                ptab_results = await ptab_search_proceedings_minimal(  # Wrapper for search_trials_minimal
+                ptab_results = await ptab_search_proceedings_minimal(  # Wrapper for PTAB_search_trials_minimal
                     patent_number=patent_num,
                     limit=5
                 )
@@ -209,7 +209,7 @@ for company, patent_count in top_companies:
         print(f"- **{{company}}**: No PTAB challenges found")
 
 # Historical technology context (pre-AIA, rare but valuable for older tech)
-interferences = await search_interferences_minimal(
+interferences = await PTAB_search_interferences_minimal(
     patent_number=patent_num,
     limit=5
 )

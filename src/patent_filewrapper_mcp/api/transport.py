@@ -141,8 +141,13 @@ class USPTOTransport:
                 except Exception as e:
                     # Don't retry unexpected errors on final attempt
                     if attempt == self.RETRY_ATTEMPTS - 1:
-                        logger.error(f"[{request_id}] Request failed: {str(e)}")
-                        return format_error_response(f"Request failed: {str(e)}", 500, request_id)
+                        logger.exception(f"[{request_id}] Request failed ({type(e).__name__})")
+                        # Sanitized for the caller; the exception detail rides
+                        # the `exception=` seam, which format_error_response
+                        # reveals only in a development environment.
+                        return format_error_response(
+                            "Request failed", 500, request_id, exception=e
+                        )
                     last_exception = e
 
                 # Calculate delay with exponential backoff and jitter
@@ -181,5 +186,10 @@ class USPTOTransport:
                 else:
                     return format_error_response(f"API error: {last_exception.response.text}", last_exception.response.status_code, request_id)
             else:
-                logger.error(f"[{request_id}] Request failed after {self.RETRY_ATTEMPTS} attempts: {str(last_exception)}")
-                return format_error_response(f"Request failed: {str(last_exception)}", 500, request_id)
+                logger.error(
+                    f"[{request_id}] Request failed after {self.RETRY_ATTEMPTS} attempts "
+                    f"({type(last_exception).__name__})"
+                )
+                return format_error_response(
+                    "Request failed", 500, request_id, exception=last_exception
+                )

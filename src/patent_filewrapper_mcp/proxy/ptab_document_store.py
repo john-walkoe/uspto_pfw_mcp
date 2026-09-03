@@ -21,6 +21,7 @@ from cryptography.fernet import Fernet
 from ..util.database import create_secure_connection
 from ..shared.safe_logger import get_safe_logger
 from ..shared.fernet_key_store import get_or_create_fernet, migrate_data_file
+import threading
 
 logger = get_safe_logger(__name__)
 
@@ -141,7 +142,6 @@ class PTABDocumentStore:
         proceeding_number: str,
         document_identifier: str,
         download_url: str,
-        api_key: str,
         patent_number: Optional[str] = None,
         application_number: Optional[str] = None,
         proceeding_type: Optional[str] = None,
@@ -151,11 +151,17 @@ class PTABDocumentStore:
         """
         Register PTAB document for centralized proxy downloads
 
+        The USPTO API key is NOT stored. It used to be written into every row
+        (encrypted, but still a long-lived copy of the fleet's shared ODP
+        credential in a file that outlives the download it was for); the
+        download route reads the live key from the secure store instead. The
+        `api_key` column stays for schema compatibility with existing
+        databases and is written empty.
+
         Args:
             proceeding_number: PTAB proceeding number (AIA Trial: 'IPR2025-00895', Appeal: '2025000950')
             document_identifier: Document identifier from PTAB API
             download_url: Full USPTO API download URL for the document
-            api_key: USPTO API key for authentication
             patent_number: Patent number being challenged (for cross-reference)
             application_number: Application number (for PFW cross-reference)
             proceeding_type: Type of proceeding (IPR, PGR, CBM, DER)
@@ -178,7 +184,7 @@ class PTABDocumentStore:
                     proceeding_number,
                     document_identifier,
                     download_url,
-                    _encrypt_api_key(api_key),
+                    "",
                     patent_number,
                     application_number,
                     proceeding_type,
@@ -238,14 +244,16 @@ class PTABDocumentStore:
                 )
                 return None
 
-            (download_url, encrypted_key, patent_number, application_number,
+            (download_url, _unused_key, patent_number, application_number,
              proceeding_type, document_type, enhanced_filename, registered_at) = result
 
+            # No 'api_key': the download route resolves the live key from the
+            # secure store. Rows written before that change still carry an
+            # encrypted key; it is read past and never returned.
             return {
                 'proceeding_number': proceeding_number,
                 'document_identifier': document_identifier,
                 'download_url': download_url,
-                'api_key': _decrypt_api_key(encrypted_key),
                 'patent_number': patent_number,
                 'application_number': application_number,
                 'proceeding_type': proceeding_type,
@@ -479,11 +487,18 @@ class PTABDocumentStore:
 
 # Global store instance
 _ptab_store = None
+# Double-checked locking: the FastMCP tools and the download proxy run on
+# different event loops in different threads and both reach this getter, so an
+# unguarded `if x is None` let two threads each construct one, putting two
+# objects over one SQLite file (audit design-pattern F-1).
+_ptab_store_lock = threading.Lock()
 
 
 def get_ptab_store() -> PTABDocumentStore:
     """Get global PTAB document store instance"""
     global _ptab_store
     if _ptab_store is None:
-        _ptab_store = PTABDocumentStore()
+        with _ptab_store_lock:
+            if _ptab_store is None:
+                _ptab_store = PTABDocumentStore()
     return _ptab_store

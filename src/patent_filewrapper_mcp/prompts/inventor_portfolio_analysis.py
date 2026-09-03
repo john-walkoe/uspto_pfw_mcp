@@ -31,7 +31,7 @@ async def inventor_portfolio_analysis_prompt(
 
 ```python
 # Use balanced search for portfolio discovery
-results = await pfw_search_inventor_balanced(
+results = await PFW_search_inventor_balanced(
     name='{inventor_name}',
     strategy='comprehensive',  # Matches surname, forename, and variations
     limit=50
@@ -153,7 +153,7 @@ for patent in granted:
     patent_num = patent.get('applicationMetaData', {{}}).get('patentNumber')
     if patent_num:
         try:
-            ptab_results = await ptab_search_proceedings_minimal(  # Wrapper for search_trials_minimal
+            ptab_results = await ptab_search_proceedings_minimal(  # Wrapper for PTAB_search_trials_minimal
                 patent_number=patent_num,
                 limit=5
             )

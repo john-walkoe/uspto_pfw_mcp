@@ -18,6 +18,40 @@ from pathlib import Path
 from ..shared.log_sanitizer import SanitizingFilter
 
 
+class _SecureRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """RotatingFileHandler that chmods each ROTATED file to 0600.
+
+    The post-hoc chmod below only ever touched the CURRENT log file. On
+    rotation the handler creates the next one with the process umask —
+    typically 0644 — and renames the old one, so every backup holding the same
+    request ids, client IPs and audit trail was world-readable while the live
+    file was not (audit L-3). The permission has to be applied by whoever
+    creates the file, which is here.
+    """
+
+    def _chmod(self, path) -> None:
+        if not hasattr(os, "chmod"):
+            return
+        try:
+            os.chmod(path, 0o600)
+        except (OSError, PermissionError):
+            # Never let a permission failure take down logging itself.
+            pass
+
+    def doRollover(self):
+        super().doRollover()
+        self._chmod(self.baseFilename)
+        for index in range(1, (self.backupCount or 0) + 1):
+            rotated = f"{self.baseFilename}.{index}"
+            if os.path.exists(rotated):
+                self._chmod(rotated)
+
+    def _open(self):
+        stream = super()._open()
+        self._chmod(self.baseFilename)
+        return stream
+
+
 def setup_logging(log_level: str = "INFO") -> None:
     """
     Configure logging for USPTO Patent File Wrapper MCP with file-based audit trail.
@@ -50,7 +84,7 @@ def setup_logging(log_level: str = "INFO") -> None:
 
     # Application log file with rotation
     app_log_file = logs_dir / "patent_filewrapper_mcp.log"
-    file_handler = logging.handlers.RotatingFileHandler(
+    file_handler = _SecureRotatingFileHandler(
         app_log_file,
         maxBytes=max_bytes,
         backupCount=backup_count,
@@ -109,9 +143,10 @@ def setup_logging(log_level: str = "INFO") -> None:
     # Suppress noisy libraries (Safe: Only configuring log levels, not logging data)
     # uvicorn.access included: access lines contain request paths, and
     # /document/persistent/{hash} paths embed the link credential
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # httpx2/httpcore2 are FastMCP 4's vendored fork of the same libraries
+    # with the same URL-bearing INFO lines, under their own logger names
+    for noisy in ("httpx", "httpcore", "httpx2", "httpcore2", "uvicorn.access"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def get_log_files() -> dict:

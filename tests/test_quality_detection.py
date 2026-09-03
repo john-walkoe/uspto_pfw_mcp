@@ -1,80 +1,71 @@
 #!/usr/bin/env python3
-"""Test quality detection logic without requiring API keys"""
+"""The free-vs-paid extraction gate.
 
-import sys
-from pathlib import Path
+`is_good_extraction` decides whether a document escalates from the free PyPDF2
+tier to the metered Mistral OCR tier, so a wrong answer here costs money.
 
-# Add the src directory to the path
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
+Two defects made this file worthless before (audit T-4, readability R-5): it
+carried its OWN copy of `is_good_extraction` rather than importing the real
+one, so the production function was never executed; and it reported by
+`return passed == total`, which pytest reads as PASS either way.
+"""
 
-def is_good_extraction(text: str) -> bool:
-    """
-    Determine if PyPDF2 extraction is usable.
+import pytest
 
-    Criteria for "good" extraction:
-    - Not empty or whitespace-only
-    - Contains reasonable amount of text (>50 chars)
-    - Contains readable words (not just symbols/garbage)
-    - Has reasonable word-to-character ratio
-    """
+from patent_filewrapper_mcp.api.enhanced_client import (
+    EnhancedPatentClient,
+    extraction_reject_reason,
+)
 
-    if not text or len(text.strip()) < 50:
-        return False
+_GOOD = [
+    "This is a patent application for a secure hardware adjunct that provides "
+    "authentication services and cryptographic operations",
+    "The invention relates to secure cryptographic methods using 256-bit "
+    "encryption algorithms for hardware security modules",
+    "A method for implementing secure boot processes in embedded systems "
+    "comprising authentication of firmware images",
+]
 
-    # Check for reasonable word content
-    words = text.split()
-    if len(words) < 10:  # Very short extractions are probably garbage
-        return False
+_BAD = [
+    ("empty", "", "too_short"),
+    ("short", "ABC", "too_short"),
+    ("whitespace only", "   \n\t  ", "too_short"),
+    ("CJK garbage", "㿁㿂㿃㿄㿅㿆㿇㿈㿉"
+                    "㿊㿋㿌㿍㿎㿏㿐㿑㿒"
+                    "㿓㿔㿕㿖㿗㿘㿙㿚㿛"
+                    "㿜㿝㿞㿟", "too_short"),
+    ("symbol noise", "###$$$%%%^^^&&&***((()))!!!", "too_short"),
+    ("one-letter words", "a b c d e f g h i j k l m n o p q r", "too_short"),
+    ("no spaces", "averylongwordwithoutspacesormeaning" * 5, "too_few_words"),
+]
 
-    # Check character-to-word ratio (catch symbol/garbage extractions)
-    avg_word_length = len(text) / len(words)
-    if avg_word_length > 20:  # Probably garbage characters
-        return False
 
-    # Check for English-like content (basic heuristic)
-    alpha_chars = sum(1 for c in text if c.isalpha())
-    alpha_ratio = alpha_chars / len(text)
-    if alpha_ratio < 0.6:  # Less than 60% alphabetic = probably scanned/garbage
-        return False
+@pytest.mark.parametrize("text", _GOOD)
+def test_usable_extractions_do_not_escalate_to_the_paid_tier(text):
+    assert extraction_reject_reason(text) is None
+    assert EnhancedPatentClient.is_good_extraction(None, text) is True
 
-    return True
 
-def test_quality_detection():
-    """Test the quality detection logic"""
-    print("Testing Quality Detection Logic")
-    print("=" * 40)
+@pytest.mark.parametrize("label, text, expected_check", _BAD)
+def test_unusable_extractions_are_rejected(label, text, expected_check):
+    reason = extraction_reject_reason(text)
+    assert reason is not None, f"{label!r} was accepted as a usable extraction"
+    assert reason.startswith(expected_check), (
+        f"{label!r} was rejected by {reason!r}, expected {expected_check!r}"
+    )
+    assert EnhancedPatentClient.is_good_extraction(None, text) is False
 
-    test_cases = [
-        ("Good patent text", "This is a patent application for a secure hardware adjunct that provides authentication services and cryptographic operations", True),
-        ("Empty text", "", False),
-        ("Short text", "ABC", False),
-        ("Whitespace only", "   \n\t  ", False),
-        ("Garbage symbols", "㟁㟂㟃㟄㟅㟆㟇㟈㟉㟊㟋㟌㟍㟎㟏㟐㟑㟒㟓㟔㟕㟖㟗㟘㟙㟚㟛㟜㟝㟞㟟", False),
-        ("Symbol noise", "###$$$%%%^^^&&&***((()))!!!", False),
-        ("Mixed good text", "The invention relates to secure cryptographic methods using 256-bit encryption algorithms for hardware security modules", True),
-        ("Technical patent", "A method for implementing secure boot processes in embedded systems comprising authentication of firmware images", True),
-        ("Too short words", "a b c d e f g h i j k l m n o p q r", False),  # Many short words
-        ("Long nonsense", "averylongwordwithoutspacesormeaning" * 5, False),  # Bad word ratio
-    ]
 
-    passed = 0
-    total = len(test_cases)
+def test_is_good_extraction_agrees_with_the_reason_helper():
+    """The public name must stay a thin wrapper; the tier code calls both."""
+    for text in _GOOD + [t for _, t, _ in _BAD]:
+        assert EnhancedPatentClient.is_good_extraction(None, text) is (
+            extraction_reject_reason(text) is None
+        )
 
-    for name, text, expected in test_cases:
-        result = is_good_extraction(text)
-        status = "PASS" if result == expected else "FAIL"
-        print(f"{status}: {name} -> {result} (expected {expected})")
-        if result == expected:
-            passed += 1
 
-    print(f"\nResults: {passed}/{total} tests passed")
-    return passed == total
-
-if __name__ == "__main__":
-    success = test_quality_detection()
-    if success:
-        print("\nAll quality detection tests passed!")
-    else:
-        print("\nSome quality detection tests failed!")
-        sys.exit(1)
+def test_the_alpha_ratio_check_is_reachable():
+    """Enough words of enough length, but mostly digits: the only input shape
+    that reaches the fourth check."""
+    text = " ".join(["1234567890"] * 12)
+    assert extraction_reject_reason(text).startswith("alpha_ratio")

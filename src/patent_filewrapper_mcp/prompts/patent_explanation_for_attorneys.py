@@ -30,17 +30,17 @@ async def patent_explanation_for_attorneys_prompt(
 ```python
 # Resolve to application number
 if patent_number:
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=patent_number,
         fields=['applicationNumberText', 'patentNumber', 'inventionTitle'],
         limit=1
     )
     app_number = results['applications'][0]['applicationNumberText']
 
-# Get full technical content (FREE - uses XML, no OCR costs)
+# Get full technical content (uses structured XML - no OCR needed)
 # NOTE: Set include_raw_xml=False for 91% token reduction (removes ~50K raw XML overhead)
 # For inventor/assignee reports, add include_fields if not already obtained via search_balanced:
-patent_xml = await pfw_get_patent_or_application_xml(
+patent_xml = await PFW_get_patent_or_application_xml(
     identifier=app_number,
     include_fields=['abstract', 'claims', 'description', 'inventors', 'applicants'],
     include_raw_xml=False
@@ -62,7 +62,7 @@ assignee = patent_xml['structured_content'].get('applicants', {{}}).get('name', 
 filing_date = patent_xml.get('filing_date')
 issue_date = patent_xml.get('issue_date')
 
-# OPTIMIZATION TIP: If you already ran pfw_search_applications_balanced earlier,
+# OPTIMIZATION TIP: If you already ran PFW_search_applications_balanced earlier,
 # you may already have inventor/applicant info and can use default XML call
 # (no include_fields needed - saves ~1K tokens)
 ```
@@ -271,12 +271,12 @@ print("- '{{term2}}': [Potentially ambiguous, check specification]")
 
 ## Notes
 
-- Uses `pfw_get_patent_or_application_xml` for FREE technical content (no OCR costs)
+- Uses `PFW_get_patent_or_application_xml` for structured technical content (no OCR needed)
 - **ALWAYS set include_raw_xml=False** to remove ~50K token raw XML overhead (91% reduction)
 - **Default XML response:** abstract, claims, description (~5K tokens with include_raw_xml=False)
 - **Add inventor/applicant fields:** Use include_fields=['abstract', 'claims', 'description', 'inventors', 'applicants'] for reports (~6K tokens with include_raw_xml=False)
-- **Optimization:** If you used pfw_search_applications_minimal and need inventor/company info, add those fields
-- **Alternative:** If you already ran pfw_search_applications_balanced, inventor/applicant data may already be in context
+- **Optimization:** If you used PFW_search_applications_minimal and need inventor/company info, add those fields
+- **Alternative:** If you already ran PFW_search_applications_balanced, inventor/applicant data may already be in context
 - Plain English translation requires domain knowledge of technical field
 - Claim construction analysis preliminary - formal construction may differ
 - Strategic implications depend on specific enforcement context

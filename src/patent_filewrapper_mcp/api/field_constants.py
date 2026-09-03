@@ -23,6 +23,18 @@ class USPTOFields:
     CHILD_CONTINUITY_BAG = "childContinuityBag"
     DOCUMENT_BAG = "documentBag"
     ASSOCIATED_DOCUMENTS = "associatedDocuments"
+    # PROVENANCE — live-probed against the ODP search API on 2026-08-21
+    # (baseline: applications this MCP's own family/PTA work exercised).
+    # Foreign priority and PTA are TOP-LEVEL in the ODP response:
+    #   * "applicationMetaData.foreignPriorityBag" is a DEAD path — it returns
+    #     nothing rather than erroring, so the failure is silent.
+    #   * "termAdjustmentBag" (the name field_configs.yaml's commented blocks
+    #     used to carry) is not an ODP field at all; the real one is
+    #     "patentTermAdjustmentData".
+    # The field_configs.yaml comment lines were corrected in the same pass, so
+    # uncommenting one no longer produces an empty bag.
+    FOREIGN_PRIORITY_BAG = "foreignPriorityBag"
+    PATENT_TERM_ADJUSTMENT_DATA = "patentTermAdjustmentData"
 
     # ApplicationMetaData fields (commonly accessed)
     INVENTION_TITLE = "applicationMetaData.inventionTitle"
@@ -94,9 +106,13 @@ class USPTOFields:
     # Parent continuity fields (nested)
     PARENT_PATENT_NUMBER = "parentContinuityBag.parentPatentNumber"
     PARENT_APPLICATION_NUMBER_TEXT = "parentContinuityBag.parentApplicationNumberText"
+    PARENT_APPLICATION_FILING_DATE = "parentContinuityBag.parentApplicationFilingDate"
+    PARENT_CLAIM_PARENTAGE_TYPE_CODE = "parentContinuityBag.claimParentageTypeCode"
 
     # Child continuity fields (nested)
     CHILD_APPLICATION_NUMBER_TEXT = "childContinuityBag.childApplicationNumberText"
+    CHILD_APPLICATION_FILING_DATE = "childContinuityBag.childApplicationFilingDate"
+    CHILD_CLAIM_PARENTAGE_TYPE_CODE = "childContinuityBag.claimParentageTypeCode"
 
 
 # Convenience mappings for query building

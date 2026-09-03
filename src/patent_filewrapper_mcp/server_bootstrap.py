@@ -45,11 +45,92 @@ def _handle_background_task_exception(task: asyncio.Task):
 
 
 
+_PROXY_HEALTH_TIMEOUT_SECONDS = 2.0
+_PROXY_SERVICE_NAME = "USPTO Document Proxy"
+
+
+def _port_serves_healthy_proxy(port: int) -> bool:
+    """True when a PFW download proxy already answers on the port.
+
+    A TCP listener is not proof that OUR proxy is there. Adopting a bare
+    connect made the document tools mint persistent-link URLs — which are
+    bearer credentials — addressed to whatever else happens to hold the port,
+    and POST the download registration plus X-Proxy-Token to it. Mirrors
+    uspto_ptab_mcp's `_port_serves_healthy_proxy`.
+    """
+    try:
+        import httpx
+
+        response = httpx.get(
+            f"http://127.0.0.1:{port}/", timeout=_PROXY_HEALTH_TIMEOUT_SECONDS
+        )
+        return (
+            response.status_code == 200
+            and response.json().get("service") == _PROXY_SERVICE_NAME
+        )
+    except Exception:
+        return False
+
+
+def _start_http_download_proxy(port: int) -> None:
+    """Start the download proxy on its own thread for the HTTP transport.
+
+    Extracted from main() rather than inlined so the port-adoption gate does
+    not push main()'s pre-existing C901 count up, the same mechanical move
+    api/transport.py made for `request`/`_send_once`.
+    """
+    global _proxy_server_running
+
+    import socket
+    import threading
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        port_free = s.connect_ex(("127.0.0.1", port)) != 0
+
+    if not port_free and _port_serves_healthy_proxy(port):
+        logger.info("Port %d already serves a healthy PFW proxy — reusing it", port)
+        _proxy_server_running = True
+        return
+
+    if not port_free:
+        logger.error(
+            "Port %d is held by a service that is not a PFW download proxy; "
+            "not starting one. Free the port or set PFW_PROXY_PORT.",
+            port,
+        )
+        return
+
+    # uvicorn.run() blocks, so the proxy must be in a separate thread. This
+    # mirrors the STDIO hybrid-server pattern but without asyncio.run()
+    # wrapping — each thread gets its own event loop via asyncio.run().
+    def _proxy_thread_target():
+        # The proxy runs on its OWN loop, which got no exception handler at
+        # all: an un-retrieved task exception here fell to asyncio's default,
+        # losing the context dump the stdio path gets (audit
+        # error-handling F-5). Same treatment for both loops.
+        loop = asyncio.new_event_loop()
+        loop.set_exception_handler(_asyncio_exception_handler)
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_run_proxy_server(port))
+        finally:
+            loop.close()
+
+    threading.Thread(
+        target=_proxy_thread_target, daemon=True, name="download-proxy"
+    ).start()
+    logger.info(
+        f"Download proxy server starting on port {port} (background thread)"
+    )
+
+
 async def _ensure_proxy_server_running(port: int = 8080):
     """Ensure the proxy server is running.
 
-    If the port is already in use (e.g. Claude Desktop has a copy running),
-    skip starting a second instance so MCP tools remain fully operational.
+    If the port already serves a HEALTHY PFW proxy (e.g. Claude Desktop has a
+    copy running), reuse it instead of starting a second instance so MCP tools
+    remain fully operational. A port held by anything else is an error, not a
+    reason to start emitting download links at it.
     """
     global _proxy_server_running, _proxy_server_task
 
@@ -58,13 +139,23 @@ async def _ensure_proxy_server_running(port: int = 8080):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             port_free = s.connect_ex(("127.0.0.1", port)) != 0
 
-        if not port_free:
+        if not port_free and _port_serves_healthy_proxy(port):
             logger.info(
-                "Port %d already in use — skipping proxy server startup "
-                "(another instance is running; MCP tools are still fully available)",
+                "Port %d already serves a healthy PFW proxy — reusing it "
+                "(MCP tools are still fully available)",
                 port,
             )
             _proxy_server_running = True  # treat as running so tools work
+            return
+
+        if not port_free:
+            logger.error(
+                "Port %d is held by a service that is not a PFW download "
+                "proxy; not starting one and not emitting download links. "
+                "Free the port or set PFW_PROXY_PORT.",
+                port,
+            )
+            _proxy_server_running = False
             return
 
         logger.info(f"Starting HTTP proxy server on port {port}")
@@ -83,15 +174,19 @@ async def _run_proxy_server(port: int = 8080):
         import uvicorn
         from .proxy.server import create_proxy_app
 
-        # Share the MCP tools' client so circuit breaker / cache / retry
-        # budget are one set of state, not two (audit F5). Falls back to a
-        # proxy-local client when the tools haven't initialized one yet.
+        # The proxy runs on ITS OWN event loop in its own thread, so it takes
+        # its own client. `get_api_client()` is keyed on the running loop, and
+        # this call happens inside the proxy's loop, so the object it returns
+        # is never the one FastMCP's loop is using. This reverses "audit F5"
+        # (one shared client so resilience state agrees): sharing an
+        # asyncio.Semaphore across two loops is a load-dependent hang, and no
+        # amount of agreeing counters is worth that. See client_registry.py.
         shared_client = None
         try:
             from . import main as _main
             shared_client = _main.get_api_client()
         except Exception:
-            logger.info("Shared API client unavailable — proxy will build its own")
+            logger.info("API client unavailable — proxy will build its own")
         app = create_proxy_app(shared_client=shared_client)
         # Proxy bind host: defaults to 127.0.0.1 (localhost-only, secure default).
         # Set PROXY_BIND_HOST=0.0.0.0 in Docker so the host browser can reach
@@ -195,6 +290,9 @@ def main():
       FASTMCP_HOST=0.0.0.0       Bind address (default: 127.0.0.1)
       FASTMCP_PORT=8000           Port (default: 8000)
       CORS_EXTRA_ORIGIN=https://… Additional CORS origin beyond localhost (comma-separated)
+      FASTMCP_STATELESS_HTTP=true Stateless streamable HTTP — no server-side
+                                   session table, every request self-contained
+                                   (default: true)
 
     STDIO mode environment variables:
       ENABLE_PROXY_SERVER=true    Enable document download proxy (default: true)
@@ -235,6 +333,13 @@ def main():
 
         host = os.getenv("FASTMCP_HOST", "127.0.0.1")
         port = int(os.getenv("FASTMCP_PORT", "8000"))
+        # Stateless streamable HTTP: no server-side session table, every
+        # request is self-contained. Required for clients that don't replay
+        # mcp-session-id and for load-balanced/multi-replica deploys.
+        # Stateful clients still work — they just get an ephemeral session
+        # per request. ctx.report_progress stays request-scoped and is
+        # unaffected (see tools/document_tools.py).
+        stateless_http = os.getenv("FASTMCP_STATELESS_HTTP", "true").lower() == "true"
 
         # Build CORS origins list
         origins = [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
@@ -268,6 +373,14 @@ def main():
                     expose_headers=["Mcp-Session-Id"],
                 )
 
+            # M-5: the size cap existed on the proxy app only. POST /mcp is
+            # the PRIMARY tool ingress, and in OAuth mode the body is read by
+            # the transport before FastMCP's bearer check runs, so the ingress
+            # was unbounded PRE-AUTHENTICATION. The middleware counts streamed
+            # bytes, so chunked bodies cannot bypass it; it goes outermost so
+            # an oversized body is refused before anything reads it.
+            from .proxy.server import RequestSizeLimitMiddleware
+
             if _AUTH_PROVIDER is not None:
                 # OAuth mode: FastMCP's bearer middleware guards /mcp (401 +
                 # WWW-Authenticate — which already gives claude.ai's format
@@ -279,12 +392,18 @@ def main():
                     "PFW_AUTH_MODE=oauth: x-api-key guard and probe shim "
                     "disabled; the MCP surface is protected by bearer tokens."
                 )
-                app = SecurityHeadersMiddleware(_wrap_cors(mcp.http_app()))
+                app = RequestSizeLimitMiddleware(
+                    SecurityHeadersMiddleware(
+                        _wrap_cors(mcp.http_app(stateless_http=stateless_http))
+                    )
+                )
             else:
-                app = SecurityHeadersMiddleware(
-                    _wrap_cors(
-                        _StreamableHTTPProbeMiddleware(
-                            APIKeyAuthMiddleware(mcp.http_app())
+                app = RequestSizeLimitMiddleware(
+                    SecurityHeadersMiddleware(
+                        _wrap_cors(
+                            _StreamableHTTPProbeMiddleware(
+                                APIKeyAuthMiddleware(mcp.http_app(stateless_http=stateless_http))
+                            )
                         )
                     )
                 )
@@ -295,12 +414,7 @@ def main():
             _proxy_port_http = int(os.getenv('PFW_PROXY_PORT', os.getenv('PROXY_PORT', 8080)))
             _enable_proxy_http = os.getenv("ENABLE_ALWAYS_ON_PROXY", "true").lower() == "true"
             if _enable_proxy_http:
-                import threading
-                def _proxy_thread_target():
-                    asyncio.run(_run_proxy_server(_proxy_port_http))
-                _pt = threading.Thread(target=_proxy_thread_target, daemon=True, name="download-proxy")
-                _pt.start()
-                logger.info(f"Download proxy server starting on port {_proxy_port_http} (background thread)")
+                _start_http_download_proxy(_proxy_port_http)
             logger.info(f"Starting HTTP transport on {host}:{port} (CORS origins: {origins})")
             # access_log off: access lines include request paths, and
             # /document/persistent/{hash} paths embed the link credential

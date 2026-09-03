@@ -1,6 +1,5 @@
 """Examiner Behavior Intelligence Citation Prompt"""
 
-import asyncio
 
 from ..shared.safe_logger import get_safe_logger
 
@@ -48,7 +47,7 @@ if examiner_name:
         query = f'examinerNameText:{{last_name}}*'
 
     # Get examiner's application portfolio
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=query,
         filing_date_start='2015-01-01',  # 2015+ accounts for 2017+ first OA data
         fields=['applicationNumberText', 'examinerNameText', 'groupArtUnitNumber',
@@ -84,7 +83,7 @@ for app in sample_apps:
     app_number = app.get('applicationNumberText')
 
     try:
-        citations = await citations_search_citations_minimal(
+        citations = await Citations_search_citations_minimal(
             application_number=app_number,
             limit=50
         )
@@ -126,7 +125,7 @@ if total_cites > 0:
 
 ```python
 # Find granted patents for NOA analysis
-granted_apps = await pfw_search_applications_minimal(
+granted_apps = await PFW_search_applications_minimal(
     query=f'examinerNameText:{{last_name}}* AND status_code:150',
     filing_date_start='2015-01-01',
     fields=['applicationNumberText', 'inventionTitle', 'patentNumber', 'filingDate'],
@@ -144,7 +143,7 @@ for patent in representative_patents:
     title = patent.get('applicationMetaData', {{}}).get('inventionTitle', 'Unknown')
 
     # Get NOA document
-    noa_docs = await pfw_get_application_documents(
+    noa_docs = await PFW_get_application_documents(
         app_number=app_number,
         document_code='NOA',
         limit=1
@@ -154,7 +153,7 @@ for patent in representative_patents:
         noa_doc = noa_docs['documentBag'][0]
 
         # Extract NOA content
-        noa_content = await pfw_get_document_content_with_ocr(
+        noa_content = await PFW_get_document_content_with_ocr(
             app_number=app_number,
             document_identifier=noa_doc['documentIdentifier'],
             max_pages=10
@@ -186,7 +185,7 @@ for app in sample_apps:
     app_number = app.get('applicationNumberText')
 
     # Check for RCE filings
-    rce_docs = await pfw_get_application_documents(
+    rce_docs = await PFW_get_application_documents(
         app_number=app_number,
         document_code='RCEX',
         limit=5
@@ -195,7 +194,7 @@ for app in sample_apps:
         rce_count += len(rce_docs['documentBag'])
 
     # Check for amendments
-    amend_docs = await pfw_get_application_documents(
+    amend_docs = await PFW_get_application_documents(
         app_number=app_number,
         document_code='A...',  # All amendment types
         limit=10
@@ -292,41 +291,3 @@ else:
 **Deliverable:** Examiner-specific citation behavior profile, prosecution pattern analysis, and targeted prosecution strategy recommendations."""
 
 
-# Global proxy server state
-_proxy_server_running = False
-_proxy_server_task = None
-
-async def _ensure_proxy_server_running(port: int = 8080):
-    """Ensure the proxy server is running"""
-    global _proxy_server_running, _proxy_server_task
-
-    if not _proxy_server_running:
-        logger.info(f"Starting HTTP proxy server on port {port}")
-        _proxy_server_task = asyncio.create_task(_run_proxy_server(port))
-        _proxy_server_running = True
-        # Give the server a moment to start
-        await asyncio.sleep(0.5)
-
-async def _run_proxy_server(port: int = 8080):
-    """Run the FastAPI proxy server"""
-    try:
-        import uvicorn
-        from .proxy.server import create_proxy_app
-
-        app = create_proxy_app()
-        config = uvicorn.Config(
-            app,
-            host="127.0.0.1",
-            port=port,
-            log_level="info",
-            access_log=False  # Reduce noise in logs
-        )
-        server = uvicorn.Server(config)
-        logger.info(f"HTTP proxy server starting on http://127.0.0.1:{port}")
-        await server.serve()
-
-    except Exception as e:
-        global _proxy_server_running
-        _proxy_server_running = False
-        logger.error(f"Proxy server failed: {e}")
-        raise

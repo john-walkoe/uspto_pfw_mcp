@@ -54,10 +54,23 @@ class PackageManager:
     Manages the creation and organization of document packages
     """
 
-    # Document importance categories for litigation/analysis
+    # Document importance categories for litigation/analysis.
+    #
+    # Codes reconciled 2026-08-30 with the guidance decoder
+    # (guidance.py::_get_document_codes_section) and ui/views.py DOC_ICONS, all
+    # three now using the descriptions USPTO returned live in documentBag
+    # responses (OPEN_ITEMS #7):
+    #   CTRS = Requirement for Restriction/Election — a substantive examiner
+    #          action that shapes the claim set, so it belongs with 892/1449.
+    #   SRFW = Search information including classification, databases and other
+    #          search related notes (NOT a restriction requirement, which is
+    #          what the decoder used to claim), alongside SRNT, the examiner's
+    #          search strategy and results.
+    #   CTAV = Advisory Action (PTOL-303), already here and now decoded.
+    #   WFEE = Fee Worksheet (SB06). The ISSUE FEE payment is IFEE.
     CRITICAL_DOCS = ["NOA", "CTFR", "CTNF", "CLM", "ABST"]
-    IMPORTANT_DOCS = ["892", "1449", "REM", "FWCLM", "DRW", "SPEC"]
-    STANDARD_DOCS = ["RCEX", "EXIN", "CTAV", "IDS", "WFEE"]
+    IMPORTANT_DOCS = ["892", "1449", "REM", "FWCLM", "DRW", "SPEC", "CTRS"]
+    STANDARD_DOCS = ["RCEX", "EXIN", "CTAV", "IDS", "WFEE", "SRFW", "SRNT", "IFEE"]
 
     def __init__(self, api_client, proxy_port: int = 8080):
         self.api_client = api_client

@@ -2,7 +2,10 @@
 
 ## What this is
 
-A manual end-to-end test suite for verifying all 14 PFW MCP tools against the live USPTO API
+A manual end-to-end test suite of 21 tests (Test 0 through Test 20) covering 12 of the 16 PFW MCP
+data tools against the live USPTO API
+(it does not exercise `PFW_get_family`, `PFW_get_term_adjustment`, `PFW_search_inventor` or
+`PFW_search_inventor_balanced`)
 with known inputs and expected outputs. These are not unit tests — they confirm real API behavior
 and validate tool correctness after setup, upgrades, or code changes.
 
@@ -25,13 +28,42 @@ tool logic.
 
 **Both STDIO and HTTP transport modes should pass all tests.**
 
+> **Tool visibility caveat (2026-09-02):** `defer_loading: false` is advisory
+> metadata that each client applies by its own policy, so an expected tool
+> being invisible in a given client is not, by itself, a server defect. If a
+> tool this suite calls does not appear, verify the server contract first
+> (direct stdio or in-container probe of `tools/list`) and record
+> "not surfaced in this client (server contract verified)" rather than
+> "tool missing". Load-bearing workflow content deliberately also rides in
+> per-tool docstrings and return-path notes for exactly this reason.
+
+
 ---
 
-Feature branch: `feature/fastmcp3-mcp-apps`
-Last validated: 2026-03-29 (Claude Desktop, STDIO)
+Stack: FastMCP 4.0.1 on MCP Python SDK 2.x, protocol revision 2026-07-28.
+Last validated: 2026-03-29 (Claude Desktop, STDIO); identifier formats updated 2026-09-02;
+document counts and OA expectations re-verified 2026-09-03 (see warning below)
 
-Reference application: **11752072** (Walkoe DRM patent US-7971071-B2, 151 prosecution documents)
-Reference application (OA APIs): **15992176** (post-2017, confirmed in OA rejections dataset)
+Reference application: **11/752,072** (Walkoe DRM patent US-7971071-B2, 151 prosecution documents)
+Reference application (OA APIs): **15/992,176** (post-2017, confirmed in OA rejections dataset)
+
+> **⚠ Identifier ambiguity (behavior change 2026-08-31, suite updated 2026-09-02):**
+> the bare 8-digit form `11752072` is ALSO a valid granted patent number
+> (11,752,072 — an unrelated dental-cement patent, application 16816197). The
+> identifier-taking tools (`PFW_get_application_documents`, `PFW_get_oa_rejections`,
+> `PFW_get_oa_text`, `PFW_get_family`, `PFW_get_term_adjustment`,
+> `PFW_get_granted_patent_documents_download`) now resolve a bare ambiguous
+> 8-digit identifier **patent-number-first**, self-reporting via
+> `identifier_note` / `identifier_ambiguous: true`. This is deliberate, not a
+> bug: a slashed serial (`11/752,072`) or `content_type='application'` is
+> unambiguous and short-circuits to the application lane. As of 2026-09-02 all
+> six of those tools expose `content_type` ('auto' default, 'patent',
+> 'application'); before that it was only on `PFW_get_family` and
+> `PFW_get_patent_or_application_xml`. Tests 7, 8, 12 and
+> 14–18 therefore use the slash format. `PFW_get_document_content_with_ocr` and
+> `PFW_get_document_download` take a literal application number alongside a
+> `document_identifier` from a prior listing call and do not lane-resolve —
+> also deliberate.
 
 ---
 
@@ -40,19 +72,19 @@ Reference application (OA APIs): **15992176** (post-2017, confirmed in OA reject
 ### Test 0: Guidance
 
 ```
-pfw_get_guidance
+PFW_get_guidance
 {
   "section": "tools"
 }
 ```
-**Expect:** Section listing all 14 tools with defer_loading status and descriptions. Three always-loaded tools: `pfw_search_applications_minimal`, `pfw_get_application_documents`, `pfw_get_guidance`.
+**Expect:** Section listing all 17 registered tool names (16 data tools plus `pfw_manage_users`, which is registered only on OAuth deployments with `PFW_ENABLE_USER_MANAGEMENT=true`) with defer_loading status and descriptions. Three always-loaded tools: `PFW_search_applications_minimal`, `PFW_get_application_documents`, `PFW_get_guidance`.
 
 ---
 
 ### Test 1: Application Search by Number (API Field)
 
 ```
-pfw_search_applications_minimal
+PFW_search_applications_minimal
 {
   "limit": 3,
   "query": "applicationNumberText:11752072",
@@ -66,7 +98,7 @@ pfw_search_applications_minimal
 ### Test 2: Patent Number Search (User-Friendly Field Mapping)
 
 ```
-pfw_search_applications_minimal
+PFW_search_applications_minimal
 {
   "limit": 3,
   "query": "patentNumber:7971071",
@@ -80,35 +112,41 @@ pfw_search_applications_minimal
 ### Test 3: Keyword Search
 
 ```
-pfw_search_applications_minimal
+PFW_search_applications_minimal
 {
   "limit": 3,
-  "query": "artificial intelligence",
+  "query": "\"artificial intelligence\"",
   "fields": ["applicationNumberText", "inventionTitle"]
 }
 ```
 **Expect:** 3 results. `inventionTitle` values contain AI/ML related terms. `numFound` in the thousands.
+
+> Note (2026-09-02): the quotes are load-bearing. An unquoted multi-word query
+> is standard Lucene term matching ("artificial" OR "intelligence" — expect
+> artificial flowers and fingernails in the results); the quoted form is a
+> phrase query. `escape_lucene_query_term` deliberately does not escape quotes
+> so callers can do this.
 
 ---
 
 ### Test 4: Inventor Search
 
 ```
-pfw_search_inventor_minimal
+PFW_search_inventor_minimal
 {
   "name": "Walkoe",
   "limit": 3,
   "fields": ["applicationNumberText", "inventionTitle", "patentNumber"]
 }
 ```
-**Expect:** At least 2 results including app 11752072 (patent 7971071). Inventor "Walkoe" matched via comprehensive strategy.
+**Expect:** At least 2 results including app 11752072 (patent 7971071) - the API returns `applicationNumberText` as bare digits. Inventor "Walkoe" matched via comprehensive strategy.
 
 ---
 
 ### Test 5: Convenience Parameter Search (Examiner Name)
 
 ```
-pfw_search_applications_minimal
+PFW_search_applications_minimal
 {
   "examiner_name": "LANIER, BENJAMIN",
   "limit": 3,
@@ -122,7 +160,7 @@ pfw_search_applications_minimal
 ### Test 6: Balanced Search with Custom Fields
 
 ```
-pfw_search_applications_balanced
+PFW_search_applications_balanced
 {
   "limit": 3,
   "query": "inventionTitle:digital AND inventionTitle:protection",
@@ -138,9 +176,9 @@ pfw_search_applications_balanced
 ### Test 7: Document Listing — ABST Filter ⭐
 
 ```
-pfw_get_application_documents
+PFW_get_application_documents
 {
-  "app_number": "11752072",
+  "app_number": "11/752,072",
   "document_code": "ABST",
   "limit": 2
 }
@@ -152,9 +190,9 @@ pfw_get_application_documents
 ### Test 8: Document Listing — NOA Filter ⭐
 
 ```
-pfw_get_application_documents
+PFW_get_application_documents
 {
-  "app_number": "11752072",
+  "app_number": "11/752,072",
   "document_code": "NOA",
   "limit": 1
 }
@@ -168,7 +206,7 @@ pfw_get_application_documents
 ### Test 9: OCR Document Content Extraction (ABST — 1 page)
 
 ```
-pfw_get_document_content_with_ocr
+PFW_get_document_content_with_ocr
 {
   "app_number": "11752072",
   "document_identifier": "F20VG7DBPPOPPY4",
@@ -184,20 +222,20 @@ pfw_get_document_content_with_ocr
 ### Test 10: Document Download Link (ABST)
 
 ```
-pfw_get_document_download
+PFW_get_document_download
 {
   "app_number": "11752072",
   "document_identifier": "F20VG7DBPPOPPY4"
 }
 ```
-**Expect:** `proxy_url` returned in format `http://localhost:8080/document/persistent/...`. URL is clickable in browser and downloads the PDF without exposing the USPTO API key. Provide this link to the user.
+**Expect:** `proxy_url` returned as a `/document/persistent/...` link. URL is clickable in browser and downloads the PDF without exposing the USPTO API key. Provide this link to the user. The HOST varies by deployment and both forms PASS: `http://localhost:8080/...` running locally (stdio), or your own public proxy origin (e.g. `https://your-server.example.com/...`) on hosted deployments where `PFW_PROXY_BASE_URL` is set.
 
 ---
 
 ### Test 11: XML Content — Claims Only (91% Token Reduction)
 
 ```
-pfw_get_patent_or_application_xml
+PFW_get_patent_or_application_xml
 {
   "identifier": "7971071",
   "include_fields": ["claims"],
@@ -211,14 +249,14 @@ pfw_get_patent_or_application_xml
 ### Test 12: Complete Granted Patent Package
 
 ```
-pfw_get_granted_patent_documents_download
+PFW_get_granted_patent_documents_download
 {
-  "app_number": "11752072",
+  "app_number": "11/752,072",
   "include_drawings": true,
   "generate_persistent_links": true
 }
 ```
-**Expect:** Proxy download URLs for Abstract, Drawings, Specification, and Claims components. `total_pages` ~40-80. All 4 components available (this is a granted patent). Provide all download links to the user.
+**Expect:** Proxy download URLs for Abstract, Drawings, Specification, and Claims components; all 4 present with working links (this is a granted patent). Specification MUST be the complete 21-page original (`F20VG77SPPOPPY4`, 2007-05-22) carrying a `version_selection_note` saying 2 SPEC documents exist and the most complete was chosen; a 2-page specification (`F5CXQRJ3PPOPPY4`, the 2007-08-14 replacement-paragraphs amendment) is the regression this test now guards (fixed 2026-09-02: amendment papers share the component's document code, so the pick is by most PDF pages, earliest date on ties). `total_pages = 32` (abstract 1, drawings 2, specification 21, claims 8; claims is the latest version by design). The tool also reports `versions_considered`/`versions_available` per component.
 
 ---
 
@@ -227,9 +265,9 @@ pfw_get_granted_patent_documents_download
 ### Test 13: OA Rejections — Post-2017 Application (Has Coverage)
 
 ```
-pfw_get_oa_rejections
+PFW_get_oa_rejections
 {
-  "application_number": "15992176",
+  "application_number": "15/992,176",
   "latest_only": true
 }
 ```
@@ -240,9 +278,9 @@ pfw_get_oa_rejections
 ### Test 14: OA Rejections — Pre-2017 Application (Coverage Gap)
 
 ```
-pfw_get_oa_rejections
+PFW_get_oa_rejections
 {
-  "application_number": "11752072",
+  "application_number": "11/752,072",
   "latest_only": true
 }
 ```
@@ -253,9 +291,9 @@ pfw_get_oa_rejections
 ### Test 15: OA Text — Full CTNF Body Text
 
 ```
-pfw_get_oa_text
+PFW_get_oa_text
 {
-  "application_number": "11752072",
+  "application_number": "11/752,072",
   "action_type": "CTNF",
   "latest_only": true,
   "section": "all"
@@ -268,9 +306,9 @@ pfw_get_oa_text
 ### Test 16: OA Text — Section Filter (§103 Only)
 
 ```
-pfw_get_oa_text
+PFW_get_oa_text
 {
-  "application_number": "11752072",
+  "application_number": "11/752,072",
   "action_type": "CTNF",
   "latest_only": true,
   "section": "103"
@@ -284,9 +322,9 @@ pfw_get_oa_text
 
 **Step 1 — OA Text API (fast, no OCR):**
 ```
-pfw_get_oa_text
+PFW_get_oa_text
 {
-  "application_number": "11752072",
+  "application_number": "11/752,072",
   "action_type": "CTNF",
   "section": "103"
 }
@@ -294,9 +332,9 @@ pfw_get_oa_text
 
 **Step 2 — CTNF document discovery:**
 ```
-pfw_get_application_documents
+PFW_get_application_documents
 {
-  "app_number": "11752072",
+  "app_number": "11/752,072",
   "document_code": "CTNF",
   "limit": 1
 }
@@ -304,24 +342,24 @@ pfw_get_application_documents
 Note the `documentIdentifier` (should be `GF7AGXYVPPOPPY5`, 15 pages).
 
 **Expect from Step 1:** Text returned instantly, no PDF download. Use this path for reading rejection reasoning.
-**Expect from Step 2:** Document identifier confirmed for use with `pfw_get_document_download` when the attorney needs the original formatted PDF.
+**Expect from Step 2:** Document identifier confirmed for use with `PFW_get_document_download` when the attorney needs the original formatted PDF.
 
-**Key insight:** `pfw_get_oa_text` is the right tool for reading rejection text in LLM context. `pfw_get_document_download` is for giving attorneys the original formatted PDF. `pfw_get_document_content_with_ocr` is for documents not covered by the OA text API (e.g., applicant responses, drawings, specifications).
+**Key insight:** `PFW_get_oa_text` is the right tool for reading rejection text in LLM context. `PFW_get_document_download` is for giving attorneys the original formatted PDF. `PFW_get_document_content_with_ocr` is for documents not covered by the OA text API (e.g., applicant responses, drawings, specifications).
 
 ---
 
 ### Test 18: OA Text — All OAs for Application (latest_only=False)
 
 ```
-pfw_get_oa_text
+PFW_get_oa_text
 {
-  "application_number": "11752072",
+  "application_number": "11/752,072",
   "action_type": "CTNF",
   "latest_only": false,
   "section": "all"
 }
 ```
-**Expect:** `num_found = 3` (app 11752072 has 3 CTNFs: 2010-10-13, 2009-01-29, and 2008-09-08). Text returned for all non-final rejections. Confirms `latest_only=False` returns full prosecution history OA text.
+**Expect:** `num_found = 3` (app 11/752,072 has 3 CTNFs: 2010-10-13, 2009-01-29, and 2008-09-08; re-verified 2026-09-03). Text returned for all non-final rejections. Confirms `latest_only=False` returns full prosecution history OA text.
 
 **Note:** The 2008-09-08 OA (Mathers, art unit 2132) predates the 2009 RCE round and was initially missed in the reference sheet. Corrected 2026-03-29.
 
@@ -332,14 +370,14 @@ pfw_get_oa_text
 ### Test 19: High-Volume Search — Ultra-Minimal Fields (99% Reduction)
 
 ```
-pfw_search_applications
+PFW_search_applications
 {
   "limit": 5,
   "query": "applicationMetaData.groupArtUnitNumber:2432",
   "fields": ["applicationNumberText", "applicationMetaData.examinerNameText"]
 }
 ```
-**Expect:** 5 results. Each result has exactly 2 fields: `applicationNumberText` and `examinerNameText` (via full API path). Confirms the custom `fields` parameter works on `pfw_search_applications` and that API-path field names are accepted alongside user-friendly names.
+**Expect:** 5 results. Each result has exactly 2 fields: `applicationNumberText` and `examinerNameText` (via full API path). Confirms the custom `fields` parameter works on `PFW_search_applications` and that API-path field names are accepted alongside user-friendly names.
 
 ---
 
@@ -348,7 +386,7 @@ pfw_search_applications
 Tests that examiner and applicant filter pills appear when those fields are present in returned data, and that sort buttons are suppressed for fields not requested.
 
 ```
-pfw_search_applications_minimal
+PFW_search_applications_minimal
 {
   "applicant_name": "Sandisk Corporation",
   "fields": ["applicationNumberText", "inventionTitle", "applicationMetaData.examinerNameText", "applicationMetaData.groupArtUnitNumber"],
@@ -368,7 +406,7 @@ pfw_search_applications_minimal
 
 **Alternative test for filter button verification (Inventor filter):**
 ```
-pfw_search_applications_minimal
+PFW_search_applications_minimal
 {
   "applicant_name": "Sandisk Corporation",
   "fields": ["applicationNumberText", "inventionTitle", "applicationMetaData.firstInventorName", "applicationMetaData.examinerNameText"],
@@ -381,7 +419,7 @@ Expect: Inventor filter pills appear showing multiple inventors (Fabrice Jogand-
 
 ## Quick Reference: Verified Document IDs
 
-All identifiers are for application **11752072** (US-7971071-B2):
+All identifiers are for application **11/752,072** (US-7971071-B2):
 
 | Document | Code | Identifier | Pages | Date |
 |----------|------|-----------|-------|------|
@@ -394,19 +432,19 @@ All identifiers are for application **11752072** (US-7971071-B2):
 
 ## Quick Reference: OA API Coverage Notes
 
-| API | Coverage | App 11752072 | App 15992176 |
+| API | Coverage | App 11/752,072 | App 15/992,176 |
 |-----|----------|-------------|-------------|
-| `pfw_get_oa_rejections` | Oct 1, 2017 → present | ❌ No data (pre-2017) | ✅ 19 records |
-| `pfw_get_oa_text` | ~12-series apps onward | ✅ CTNF text available | ✅ Available |
+| `PFW_get_oa_rejections` | Oct 1, 2017 → ~30 days before today (documented coverage, not probe-verified) | ❌ No data (pre-2017) | ✅ 19 records |
+| `PFW_get_oa_text` | office actions mailed roughly 2008 onward (documented coverage, deliberately hedged and NOT probe-verified - see the module docstring in `tools/oa_tools.py`) | ✅ CTNF text available | ✅ Available |
 
 **When to use which tool for office action text:**
 
 | Goal | Use |
 |------|-----|
-| Read rejection reasoning in LLM context | `pfw_get_oa_text` |
-| Check what rejection types (§101/§102/§103/§112) appeared | `pfw_get_oa_rejections` |
-| Give attorney the original formatted PDF | `pfw_get_document_download` |
-| Extract text from applicant responses, specs, drawings | `pfw_get_document_content_with_ocr` |
+| Read rejection reasoning in LLM context | `PFW_get_oa_text` |
+| Check what rejection types (§101/§102/§103/§112) appeared | `PFW_get_oa_rejections` |
+| Give attorney the original formatted PDF | `PFW_get_document_download` |
+| Extract text from applicant responses, specs, drawings | `PFW_get_document_content_with_ocr` |
 
 ---
 
@@ -414,12 +452,12 @@ All identifiers are for application **11752072** (US-7971071-B2):
 
 | Observation | Notes |
 |-------------|-------|
-| App 11752072 | 151 total prosecution documents — heavily prosecuted, good for filter reduction testing |
+| App 11/752,072 | 151 total prosecution documents - heavily prosecuted, good for filter reduction testing |
 | OA rejections coverage | Oct 1, 2017 forward only — pre-2017 apps return `num_found = 0` gracefully |
-| OA text coverage | ~12-series applications onward (app 11752072 filed 2007 still covered) |
+| OA text coverage | Office actions mailed roughly 2008 onward. This is documented coverage, hedged and not probe-verified anywhere in this repo (see the `tools/oa_tools.py` module docstring); app 11/752,072, filed 2007, has covered office actions from 2008 on |
 | Document identifiers | Only valid with their specific `applicationNumberText` — not portable |
-| `pfw_get_oa_text` bodyText | Returned as joined plain text (underlying API returns list — joined server-side) |
+| `PFW_get_oa_text` bodyText | Returned as joined plain text (underlying API returns list — joined server-side) |
 | CTNF vs CTFR | CTNF = Non-Final rejection (common), CTFR = Final rejection — don't swap them |
-| `pfw_get_oa_rejections` for 15992176 | 19 records, §101+§112 only, no §103 — chemistry art unit, eligibility focus |
+| `PFW_get_oa_rejections` for 15/992,176 | 19 records, §101+§112 only, no §103 - art units 2100 / 1765, eligibility focus |
 | Docling OCR progress | Visible as "Sending to Docling OCR (N pages — this may take a minute)..." in Claude Desktop status |
-| DOCLING_MAX_PAGES | Default 25 — documents over this skip Docling and suggest Mistral OCR |
+| DOCLING_MAX_PAGES | Default 25 - a longer document skips Docling and the advice names `page_from`/`page_to` plus `DOCLING_MAX_PAGES`; `MISTRAL_API_KEY` is suggested only when no Docling URL is configured |

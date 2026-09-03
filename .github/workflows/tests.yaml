@@ -1,0 +1,72 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run ruff
+        # Advisory for now: the repo carries a pre-existing C901 complexity
+        # backlog that is tracked separately. New violations still show up here.
+        continue-on-error: true
+        run: uv run ruff check src tests
+
+      - name: Run pytest
+        env:
+          SKIP_PROXY_TESTS: '1'
+        run: uv run pytest -q
+
+      # The suite was green by alphabetical collection order alone (audit
+      # T-3): three tests failed alone and six more failed behind them. This
+      # loop is what stops that coming back.
+      - name: Per-file isolation
+        env:
+          SKIP_PROXY_TESTS: '1'
+        run: |
+          for f in tests/test_*.py; do
+            echo "== $f"
+            uv run pytest -q "$f" || exit 1
+          done
+
+  audit:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      # Nothing audited uv.lock before (audit M-20 / initial F-1). The server
+      # parses untrusted PDFs, XML and archives, so a known CVE in a parser is
+      # the realistic supply-chain exposure.
+      - name: Export the resolved dependency set
+        run: uv export --format requirements-txt --no-hashes > requirements-audit.txt
+
+      - name: pip-audit
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: requirements-audit.txt

@@ -43,7 +43,9 @@ async def test_docling_tier_success(client, monkeypatch):
     update = await client._try_docling_tier(b"%PDF-", 5, "DOC1", _FakeDocling())
     assert update is not None
     assert update["extraction_method"] == "Docling OCR"
-    assert update["processing_cost_usd"] == 0.0
+    # Cost fields must never surface in extraction responses
+    assert "processing_cost_usd" not in update
+    assert "cost_breakdown" not in update
     assert update["extracted_content"] == GOOD_TEXT
 
 
@@ -71,13 +73,17 @@ async def test_all_tiers_failed_terminal_result(client, monkeypatch):
     """No PyPDF2 text, no Mistral key, no Docling — the terminal branch must
     say so and carry actionable guidance (previously untested, F43)."""
 
-    async def fake_fetch(app_number, document_identifier, request_id, progress_cb=None):
-        return {"documentIdentifier": "DOC1", "documentCode": "CTNF"}, {"pageTotalQuantity": 3}, b"\x00garbage"
+    async def fake_resolve(app_number, document_identifier, request_id):
+        return {"documentIdentifier": "DOC1", "documentCode": "CTNF"}, {"pageTotalQuantity": 3}
+
+    async def fake_download(base, pdf_option, progress_cb=None):
+        return b"\x00garbage"
 
     async def none_tier(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(client, "_fetch_document_for_extraction", fake_fetch)
+    monkeypatch.setattr(client, "_resolve_document_for_extraction", fake_resolve)
+    monkeypatch.setattr(client, "_download_pdf_for_extraction", fake_download)
     monkeypatch.setattr(client, "_try_pypdf2_tier", none_tier)
     monkeypatch.setattr(ec_mod, "DoclingClient", lambda: _FakeDocling(available=False))
 

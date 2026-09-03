@@ -1,130 +1,72 @@
 #!/usr/bin/env python3
+"""The Mistral API key validator, which decides whether the paid OCR tier is
+even reachable.
+
+The previous version of this file asserted nothing and exercised no repo code
+at all: it re-implemented `os.getenv` checks inline, printed SUCCESS, and
+grepped README.md (audit T-4). It is now pointed at the real validator, which
+as of audit D-2 is the single owner of the placeholder list that used to exist
+in two divergent copies.
 """
-Test script to verify the logic for handling missing Mistral API key.
 
-This test focuses on the logic without requiring actual API calls.
-"""
+import pytest
 
-import os
-import sys
+from patent_filewrapper_mcp.services.ocr_service import (
+    _PLACEHOLDER_PATTERNS,
+    validate_mistral_api_key,
+)
 
-def test_mistral_key_logic():
-    """Test the logic for handling missing Mistral API key"""
+_REAL_LOOKING_KEY = "sk-abcdefghijklmnopqrstuvwxyz012345"
 
-    print("Testing Mistral API key handling logic...")
 
-    # Test case 1: Check if we properly detect missing Mistral key
-    print("\n=== Test Case 1: Missing Mistral Key Detection ===")
+class TestMissingKey:
+    @pytest.mark.parametrize("raw", [None, "", "   "])
+    def test_an_absent_key_is_none(self, raw):
+        assert validate_mistral_api_key(raw) is None
 
-    # Save original key
-    original_mistral_key = os.getenv("MISTRAL_API_KEY")
+    def test_a_key_shorter_than_ten_chars_is_treated_as_missing(self):
+        assert validate_mistral_api_key("abc123") is None
 
-    try:
-        # Remove Mistral key
-        if "MISTRAL_API_KEY" in os.environ:
-            del os.environ["MISTRAL_API_KEY"]
 
-        # Simulate the check from our code
-        mistral_api_key = os.getenv("MISTRAL_API_KEY")
+class TestPlaceholders:
+    @pytest.mark.parametrize("pattern", _PLACEHOLDER_PATTERNS)
+    def test_every_declared_placeholder_pattern_is_actually_rejected(self, pattern):
+        """A pattern in the list that does not reject is dead configuration."""
+        assert validate_mistral_api_key(f"{pattern}_padding_to_length") is None
 
-        if not mistral_api_key:
-            print("SUCCESS: Correctly detected missing Mistral API key")
+    @pytest.mark.parametrize(
+        "pattern",
+        # One from each of the two lists that had drifted apart, so a
+        # regression that reinstates either copy fails here.
+        ["change_me", "replace_me", "temp_key", "test_key", "example_key"],
+    )
+    def test_patterns_from_both_former_copies_are_caught(self, pattern):
+        assert validate_mistral_api_key(f"{pattern}_padding_to_length") is None
 
-            # Test auto_optimize=True scenario (PyPDF2 failed, no Mistral)
-            auto_optimize = True
-            if auto_optimize:
-                error_msg = "Document appears to be scanned/image-based. PyPDF2 could not extract meaningful text."
-                suggestion = "Set MISTRAL_API_KEY environment variable for OCR capability on scanned documents"
-                extraction_method = "PyPDF2 (insufficient)"
+    def test_matching_is_case_insensitive(self):
+        assert validate_mistral_api_key("YOUR_KEY_HERE_PADDING") is None
 
-                print(f"  - Error message: {error_msg}")
-                print(f"  - Suggestion: {suggestion}")
-                print(f"  - Extraction method: {extraction_method}")
-                print("SUCCESS: Auto-optimize scenario handles missing key correctly")
+    def test_extra_patterns_can_be_added_by_env(self, monkeypatch):
+        monkeypatch.setenv("MISTRAL_PLACEHOLDER_PATTERNS", "corporate_dummy")
+        assert validate_mistral_api_key("corporate_dummy_value_here") is None
 
-            # Test auto_optimize=False scenario (Direct Mistral request, no key)
-            auto_optimize = False
-            if not auto_optimize:
-                error_msg = "MISTRAL_API_KEY environment variable is required for OCR content extraction"
-                suggestion = "Set MISTRAL_API_KEY environment variable: set MISTRAL_API_KEY=your_key_here (Windows) or export MISTRAL_API_KEY=your_key_here (Linux/Mac)"
-                extraction_method = "failed"
 
-                print(f"  - Error message: {error_msg}")
-                print(f"  - Suggestion: {suggestion}")
-                print(f"  - Extraction method: {extraction_method}")
-                print("SUCCESS: Direct OCR request scenario handles missing key correctly")
-        else:
-            print("FAILED: Did not detect missing Mistral API key")
-            return False
+class TestRealKey:
+    def test_a_plausible_key_survives(self):
+        assert validate_mistral_api_key(_REAL_LOOKING_KEY) == _REAL_LOOKING_KEY
 
-    finally:
-        # Restore original key
-        if original_mistral_key:
-            os.environ["MISTRAL_API_KEY"] = original_mistral_key
+    def test_surrounding_whitespace_is_stripped(self):
+        assert (
+            validate_mistral_api_key(f"  {_REAL_LOOKING_KEY}  ") == _REAL_LOOKING_KEY
+        )
 
-    # Test case 2: Check behavior when key is present
-    print("\n=== Test Case 2: Mistral Key Present ===")
 
-    # Set a dummy key
-    os.environ["MISTRAL_API_KEY"] = "dummy_key_for_testing"
+def test_the_client_and_the_service_share_one_validator():
+    """Both call sites must resolve to the same function; two lists that must
+    be maintained in lockstep already were not (audit D-2)."""
+    from patent_filewrapper_mcp.services.ocr_service import OCRService
 
-    mistral_api_key = os.getenv("MISTRAL_API_KEY")
-    if mistral_api_key:
-        print("SUCCESS: Correctly detected present Mistral API key")
-        print("  - Would proceed to Mistral OCR processing")
-    else:
-        print("FAILED: Did not detect present Mistral API key")
-        return False
-
-    # Clean up
-    if original_mistral_key:
-        os.environ["MISTRAL_API_KEY"] = original_mistral_key
-    else:
-        if "MISTRAL_API_KEY" in os.environ:
-            del os.environ["MISTRAL_API_KEY"]
-
-    print("\n=== Test Case 3: Documentation Updates ===")
-
-    # Check if documentation mentions optional nature
-    try:
-        with open("README.md", "r", encoding="utf-8") as f:
-            readme_content = f.read()
-
-        if "optional" in readme_content.lower() and "mistral" in readme_content.lower():
-            print("SUCCESS: README.md mentions Mistral API key as optional")
-        else:
-            print("NOTICE: README.md may need updates about optional Mistral key")
-
-        if "MISTRAL_API_KEY_OPTIONAL" in readme_content:
-            print("SUCCESS: Configuration examples show Mistral as optional")
-        else:
-            print("NOTICE: Configuration examples may need optional indicators")
-
-    except FileNotFoundError:
-        print("WARNING: Could not find README.md for documentation check")
-
-    return True
-
-def main():
-    """Run the logic tests"""
-    success = test_mistral_key_logic()
-
-    if success:
-        print("\nSUCCESS: All logic tests passed!")
-        print("\nKey improvements implemented:")
-        print("- System gracefully handles missing Mistral API key")
-        print("- Provides helpful guidance to users")
-        print("- Different messages for different scenarios")
-        print("- Documentation updated to reflect optional nature")
-
-        print("\nUser experience when Mistral API key is missing:")
-        print("1. PyPDF2 works: User gets extracted text with no issues")
-        print("2. PyPDF2 fails: User gets helpful message about setting up Mistral OCR")
-        print("3. Direct OCR request: User gets clear error about missing API key")
-
-    else:
-        print("\nFAILED: Some logic tests failed")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
+    for candidate in ("change_me_padding", "temp_key_padding", _REAL_LOOKING_KEY):
+        assert OCRService._validate_mistral_api_key(
+            None, candidate
+        ) == validate_mistral_api_key(candidate)

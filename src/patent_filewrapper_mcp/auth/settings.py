@@ -22,8 +22,13 @@ class AuthSettings:
     auth_ms_client_secret: str = ""
     auth_ms_tenant: str = "common"  # "common" | "organizations" | tenant GUID
     auth_internal_token: str = ""  # static bearer for headless clients (internal gateways)
+    auth_internal_admin_token: str = ""  # static bearer granting pfw:admin too
     auth_register_url: str = ""  # "Request access" link on the Not-registered page
-    auth_access_ttl: int = 3600
+    # 15 minutes, not the hour it was: an access token cannot be revoked, so
+    # the TTL IS the deactivation lag (audit M-13, authentication F-2).
+    # Refresh rotation re-reads the mcp_users row on every refresh, so the
+    # shorter TTL costs a round trip, not a re-login.
+    auth_access_ttl: int = 900
     auth_refresh_ttl: int = 2592000  # 30 d idle timeout
     auth_db_path: str = "data/mcp_auth.db"  # SQLite: users + OAuth AS state
 
@@ -39,8 +44,9 @@ class AuthSettings:
             auth_ms_client_secret=os.getenv("PFW_AUTH_MS_CLIENT_SECRET", ""),
             auth_ms_tenant=os.getenv("PFW_AUTH_MS_TENANT", "common"),
             auth_internal_token=os.getenv("PFW_AUTH_INTERNAL_TOKEN", ""),
+            auth_internal_admin_token=os.getenv("PFW_AUTH_INTERNAL_ADMIN_TOKEN", ""),
             auth_register_url=os.getenv("PFW_AUTH_REGISTER_URL", ""),
-            auth_access_ttl=int(os.getenv("PFW_AUTH_ACCESS_TTL", "3600")),
+            auth_access_ttl=int(os.getenv("PFW_AUTH_ACCESS_TTL", "900")),
             auth_refresh_ttl=int(os.getenv("PFW_AUTH_REFRESH_TTL", "2592000")),
             auth_db_path=os.getenv("PFW_AUTH_DB_PATH", "data/mcp_auth.db"),
         )

@@ -8,6 +8,8 @@ This document details the sophisticated prompt templates included with the USPTO
 
 **NEW FEATURE**: The PFW MCP now includes 11 prompt templates that appear in Claude Desktop UI. These templates automate complex multi-step workflows and eliminate the need to memorize tool syntax.
 
+> **Note:** Prompt templates are opt-in server-side. They register only when the server is started with `PFW_ENABLE_PROMPTS=true` (default off); otherwise no prompts appear in the client.
+
 ### 🎯 **How to Use Prompt Templates**
 
 
@@ -70,7 +72,7 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 - Creating executive summaries for licensing negotiations
 - Developing layperson claim interpretations for litigation
 
-**Integration**: Often used after `pfw_get_patent_or_application_xml` for structured content analysis
+**Integration**: Often used after `PFW_get_patent_or_application_xml` for structured content analysis
 
 ---
 
@@ -175,15 +177,15 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 - **Purpose-driven selection**: Filters documents based on analysis goals
 - **Context reduction**: Achieves 98.6% token reduction for heavily-prosecuted applications
 - **Intelligent prioritization**: Selects most relevant documents automatically
-- **Cost optimization**: Minimizes OCR costs through strategic selection
+- **Extraction optimization**: Minimizes unnecessary OCR passes through strategic selection
 
 **Use Cases**:
 - Preparing focused document sets for LLM analysis
-- Reducing costs in high-volume patent research
+- Reducing context usage in high-volume patent research
 - Targeted prior art analysis from prosecution history
 - Expert witness preparation with key documents
 
-**Integration**: Works with `pfw_get_application_documents` for advanced filtering
+**Integration**: Works with `PFW_get_application_documents` for advanced filtering
 
 ---
 
@@ -245,9 +247,17 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 
 ### Flexible Identifier Support
 - **Patent Numbers**: "7971071", "US7971071B2", "7,971,071"
-- **Application Numbers**: "17896175", "17/896,175", "US17/896,175"
+- **Application Numbers**: "17/896,175", "US17/896,175" - prefer the slash form
 - **Title Keywords**: "wireless charging", "OLED display technology"
 - **Inventor Names**: "Smith, John", "John Smith", partial names
+
+> **A bare 8-digit number is ambiguous.** It is a valid application serial AND,
+> since patent numbers crossed 10,000,000 in 2018, a valid granted patent
+> number. Resolution queries the patent-number lane first, so bare
+> `"11752072"` resolves to patent 11,752,072 (application 16816197), not to
+> application 11/752,072. Write a serial with the slash (`11/752,072`) or pass
+> `content_type='application'`; the response reports `identifier_resolved_as`
+> and `identifier_lanes_tried` either way.
 
 ### Smart Validation
 - **Input type detection**: Automatically determines identifier format
@@ -258,7 +268,7 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 ### Context Optimization
 - **Progressive disclosure**: Minimal → balanced → detailed information retrieval
 - **Token efficiency**: 95-99% context reduction through targeted field selection
-- **Cost transparency**: Clear indication of OCR costs and optimization strategies
+- **Extraction transparency**: Clear indication of extraction methods and optimization strategies
 - **Strategic guidance**: Built-in recommendations for efficient workflows
 
 ## 📈 Performance & Integration
@@ -311,13 +321,13 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 - **Begin with `/technology_landscape_mapping_PTAB`** for competitive intelligence
 - **Employ `/litigation_research_setup_PTAB_FPD`** for due diligence workflows
 - **Utilize `/inventor_portfolio_analysis`** for technology transfer opportunities
-- **Use `/document_filtering_assistant`** for cost-effective research
+- **Use `/document_filtering_assistant`** for focused, context-efficient research
 
 ### For Research & Development
 - **Apply `/technology_landscape_mapping_PTAB`** for R&D planning
 - **Use `/inventor_portfolio_analysis`** for competitive technical intelligence
 - **Leverage `/patent_search`** for prior art discovery
-- **Employ context reduction strategies** for budget-conscious research
+- **Employ context reduction strategies** when the context window is the constraint
 
 ---
 

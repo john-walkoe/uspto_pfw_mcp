@@ -50,10 +50,10 @@ processed_input = process_identifier_inputs(
 app_number = None  # resolved during identifier processing
 if search_strategy == "direct_lookup":
     app_number, status = await resolve_identifier_to_application_number(
-        identifier_info, pfw_search_applications_minimal
+        identifier_info, PFW_search_applications_minimal
     )
 elif search_strategy == "fuzzy_search":
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=title_keywords,
         fields=["applicationNumberText", "inventionTitle", "patentNumber"],
         limit=10
@@ -64,21 +64,21 @@ PHASE 2: Get Litigation Package
 
 ```python
 # Get application metadata
-app_details = await pfw_search_applications_balanced(
+app_details = await PFW_search_applications_balanced(
     query=f"applicationNumberText:{app_number}",
     limit=1
 )
 
 # Get critical prosecution documents using document_code filters
-noa = await pfw_get_application_documents(app_number=app_number, document_code='NOA')
-office_actions = await pfw_get_application_documents(app_number=app_number, document_code='CTNF', limit=10)
-final_rejections = await pfw_get_application_documents(app_number=app_number, document_code='CTFR')
-examiner_cites = await pfw_get_application_documents(app_number=app_number, document_code='892')
-applicant_cites = await pfw_get_application_documents(app_number=app_number, document_code='1449')
-claims = await pfw_get_application_documents(app_number=app_number, document_code='CLM')
+noa = await PFW_get_application_documents(app_number=app_number, document_code='NOA')
+office_actions = await PFW_get_application_documents(app_number=app_number, document_code='CTNF', limit=10)
+final_rejections = await PFW_get_application_documents(app_number=app_number, document_code='CTFR')
+examiner_cites = await PFW_get_application_documents(app_number=app_number, document_code='892')
+applicant_cites = await PFW_get_application_documents(app_number=app_number, document_code='1449')
+claims = await PFW_get_application_documents(app_number=app_number, document_code='CLM')
 
 # Get granted patent package
-basic_package = await pfw_get_granted_patent_documents_download(app_number=app_number)
+basic_package = await PFW_get_granted_patent_documents_download(app_number=app_number)
 ```
 
 PHASE 3: Cross-MCP Integration
@@ -89,7 +89,7 @@ PHASE 3: Cross-MCP Integration
 ptab_proceedings = await ptab_search_proceedings_balanced(patent_number=patent_number)
 
 # Ex parte appeals (if prosecution rejected)
-appeals = await search_appeals_minimal(
+appeals = await PTAB_search_appeals_minimal(
     application_number=app_number,
     limit=10
 )
@@ -104,12 +104,12 @@ PHASE 4: Content Extraction
 
 ```python
 # Extract critical document text
-noa_content = await pfw_get_document_content_with_ocr(
+noa_content = await PFW_get_document_content_with_ocr(
     app_number=app_number,
     document_identifier=noa_documents[0].document_identifier
 )
 
-final_oa_content = await pfw_get_document_content_with_ocr(
+final_oa_content = await PFW_get_document_content_with_ocr(
     app_number=app_number,
     document_identifier=final_rejection[0].document_identifier
 )
@@ -123,4 +123,4 @@ Organize and present:
 - Cross-MCP Analysis: PTAB proceedings, FPD petitions
 - Strategic Insights: Strengths, vulnerabilities, recommendations
 
-For complex workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
+For complex workflows, use PFW_get_guidance (see quick reference chart for section selection)."""

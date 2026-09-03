@@ -109,7 +109,7 @@ class ReflectionManager:
     # DEPRECATED: Tool reflection methods have been removed
     # These methods were used for legacy comprehensive guidance delivery (62KB)
     #
-    # MIGRATION: Use the new pfw_get_guidance() function instead for context-efficient
+    # MIGRATION: Use the new PFW_get_guidance() function instead for context-efficient
     # sectioned guidance (1-12KB per section vs 62KB total)
     #
     # MCP Resources implementation (above methods) remains active and functional

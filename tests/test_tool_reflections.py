@@ -1,70 +1,53 @@
 #!/usr/bin/env python3
-"""Simple test for tool reflections system"""
+"""Tool guidance is present for the tools that need it.
 
-import sys
-from pathlib import Path
+This file used to import `get_all_tool_reflections` / `get_tool_reflection`
+from `config/tool_reflections.py`. Those functions were DELETED when the
+guidance migrated to `PFW_get_guidance()` — the module is now a 22-line
+migration notice — and this test kept passing anyway, because the resulting
+ImportError landed in a bare `except Exception` that answered `return False`,
+which pytest reports as PASS (audit T-4). Retargeted at the live API.
+"""
 
-# Add the src directory to the path
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
+import pytest
 
-def test_tool_reflections():
-    """Test the tool reflections system"""
-    print("Testing Tool Reflections System")
-    print("=" * 40)
+from patent_filewrapper_mcp.guidance import get_guidance_sections
 
-    try:
-        from patent_filewrapper_mcp.config.tool_reflections import (
-            get_all_tool_reflections,
-            get_tool_reflection
-        )
+#: The four tools the deleted reflections covered. Their guidance lives in the
+#: `tools` section now.
+_TOOLS_NEEDING_GUIDANCE = [
+    "PFW_get_document_content_with_ocr",
+    "PFW_get_document_download",
+    "PFW_search_applications_balanced",
+    "PFW_get_application_documents",
+]
 
-        # Test 1: Check that reflections are loaded
-        all_reflections = get_all_tool_reflections()
-        print(f"Loaded {len(all_reflections)} tool reflections")
+_REQUIRED_SECTIONS = ["overview", "tools", "workflows_pfw", "fields", "errors"]
 
-        # Test 2: Check specific tools exist
-        tools_to_check = [
-            "pfw_get_document_content",
-            "pfw_get_document_download",
-            "pfw_search_applications_balanced",
-            "pfw_get_application_documents"
-        ]
 
-        for tool_name in tools_to_check:
-            reflection = get_tool_reflection(tool_name)
-            if reflection:
-                print(f"PASS: {tool_name} reflection found")
-            else:
-                print(f"FAIL: {tool_name} reflection missing")
-                return False
+def test_guidance_sections_are_loaded():
+    assert get_guidance_sections(), "no guidance sections at all"
 
-        # Test 3: Check Session 5 content
-        content_tool = get_tool_reflection("pfw_get_document_content")
-        if content_tool and 'session_5_enhancement' in content_tool:
-            print("PASS: Session 5 enhancement documented")
-        else:
-            print("FAIL: Session 5 enhancement missing")
-            return False
 
-        # Test 4: Check download tool UX guidance
-        download_tool = get_tool_reflection("pfw_get_document_download")
-        if download_tool and 'critical_ux_requirement' in download_tool:
-            print("PASS: Download tool UX requirements found")
-        else:
-            print("FAIL: Download tool UX requirements missing")
-            return False
+@pytest.mark.parametrize("section", _REQUIRED_SECTIONS)
+def test_each_section_the_migration_notice_points_at_exists(section):
+    """config/tool_reflections.py tells the reader to use these by name; a
+    rename there would leave the notice pointing at nothing."""
+    sections = get_guidance_sections()
+    assert section in sections, f"guidance section {section!r} is missing"
+    assert sections[section].strip(), f"guidance section {section!r} is empty"
 
-        print("\nAll tool reflection tests passed!")
-        return True
 
-    except Exception as e:
-        print(f"ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+@pytest.mark.parametrize("tool_name", _TOOLS_NEEDING_GUIDANCE)
+def test_each_tool_appears_in_the_tools_guidance(tool_name):
+    assert tool_name in get_guidance_sections()["tools"], (
+        f"{tool_name} has no entry in the tools guidance section"
+    )
 
-if __name__ == "__main__":
-    success = test_tool_reflections()
-    if not success:
-        sys.exit(1)
+
+def test_the_deprecated_reflections_module_exports_nothing_callable():
+    """Pin the deletion so this test cannot silently target a ghost again."""
+    from patent_filewrapper_mcp.config import tool_reflections
+
+    assert not hasattr(tool_reflections, "get_all_tool_reflections")
+    assert not hasattr(tool_reflections, "get_tool_reflection")

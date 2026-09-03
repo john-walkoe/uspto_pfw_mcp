@@ -5,15 +5,11 @@ Tests document registration and download functionality for FPD petition document
 """
 
 import os
-import sys
 import asyncio
 import httpx
 import json
-from pathlib import Path
 
 # Add src to path for imports
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root / "src"))
 
 from patent_filewrapper_mcp.proxy.fpd_document_store import FPDDocumentStore  # noqa: E402
 
@@ -31,14 +27,14 @@ def _proxy_reachable(port: int = 8080) -> bool:
 
 
 
-def test_fpd_document_store():
+def test_fpd_document_store(tmp_path):
     """Test FPD document store basic functionality"""
     print("\n" + "="*80)
     print("TEST 1: FPD Document Store Basic Functionality")
     print("="*80)
 
     # Create test database
-    test_db_path = str(project_root / "test_fpd_documents.db")
+    test_db_path = str(tmp_path / "test_fpd_documents.db")
     if os.path.exists(test_db_path):
         os.remove(test_db_path)
 
@@ -63,7 +59,6 @@ def test_fpd_document_store():
             petition_id=test_uuid,
             document_identifier="TEST_DOC_123",
             download_url="https://api.uspto.gov/api/v1/download/test.pdf",
-            api_key="test_api_key",
             application_number="12345678"
         )
 
@@ -78,7 +73,8 @@ def test_fpd_document_store():
         assert doc['petition_id'] == test_uuid.lower()  # Should be normalized to lowercase
         assert doc['document_identifier'] == "TEST_DOC_123"
         assert doc['download_url'] == "https://api.uspto.gov/api/v1/download/test.pdf"
-        assert doc['api_key'] == "test_api_key"
+        # The ODP key is no longer stored on the row, so it is not returned.
+        assert 'api_key' not in doc
         assert doc['application_number'] == "12345678"
         print("  [OK] Document retrieved successfully")
         print(f"     Petition ID: {doc['petition_id']}")

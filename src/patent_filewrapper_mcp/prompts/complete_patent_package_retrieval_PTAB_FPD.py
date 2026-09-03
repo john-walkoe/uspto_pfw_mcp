@@ -44,7 +44,7 @@ Inputs:
 Try patent number first (if provided):
 ```python
 if patent_number:
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=patent_number,  # Tool handles normalization
         fields=["applicationNumberText", "patentNumber", "inventionTitle",
                 "applicationStatusDescription", "patentIssueDate"],
@@ -62,7 +62,7 @@ if patent_number:
 Fallback to application number:
 ```python
 elif application_number:
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=application_number,
         fields=["applicationNumberText", "patentNumber", "inventionTitle",
                 "applicationStatusDescription"],
@@ -76,7 +76,7 @@ elif application_number:
 Fallback to fuzzy title search:
 ```python
 elif title_keywords:
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=title_keywords,
         fields=["applicationNumberText", "patentNumber", "inventionTitle",
                 "applicationStatusDescription"],
@@ -117,7 +117,7 @@ print()
 
 ```python
 # Single tool call - returns all 4 components with download links
-basic_package = await pfw_get_granted_patent_documents_download(
+basic_package = await PFW_get_granted_patent_documents_download(
     app_number=app_number,
     include_drawings=True,
     generate_persistent_links=True  # 7-day encrypted access
@@ -142,7 +142,7 @@ for component in ['abstract', 'drawings', 'specification', 'claims']:
 
 ```python
 # Step 1: Get basic package
-basic_package = await pfw_get_granted_patent_documents_download(
+basic_package = await PFW_get_granted_patent_documents_download(
     app_number=app_number,
     include_drawings=True,
     generate_persistent_links=True
@@ -161,7 +161,7 @@ doc_configs = [
 
 for doc_code, doc_name, max_limit in doc_configs:
     # Get document metadata
-    docs_response = await pfw_get_application_documents(
+    docs_response = await PFW_get_application_documents(
         app_number=app_number,
         document_code=doc_code,
         limit=max_limit
@@ -173,7 +173,7 @@ for doc_code, doc_name, max_limit in doc_configs:
             doc_id = doc['documentIdentifier']
 
             # Generate persistent download link (7-day access)
-            download_link = await pfw_get_document_download(
+            download_link = await PFW_get_document_download(
                 app_number=app_number,
                 document_identifier=doc_id,
                 generate_persistent_link=True
@@ -189,7 +189,7 @@ for doc_code, doc_name, max_limit in doc_configs:
             }})
 ```
 
-**Guidance Reference:** For complete document code reference, see `pfw_get_guidance(section='documents')`
+**Guidance Reference:** For complete document code reference, see `PFW_get_guidance(section='documents')`
 
 ---
 
@@ -221,7 +221,7 @@ for doc_code, doc_name, max_limit in additional_codes:
 # DO NOT USE direction_category='INCOMING'/'OUTGOING' without document_code filters!
 ```
 
-**Critical Guidance:** For heavily-prosecuted applications and cost optimization, see `pfw_get_guidance(section='documents')`
+**Critical Guidance:** For heavily-prosecuted applications and extraction strategy, see `PFW_get_guidance(section='documents')`
 
 ---
 
@@ -255,7 +255,7 @@ except:
 # PTAB: Check for post-grant challenges (if patented)
 if patent_num:
     try:
-        ptab = await ptab_search_proceedings_minimal(  # Wrapper for search_trials_minimal
+        ptab = await ptab_search_proceedings_minimal(  # Wrapper for PTAB_search_trials_minimal
             patent_number=patent_num,
             limit=10
         )
@@ -275,7 +275,7 @@ try:
     filing_date = results['applications'][0].get('filingDate')  # Check eligibility
     # Only query if application filed 2015+ (accounts for 1-2 year lag to first OA)
     if filing_date and int(filing_date[:4]) >= 2015:
-        citations = await citations_search_citations_minimal(
+        citations = await Citations_search_citations_minimal(
             application_number=app_number,
             limit=5
         )
@@ -291,7 +291,7 @@ except:
 
 **PTAB MCP Integration:**
 - Tool: `ptab_search_proceedings_minimal(patent_number='...')`
-  (Wrapper for `search_trials_minimal` - trials are most common post-grant proceedings)
+  (Wrapper for `PTAB_search_trials_minimal` - trials are most common post-grant proceedings)
 - Detects: IPR, PGR, CBM challenges
 - Red Flags: Any active or instituted challenges to patent validity
 
@@ -301,11 +301,11 @@ except:
 - Red Flags: Denied petitions (serious issues), multiple petitions (systemic problems)
 
 **Citations MCP Integration:**
-- Tool: `citations_search_citations_minimal(application_number='...')`
+- Tool: `Citations_search_citations_minimal(application_number='...')`
 - Available: Office actions dated 2017-10-01 or later only
 - Insights: Examiner citation patterns, art unit trends
 
-**Guidance Reference:** For complete four-MCP lifecycle analysis workflows, see `pfw_get_guidance(section='workflows_complete')`
+**Guidance Reference:** For complete four-MCP lifecycle analysis workflows, see `PFW_get_guidance(section='workflows_complete')`
 
 ---
 
@@ -380,15 +380,15 @@ print(f"**Total Package:** {{total_pages}} pages across {{total_docs}} documents
 **Issue: Patent not yet granted**
 ```python
 try:
-    basic_package = await pfw_get_granted_patent_documents_download(
+    basic_package = await PFW_get_granted_patent_documents_download(
         app_number=app_number,
         include_drawings=True
     )
 except:
     # Fall back to application documents
     print("Note: Patent not yet granted, retrieving available prosecution documents")
-    # Use get_application_documents with SPEC/CLM/DRW codes
-    basic_package = await pfw_get_application_documents(
+    # Use PFW_get_application_documents with SPEC/CLM/DRW codes
+    basic_package = await PFW_get_application_documents(
         app_number=app_number,
         document_code='SPEC|CLM|DRW|ABST',
         limit=10
@@ -421,7 +421,7 @@ if search_strategy == "fuzzy_search" and results['count'] > 1:
 # Package still retrieves PFW documents, just without cross-MCP intelligence
 ```
 
-**Guidance Reference:** For comprehensive error handling patterns, see `pfw_get_guidance(section='errors')`
+**Guidance Reference:** For comprehensive error handling patterns, see `PFW_get_guidance(section='errors')`
 
 ---
 
@@ -460,7 +460,7 @@ if search_strategy == "fuzzy_search" and results['count'] > 1:
 
 ---
 
-## Cost & Token Optimization
+## Token Optimization
 
 **API Call Efficiency:**
 - Basic Package: 1 call (minimal context)
@@ -472,10 +472,10 @@ if search_strategy == "fuzzy_search" and results['count'] > 1:
 - Document code filtering: 95-99% reduction (10-15 docs vs 150+ total)
 - Persistent links: No repeated document metadata in context
 
-**Cost Optimization Hierarchy:**
-1. XML extraction (free) - try first for patents/applications
-2. PyPDF2 extraction (free) - works for 80%+ of documents
-3. Mistral OCR ($0.001-0.003/page) - only for scanned/poor quality docs
+**Extraction Hierarchy:**
+1. XML extraction (fastest, structured) - try first for patents/applications
+2. PyPDF2 extraction (fast) - works for 80%+ of documents
+3. Mistral OCR - only for scanned/poor quality docs
 
 ---
 

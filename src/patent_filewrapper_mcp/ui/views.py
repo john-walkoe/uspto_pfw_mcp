@@ -1,7 +1,7 @@
 """MCP App HTML views for USPTO Patent File Wrapper MCP."""
 
 # ---------------------------------------------------------------------------
-# View 1: Search Results (used by all pfw_search_* tools)
+# View 1: Search Results (used by all PFW_search_* tools)
 # Handles both application search and inventor search result shapes.
 # ---------------------------------------------------------------------------
 
@@ -92,11 +92,27 @@ let currentSort = null;
 
 app.ontoolresult = (result) => {
   const text = result.content?.find(c => c.type === 'text')?.text;
-  try { render(JSON.parse(text)); }
+  try {
+    let data = JSON.parse(text);
+    if (data && typeof data === 'object' && typeof data.result === 'string') {
+      try { data = JSON.parse(data.result); } catch (unwrapErr) { /* keep wrapper */ }
+    }
+    render(data);
+  }
   catch(e) { showError('Could not parse search results: ' + e.message); }
 };
 
 app.connect();
+
+// H-2: applicant names, invention titles, examiner names and claim text are
+// applicant-authored free text that USPTO republishes largely as filed, and
+// the cards below are built with innerHTML. Same helper FAMILY_VIEW_HTML and
+// ui/user_management_view.py already define and use.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
 
 function render(data) {
   document.getElementById('loading').style.display = 'none';
@@ -119,8 +135,8 @@ function render(data) {
     <div>Found: <span>${total.toLocaleString()}</span> applications</div>
     <div>Showing: <span>${allDocs.length}</span></div>
     ${grantedCount ? `<div>Granted: <span>${grantedCount}</span></div>` : ''}
-    ${q ? `<div style="color:#888;font-size:11px;font-weight:400;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${q.replace(/"/g,'&quot;')}">Query: ${q}</div>` : ''}
-    ${requestedFields ? `<div style="color:#888;font-size:11px;font-weight:400;" title="Fields requested in this tool call">Fields: ${requestedFields.join(', ')}</div>` : ''}
+    ${q ? `<div style="color:#888;font-size:11px;font-weight:400;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(q)}">Query: ${escapeHtml(q)}</div>` : ''}
+    ${requestedFields ? `<div style="color:#888;font-size:11px;font-weight:400;" title="Fields requested in this tool call">Fields: ${escapeHtml(requestedFields.join(', '))}</div>` : ''}
   `;
 
   // Show field notice for minimal tiers (many fields will be —)
@@ -189,19 +205,19 @@ function buildCard(a) {
   div.dataset.title = title;
 
   div.innerHTML = `
-    <div class="app-num">Application ${appNum}${patentNum ? ` · Patent ${patentNum}` : ''}${statusKey !== 'unknown' ? ' ' + statusBadge(statusKey) : ''}</div>
-    <div class="card-title">${title}</div>
+    <div class="app-num">Application ${escapeHtml(appNum)}${patentNum ? ` · Patent ${escapeHtml(patentNum)}` : ''}${statusKey !== 'unknown' ? ' ' + statusBadge(statusKey) : ''}</div>
+    <div class="card-title">${escapeHtml(title)}</div>
     <div class="meta">
-      <div class="meta-item"><span class="meta-label">Filing Date</span><span class="meta-val">${filingDate || '—'}</span></div>
-      ${grantDate ? `<div class="meta-item"><span class="meta-label">Grant Date</span><span class="meta-val">${grantDate}</span></div>` : ''}
-      <div class="meta-item"><span class="meta-label">Art Unit</span><span class="meta-val">${artUnit}</span></div>
-      <div class="meta-item"><span class="meta-label">Examiner</span><span class="meta-val">${examiner}</span></div>
-      <div class="meta-item"><span class="meta-label">Applicant</span><span class="meta-val">${applicant}</span></div>
-      <div class="meta-item"><span class="meta-label">Inventor</span><span class="meta-val">${inventor}</span></div>
+      <div class="meta-item"><span class="meta-label">Filing Date</span><span class="meta-val">${escapeHtml(filingDate) || '—'}</span></div>
+      ${grantDate ? `<div class="meta-item"><span class="meta-label">Grant Date</span><span class="meta-val">${escapeHtml(grantDate)}</span></div>` : ''}
+      <div class="meta-item"><span class="meta-label">Art Unit</span><span class="meta-val">${escapeHtml(artUnit)}</span></div>
+      <div class="meta-item"><span class="meta-label">Examiner</span><span class="meta-val">${escapeHtml(examiner)}</span></div>
+      <div class="meta-item"><span class="meta-label">Applicant</span><span class="meta-val">${escapeHtml(applicant)}</span></div>
+      <div class="meta-item"><span class="meta-label">Inventor</span><span class="meta-val">${escapeHtml(inventor)}</span></div>
     </div>
     <div class="actions">
-      <button class="btn btn-primary" data-app="${appNum}">Open in Patent Center →</button>
-      ${patentNum ? `<button class="btn btn-secondary" data-patent="${patentNum}">Google Patents →</button>` : ''}
+      <button class="btn btn-primary" data-app="${escapeHtml(appNum)}">Open in Patent Center →</button>
+      ${patentNum ? `<button class="btn btn-secondary" data-patent="${escapeHtml(patentNum)}">Google Patents →</button>` : ''}
     </div>
   `;
 
@@ -380,7 +396,7 @@ function makePill(label, count, dim, val) {
   pill.className = 'pill';
   pill.dataset.dim = dim;
   pill.dataset.val = val;
-  pill.innerHTML = `${label} <span class="pill-count">${count}</span>`;
+  pill.innerHTML = `${escapeHtml(label)} <span class="pill-count">${Number(count)}</span>`;
   pill.addEventListener('click', () => {
     if (activeFilters[dim] === val) {
       activeFilters[dim] = null;
@@ -538,11 +554,27 @@ let currentAppNum = '';
 
 app.ontoolresult = (result) => {
   const text = result.content?.find(c => c.type === 'text')?.text;
-  try { render(JSON.parse(text)); }
+  try {
+    let data = JSON.parse(text);
+    if (data && typeof data === 'object' && typeof data.result === 'string') {
+      try { data = JSON.parse(data.result); } catch (unwrapErr) { /* keep wrapper */ }
+    }
+    render(data);
+  }
   catch(e) { showError('Could not parse XML result: ' + e.message); }
 };
 
 app.connect();
+
+// H-2: applicant names, invention titles, examiner names and claim text are
+// applicant-authored free text that USPTO republishes largely as filed, and
+// the cards below are built with innerHTML. Same helper FAMILY_VIEW_HTML and
+// ui/user_management_view.py already define and use.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
 
 // Tab switching
 document.querySelectorAll('.tab').forEach(tab => {
@@ -602,7 +634,7 @@ function render(data) {
   ].filter(Boolean);
 
   document.getElementById('meta-grid').innerHTML = metaItems.map(([label, val]) => `
-    <div class="meta-item"><span class="meta-label">${label}</span><span class="meta-val">${val}</span></div>
+    <div class="meta-item"><span class="meta-label">${escapeHtml(label)}</span><span class="meta-val">${escapeHtml(val)}</span></div>
   `).join('');
 
   // Abstract — look in structured_content first
@@ -622,7 +654,7 @@ function render(data) {
     const claimTexts = parseClaimsText(String(claimsRaw));
     claimsEl.innerHTML = claimTexts.length > 0
       ? claimTexts.map((c, i) => renderClaim(c, i + 1)).join('')
-      : `<div class="claim"><div class="claim-text">${String(claimsRaw)}</div></div>`;
+      : `<div class="claim"><div class="claim-text">${escapeHtml(claimsRaw)}</div></div>`;
   }
 
   // Claims section sub-header indicating claim type
@@ -663,8 +695,8 @@ function renderClaim(claimText, num) {
   const typeCls = isDependent ? 'claim-type-dep' : 'claim-type-ind';
   return `
     <div class="claim">
-      <div class="claim-num">Claim ${num} <span class="claim-type ${typeCls}">${typeLabel}</span></div>
-      <div class="claim-text">${text}</div>
+      <div class="claim-num">Claim ${Number(num)} <span class="claim-type ${typeCls}">${typeLabel}</span></div>
+      <div class="claim-text">${escapeHtml(text)}</div>
     </div>
   `;
 }
@@ -683,8 +715,8 @@ function showError(msg) {
 # ---------------------------------------------------------------------------
 # View 3: Recent Downloads panel
 # Fetches from the local proxy /api/recent-downloads endpoint and renders
-# a navigable list. Refreshes when pfw_get_document_download or
-# pfw_get_granted_patent_documents_download tools return a result.
+# a navigable list. Refreshes when PFW_get_document_download or
+# PFW_get_granted_patent_documents_download tools return a result.
 # ---------------------------------------------------------------------------
 
 DOWNLOADS_HTML = r"""<!DOCTYPE html>
@@ -746,7 +778,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
   <div class="empty-state" id="empty-state">
     <div class="empty-icon">📂</div>
     <div class="empty-text">No recent downloads yet</div>
-    <div class="empty-hint">Use pfw_get_document_download or pfw_get_granted_patent_documents_download to generate links</div>
+    <div class="empty-hint">Use PFW_get_document_download or PFW_get_granted_patent_documents_download to generate links</div>
   </div>
   <div id="cards"></div>
 </div>
@@ -768,11 +800,14 @@ const COMP_TITLES = { abstract: 'Abstract', drawings: 'Drawings', specification:
 app.ontoolresult = (result) => {
   try {
     const text = result.content?.find(c => c.type === 'text')?.text;
-    const data = JSON.parse(text);
+    let data = JSON.parse(text);
+    if (data && typeof data === 'object' && typeof data.result === 'string') {
+      try { data = JSON.parse(data.result); } catch (unwrapErr) { /* keep wrapper */ }
+    }
     const now = new Date().toISOString();
     const newDocs = [];
 
-    // pfw_get_document_download
+    // PFW_get_document_download
     if (data.proxy_download_url && data.document_info) {
       const info = data.document_info;
       newDocs.push({
@@ -786,7 +821,7 @@ app.ontoolresult = (result) => {
       if (baseMatch) proxyBaseUrl = baseMatch[1];
     }
 
-    // pfw_get_granted_patent_documents_download
+    // PFW_get_granted_patent_documents_download
     if (data.granted_patent_components) {
       for (const [comp, compData] of Object.entries(data.granted_patent_components)) {
         if (compData.proxy_download_url) {
@@ -815,6 +850,16 @@ app.ontoolresult = (result) => {
 };
 
 app.connect();
+
+// H-2: applicant names, invention titles, examiner names and claim text are
+// applicant-authored free text that USPTO republishes largely as filed, and
+// the cards below are built with innerHTML. Same helper FAMILY_VIEW_HTML and
+// ui/user_management_view.py already define and use.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
 
 // Delegated click handler — use app.openLink() so Claude Desktop opens the
 // URL in the system browser, bypassing iframe sandbox restrictions.
@@ -866,8 +911,14 @@ function renderDownloads(docs) {
   });
 }
 
+// Kept in step with guidance.py::_get_document_codes_section and
+// util/package_manager.py's code categories (reconciled 2026-08-30 against the
+// descriptions USPTO returns in documentBag: CTRS = Requirement for
+// Restriction/Election, CTAV = Advisory Action (PTOL-303), SRFW = search
+// information, SRNT = examiner's search strategy and results).
 const DOC_ICONS = {
-  CTNF: '📋', CTFR: '📋', NOA: '✅', CTAV: '⚡', CTEQ: '❓',
+  CTNF: '📋', CTFR: '📋', NOA: '✅', CTAV: '⚡', CTEQ: '❓', CTRS: '🔀',
+  SRFW: '🔍', SRNT: '🔍', EXIN: '🗣️', REM: '✍️',
   claims: '📜', abstract: '📝', drawings: '🖼️', spec: '📖', default: '📄'
 };
 
@@ -877,22 +928,22 @@ function buildCard(doc) {
 
   const docType = doc.doc_type || 'default';
   const icon = DOC_ICONS[docType] || DOC_ICONS.default;
-  const typeCls = `doc-type-badge doc-type-${docType}`;
+  const typeCls = `doc-type-badge doc-type-${escapeHtml(docType)}`;
   const time = doc.generated_at ? formatTime(doc.generated_at) : '';
 
   div.innerHTML = `
     <div class="doc-icon">${icon}</div>
     <div class="doc-info">
-      <div class="doc-title">${doc.title || doc.filename || 'Document'}</div>
+      <div class="doc-title">${escapeHtml(doc.title || doc.filename || 'Document')}</div>
       <div class="doc-meta">
-        <span class="${typeCls}">${docType}</span>
-        <span>App: ${doc.app_number || '—'}</span>
+        <span class="${typeCls}">${escapeHtml(docType)}</span>
+        <span>App: ${escapeHtml(doc.app_number) || '—'}</span>
       </div>
       <div class="doc-actions">
-        <button class="btn btn-download" data-url="${doc.proxy_url}">Download PDF</button>
+        <button class="btn btn-download" data-url="${escapeHtml(doc.proxy_url)}">Download PDF</button>
       </div>
     </div>
-    ${time ? `<div class="timestamp">${time}</div>` : ''}
+    ${time ? `<div class="timestamp">${escapeHtml(time)}</div>` : ''}
   `;
 
   return div;
@@ -910,6 +961,277 @@ function formatTime(iso) {
     if (diffHours < 24) return `${diffHours}h ago`;
     return d.toLocaleDateString();
   } catch { return ''; }
+}
+</script>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
+# View 4: Patent Family tree (PFW_get_family)
+# Renders the normalized node/edge graph as generations walked down from the
+# family roots, with relation-type labels on each parent -> child step.
+# ---------------------------------------------------------------------------
+
+FAMILY_VIEW_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patent Family</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; background: #f8f9fa; color: #1a1a2e; }
+
+.header { background: #1a3a6b; color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+.header h1 { font-size: 14px; font-weight: 600; }
+.header .badge { background: #4a90d9; border-radius: 4px; padding: 2px 7px; font-size: 11px; }
+
+.summary-bar { background: #e8f0fe; border-bottom: 1px solid #c5d8f7; padding: 7px 14px; font-size: 12px; color: #1a3a6b; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+.summary-bar span { font-weight: 600; }
+
+.notes { background: #fffbe6; border-bottom: 1px solid #ffe58f; padding: 6px 14px; font-size: 11px; color: #7d5a00; line-height: 1.55; }
+.notes div { margin: 1px 0; }
+
+.container { padding: 10px 14px; }
+.gen-label { font-size: 10px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; margin: 8px 0 4px; }
+
+.node { background: #fff; border: 1px solid #dde3ed; border-radius: 6px; margin-bottom: 6px; padding: 9px 11px; }
+.node:hover { border-color: #4a90d9; box-shadow: 0 1px 4px rgba(74,144,217,0.15); }
+.node.queried { border-color: #1a3a6b; border-left: 4px solid #1a3a6b; background: #f4f7fd; }
+.node-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.app-num { font-size: 11px; color: #4a90d9; font-weight: 700; font-family: monospace; }
+.rel-label { display: inline-block; border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 700; background: #e8f0fe; color: #1a3a6b; border: 1px solid #c5d8f7; }
+.queried-tag { display: inline-block; border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 700; background: #1a3a6b; color: #fff; }
+.rel-desc { font-size: 11px; color: #888; }
+.meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; font-size: 11px; margin-top: 6px; }
+.meta-item { display: flex; flex-direction: column; }
+.meta-label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
+.meta-val { color: #1a1a2e; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions { margin-top: 7px; display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { display: inline-block; border: none; border-radius: 4px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+.btn-primary { background: #1a3a6b; color: #fff; }
+.btn-primary:hover { background: #4a90d9; }
+.btn-secondary { background: #e8f0fe; color: #1a3a6b; border: 1px solid #c5d8f7; }
+.btn-secondary:hover { background: #c5d8f7; }
+.status-badge { display: inline-block; border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 600; }
+.status-granted { background: #27ae60; color: #fff; }
+.status-pending { background: #e67e22; color: #fff; }
+.status-abandoned { background: #888; color: #fff; }
+.status-other { background: #4a90d9; color: #fff; }
+
+.fp-section { margin-top: 14px; }
+.fp-section h2 { font-size: 12px; font-weight: 600; color: #1a3a6b; margin-bottom: 6px; }
+.fp-row { background: #fff; border: 1px solid #dde3ed; border-radius: 6px; padding: 7px 11px; margin-bottom: 5px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; }
+.fp-country { font-weight: 700; color: #1a3a6b; }
+
+#loading { text-align: center; padding: 30px; color: #666; }
+#error { background: #fde8e8; border: 1px solid #f5c6cb; color: #721c24; padding: 10px 14px; margin: 10px 14px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Patent Family</h1>
+  <span class="badge" id="depth-badge">—</span>
+</div>
+<div class="summary-bar" id="summary-bar" style="display:none"></div>
+<div class="notes" id="notes" style="display:none"></div>
+<div id="loading">Waiting for family data...</div>
+<div id="error" style="display:none"></div>
+<div class="container" id="content" style="display:none">
+  <div id="tree"></div>
+  <div class="fp-section" id="fp-section" style="display:none">
+    <h2>Foreign Priority</h2>
+    <div id="fp-list"></div>
+  </div>
+</div>
+
+<script type="module">
+import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@1.2.0/dist/src/app-with-deps.js';
+
+const app = new App({ name: 'PFW Patent Family', version: '1.0.0' });
+
+app.ontoolresult = (result) => {
+  const text = result.content?.find(c => c.type === 'text')?.text;
+  try {
+    let data = JSON.parse(text);
+    if (data && typeof data === 'object' && typeof data.result === 'string') {
+      try { data = JSON.parse(data.result); } catch (unwrapErr) { /* keep wrapper */ }
+    }
+    render(data);
+  }
+  catch(e) { showError('Could not parse family result: ' + e.message); }
+};
+
+app.connect();
+
+function render(data) {
+  document.getElementById('loading').style.display = 'none';
+  if (data.error || data.status === 'error') { showError(data.message || data.error || 'API error'); return; }
+
+  const nodes = data.nodes || [];
+  const edges = data.edges || [];
+  const queried = data.queried_application || data.application_number || '';
+  const depth = data.max_depth || 1;
+
+  document.getElementById('depth-badge').textContent = 'DEPTH ' + depth;
+
+  const bar = document.getElementById('summary-bar');
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <div>Queried: <span>${escapeHtml(queried) || '—'}</span></div>
+    <div>Members: <span>${nodes.length}</span></div>
+    <div>Relations: <span>${edges.length}</span></div>
+    <div>Parents: <span>${(data.parents || []).length}</span></div>
+    <div>Children: <span>${(data.children || []).length}</span></div>
+  `;
+
+  const noteList = (data.notes || []).slice();
+  if (data.expansion_note) noteList.push(data.expansion_note);
+  const notesEl = document.getElementById('notes');
+  if (noteList.length) {
+    notesEl.style.display = 'block';
+    notesEl.innerHTML = noteList.map(n => `<div>${escapeHtml(n)}</div>`).join('');
+  } else {
+    notesEl.style.display = 'none';
+  }
+
+  const byNum = {};
+  nodes.forEach(n => { byNum[n.application_number] = n; });
+
+  // Generations: start at the roots, walk child edges breadth-first. Anything
+  // never reached that way (a stray parent-only node) lands in a final group.
+  const childrenOf = {};
+  const parentEdge = {};
+  edges.forEach(e => {
+    (childrenOf[e.parent_app] = childrenOf[e.parent_app] || []).push(e);
+    if (!parentEdge[e.child_app]) parentEdge[e.child_app] = e;
+  });
+
+  const roots = (data.roots && data.roots.length) ? data.roots.slice() : nodes.map(n => n.application_number).slice(0, 1);
+  const placed = new Set();
+  const generations = [];
+  let level = roots.filter(r => byNum[r]);
+  level.forEach(r => placed.add(r));
+
+  while (level.length && generations.length < 12) {
+    generations.push(level);
+    const next = [];
+    level.forEach(num => {
+      (childrenOf[num] || []).forEach(e => {
+        if (!placed.has(e.child_app) && byNum[e.child_app]) {
+          placed.add(e.child_app);
+          next.push(e.child_app);
+        }
+      });
+    });
+    level = next;
+  }
+
+  const orphans = nodes.map(n => n.application_number).filter(num => !placed.has(num));
+  if (orphans.length) generations.push(orphans);
+
+  const treeEl = document.getElementById('tree');
+  treeEl.innerHTML = '';
+  if (!nodes.length) {
+    treeEl.innerHTML = '<div style="text-align:center;padding:24px;color:#888">No family members returned.</div>';
+  }
+
+  generations.forEach((gen, i) => {
+    const label = document.createElement('div');
+    label.className = 'gen-label';
+    label.textContent = i === 0 ? 'Earliest ancestor(s)' : 'Generation ' + (i + 1);
+    treeEl.appendChild(label);
+    gen.forEach(num => {
+      treeEl.appendChild(buildNode(byNum[num] || { application_number: num }, parentEdge[num], i, queried));
+    });
+  });
+
+  const fp = data.foreign_priority || [];
+  const fpSection = document.getElementById('fp-section');
+  if (fp.length) {
+    fpSection.style.display = 'block';
+    document.getElementById('fp-list').innerHTML = fp.map(p => `
+      <div class="fp-row">
+        <span class="fp-country">${escapeHtml(p.country || '—')}</span>
+        <span>Application: ${escapeHtml(p.application_number || '—')}</span>
+        <span>Filed: ${escapeHtml((p.filing_date || '—').split('T')[0])}</span>
+      </div>
+    `).join('');
+  } else {
+    fpSection.style.display = 'none';
+  }
+
+  document.getElementById('content').style.display = 'block';
+}
+
+function statusKey(node) {
+  const code = String(node.status_code || '');
+  if (code === '150') return 'granted';
+  if (['161','162','163','164','165','170','175'].includes(code)) return 'abandoned';
+  if (node.patent_number) return 'granted';
+  if (code) return 'pending';
+  return 'unknown';
+}
+
+function buildNode(node, relEdge, level, queried) {
+  const div = document.createElement('div');
+  const isQueried = node.is_queried || node.application_number === queried;
+  div.className = 'node' + (isQueried ? ' queried' : '');
+  div.style.marginLeft = Math.min(level, 6) * 16 + 'px';
+
+  const appNum = node.application_number || '—';
+  const patentNum = node.patent_number || '';
+  const filingDate = (node.filing_date || '').split('T')[0];
+  const key = statusKey(node);
+  const statusText = node.status || '';
+
+  const relBits = relEdge
+    ? `<span class="rel-label">${escapeHtml(relEdge.relation_type || 'RELATED')}</span>
+       <span class="rel-desc">${escapeHtml(relEdge.description || '')} ${escapeHtml(relEdge.parent_app || '')}</span>`
+    : '';
+
+  div.innerHTML = `
+    <div class="node-head">
+      <span class="app-num">Application ${escapeHtml(appNum)}</span>
+      ${patentNum ? `<span class="app-num">Patent ${escapeHtml(patentNum)}</span>` : ''}
+      ${isQueried ? '<span class="queried-tag">QUERIED</span>' : ''}
+      ${key !== 'unknown' ? `<span class="status-badge status-${key}">${escapeHtml(statusText || key)}</span>` : ''}
+      ${relBits}
+    </div>
+    <div class="meta">
+      <div class="meta-item"><span class="meta-label">Filing Date</span><span class="meta-val">${escapeHtml(filingDate) || '—'}</span></div>
+      <div class="meta-item"><span class="meta-label">Status</span><span class="meta-val">${escapeHtml(statusText || '—')}</span></div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-app="${escapeHtml(appNum)}">Open in Patent Center →</button>
+      ${patentNum ? `<button class="btn btn-secondary" data-patent="${escapeHtml(patentNum)}">Google Patents →</button>` : ''}
+    </div>
+  `;
+
+  div.querySelector('[data-app]')?.addEventListener('click', () => {
+    const num = String(appNum).replace(/\//g, '').replace(/,/g, '');
+    app.openLink({ url: `https://patentcenter.uspto.gov/applications/${num}` });
+  });
+  div.querySelector('[data-patent]')?.addEventListener('click', () => {
+    app.openLink({ url: `https://patents.google.com/patent/US${patentNum}` });
+  });
+
+  return div;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  const el = document.getElementById('error');
+  el.style.display = 'block';
+  el.textContent = 'Error: ' + msg;
 }
 </script>
 </body>

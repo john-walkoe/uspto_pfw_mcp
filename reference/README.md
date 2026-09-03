@@ -17,13 +17,13 @@ Comprehensive list of all USPTO document codes used in patent prosecution with d
 - Columns: Category, Document Description, USPTO Business Process, DOC CODE, FILING TYPE, NEW/FOLLOWON
 
 **Usage:**
-- Referenced by `pfw_get_guidance('document_codes')` for common code decoder
+- Referenced by `PFW_get_guidance('document_codes')` for common code decoder
 - Full reference for all possible documentBag codes
-- Used with `pfw_get_application_documents(app_number, document_code='CODE')`
+- Used with `PFW_get_application_documents(app_number, document_code='CODE')`
 
 **Common Codes:**
-- **CTFR** - Office Action (Non-Final Rejection)
-- **CTNF** - Office Action (Final Rejection)
+- **CTNF** - Office Action (Non-Final Rejection)
+- **CTFR** - Office Action (Final Rejection)
 - **NOA** - Notice of Allowance
 - **892** - Notice of References Cited (Examiner Citations)
 - **IDS** - Information Disclosure Statement
@@ -33,7 +33,7 @@ Comprehensive list of all USPTO document codes used in patent prosecution with d
 - **SPEC** - Specification
 - **DRW** - Drawings
 
-See `pfw_get_guidance('document_codes')` for the top 50+ most useful codes.
+See `PFW_get_guidance('document_codes')` for the top 50+ most useful codes.
 
 ---
 
@@ -64,10 +64,24 @@ OpenAPI/Swagger specification for the USPTO Patent File Wrapper (PFW) REST API.
 
 ---
 
+### Office Action API references
+
+Four files document the two USPTO Office Action datasets the OA tools call:
+
+- `oa-rejections.yaml` / `Office Action Rejections.txt` - the Office Action
+  Rejections dataset behind `PFW_get_oa_rejections` (rejection indicators;
+  documented coverage Oct 1, 2017 onward)
+- `oa-text-retrieval.yaml` / `Office Action Text Retrieval.txt` - the Office
+  Action text dataset behind `PFW_get_oa_text` (full body text and section
+  sub-documents; documented coverage reaches roughly 2008 onward, hedged and
+  not probe-verified in this repo)
+
+---
+
 ## Integration with MCP
 
 ### Document Codes
-The `document_codes` section in `pfw_get_guidance` provides a curated list of 50+ most useful codes from `Document_Descriptions_List.csv`, organized by:
+The `document_codes` section in `PFW_get_guidance` provides a curated list of 50+ most useful codes from `Document_Descriptions_List.csv`, organized by:
 - Examiner Communications (CTFR, NOA, 892, INTERVIEW, etc.)
 - Applicant Responses (A..., RCEX, IDS, 1449, etc.)
 - Patent Components (ABST, CLM, SPEC, DRW, etc.)
@@ -97,19 +111,19 @@ mv PatentFileWrapper.yaml reference/PatentFileWrapper_swagger.yaml
 
 # Download latest document codes (if available from USPTO)
 # Update reference/Document_Descriptions_List.csv
-
-# Regenerate field configs if needed
-python scripts/generate_field_configs.py
 ```
+
+`field_configs.yaml` is hand-maintained: edit it directly, then restart the
+server. There is no generator script.
 
 ---
 
 ## Related Documentation
 
-- **Tool Documentation:** See tool docstrings in `src/patent_filewrapper_mcp/main.py`
+- **Tool Documentation:** See tool docstrings under `src/patent_filewrapper_mcp/tools/`
 - **Field Configs:** See `field_configs.yaml` for field selection
 - **API Helpers:** See `src/patent_filewrapper_mcp/api/helpers.py` for field mapping
-- **Guidance System:** Use `pfw_get_guidance('document_codes')` for code decoder
+- **Guidance System:** Use `PFW_get_guidance('document_codes')` for code decoder
 - **MCP Resource:** Use MCP RESOURCE: USPTO Document Code Decoder for user initiated code decoder
 
 ---

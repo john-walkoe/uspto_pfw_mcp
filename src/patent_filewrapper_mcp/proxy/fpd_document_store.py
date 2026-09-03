@@ -19,6 +19,7 @@ from cryptography.fernet import Fernet
 from ..util.database import create_secure_connection
 from ..shared.safe_logger import get_safe_logger
 from ..shared.fernet_key_store import get_or_create_fernet, migrate_data_file
+import threading
 
 logger = get_safe_logger(__name__)
 
@@ -123,18 +124,23 @@ class FPDDocumentStore:
         petition_id: str,
         document_identifier: str,
         download_url: str,
-        api_key: str,
         application_number: Optional[str] = None,
         enhanced_filename: Optional[str] = None
     ) -> bool:
         """
         Register FPD document for centralized proxy downloads
 
+        The USPTO API key is NOT stored. It used to be written into every row
+        (encrypted, but still a long-lived copy of the fleet's shared ODP
+        credential in a file that outlives the download it was for); the
+        download route reads the live key from the secure store instead. The
+        `api_key` column stays for schema compatibility with existing
+        databases and is written empty.
+
         Args:
             petition_id: Unique petition UUID from FPD
             document_identifier: Document identifier (e.g., 'ABC123')
             download_url: Full USPTO API download URL for the document
-            api_key: USPTO API key for authentication
             application_number: Optional application number for cross-reference
             enhanced_filename: Optional enhanced human-readable filename
 
@@ -152,7 +158,7 @@ class FPDDocumentStore:
                     petition_id,
                     document_identifier,
                     download_url,
-                    _encrypt_api_key(api_key),
+                    "",
                     application_number,
                     _sanitize_filename(enhanced_filename),
                     datetime.now()
@@ -207,13 +213,15 @@ class FPDDocumentStore:
                 )
                 return None
 
-            download_url, encrypted_key, application_number, enhanced_filename, registered_at = result
+            download_url, _unused_key, application_number, enhanced_filename, registered_at = result
 
+            # No 'api_key': the download route resolves the live key from the
+            # secure store. Rows written before that change still carry an
+            # encrypted key; it is read past and never returned.
             return {
                 'petition_id': petition_id,
                 'document_identifier': document_identifier,
                 'download_url': download_url,
-                'api_key': _decrypt_api_key(encrypted_key),
                 'application_number': application_number,
                 'enhanced_filename': enhanced_filename,
                 'registered_at': registered_at
@@ -320,11 +328,18 @@ class FPDDocumentStore:
 
 # Global store instance
 _fpd_store = None
+# Double-checked locking: the FastMCP tools and the download proxy run on
+# different event loops in different threads and both reach this getter, so an
+# unguarded `if x is None` let two threads each construct one, putting two
+# objects over one SQLite file (audit design-pattern F-1).
+_fpd_store_lock = threading.Lock()
 
 
 def get_fpd_store() -> FPDDocumentStore:
     """Get global FPD document store instance"""
     global _fpd_store
     if _fpd_store is None:
-        _fpd_store = FPDDocumentStore()
+        with _fpd_store_lock:
+            if _fpd_store is None:
+                _fpd_store = FPDDocumentStore()
     return _fpd_store

@@ -24,6 +24,68 @@ logger = get_safe_logger(__name__)
 
 router = APIRouter()
 
+# The document identifier is the one binding every registering sibling carries.
+# FPD's create_document_access_token writes "document_identifier"; PTAB's
+# deployed create_service_token writes "document_id".
+_DOC_ID_ALIASES = ("document_identifier", "document_id")
+
+# PTAB's proceeding number reaches the token as "identifier" when the
+# document-access shape is used, and is absent from today's service token.
+_PROCEEDING_ALIASES = ("proceeding_number", "identifier")
+
+
+def _require_bound_token(request_id, token_payload, bindings, *, required_binding):
+    """Reject a registration token that was not minted for THIS resource.
+
+    A signed inter-MCP token proves only who issued it. Without this check any
+    unexpired token from the expected service registers any uspto.gov URL under
+    any identifier, and PFW then attaches its own shared USPTO key to fetch it
+    (audit H-1 / security-report R-1).
+
+    `bindings` maps a request value to the metadata key aliases that may carry
+    it. Every alias the token DOES carry must match; `required_binding` names
+    the entry that must be present, so an empty or stripped metadata block is
+    rejected rather than skipped. The `type` claim is checked only when the
+    token carries one: PTAB's deployed registration path mints a service token
+    (`create_service_token`, metadata `{source, document_id}`) rather than
+    FPD's `create_document_access_token`, so demanding `type` unconditionally
+    would reject every live PTAB registration.
+    """
+    metadata = token_payload.get("metadata") or {}
+
+    token_type = metadata.get("type")
+    if token_type is not None and token_type != "document_access":
+        logger.warning(f"[{request_id}] Token not for document access: {token_type}")
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    matched_required = False
+    for expected_value, aliases in bindings.items():
+        for alias in aliases:
+            if alias not in metadata:
+                continue
+            if metadata[alias] != expected_value:
+                logger.warning(
+                    f"[{request_id}] Token metadata mismatch on '{alias}'; "
+                    f"token was not minted for this resource"
+                )
+                raise HTTPException(
+                    status_code=401,
+                    detail="Token metadata does not match request",
+                )
+            if aliases is required_binding:
+                matched_required = True
+
+    if not matched_required:
+        logger.warning(
+            f"[{request_id}] Token carries no resource binding "
+            f"({'/'.join(required_binding)}); refusing to register"
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Token metadata does not match request",
+        )
+
+
 @router.post("/register-fpd-document", response_model=FPDDocumentRegistrationResponse)
 async def register_fpd_document(registration: FPDDocumentRegistration, request: Request):
     """
@@ -36,16 +98,18 @@ async def register_fpd_document(registration: FPDDocumentRegistration, request: 
         registration: FPD document registration payload
         request: FastAPI request object (for client IP logging)
     """
-    import os  # Import at function scope to ensure availability
+    # no local `import os` here — os is imported at module level (L6) and a
+    # function-scope re-import shadows it; main.py:319 records that exact
+    # shadowing causing an UnboundLocalError elsewhere in this repo.
+    request_id = generate_request_id()
 
     try:
         # Get client IP for logging and rate limiting
         client_ip = request.client.host if request.client else "unknown"
-        request_id = generate_request_id()
 
         # Rate-limit registration endpoints: 10 req/min per IP
         if not rate_limiter.is_allowed(client_ip, limit=10, window=60.0):
-            remaining_time = max(1, int(rate_limiter.get_reset_time(client_ip) - time.time()))
+            remaining_time = max(1, int(rate_limiter.get_reset_time(client_ip, limit=10, window=60.0) - time.time()))
             security_logger.log_rate_limit_violation(
                 client_ip, "/register-fpd-document", request_id
             )
@@ -70,6 +134,7 @@ async def register_fpd_document(registration: FPDDocumentRegistration, request: 
         is_valid, token_payload = get_pfw_auth().validate_incoming_token(
             registration.access_token,
             expected_service="fpd-mcp",   # Bind token to originating service
+            single_use=True,              # One token, one registration (audit L-4)
         )
 
         if not is_valid:
@@ -79,29 +144,16 @@ async def register_fpd_document(registration: FPDDocumentRegistration, request: 
                 detail="Invalid or expired access token"
             )
 
-        # Verify token is for document access and contains expected metadata
-        metadata = token_payload.get("metadata", {})
-        if metadata.get("type") != "document_access":
-            logger.warning(f"[{request_id}] Token not for document access: {metadata.get('type')}")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token type"
-            )
-
-        # Verify token metadata matches request
-        token_petition_id = metadata.get("petition_id")
-        token_doc_id = metadata.get("document_identifier")
-
-        if (token_petition_id != registration.petition_id or
-            token_doc_id != registration.document_identifier):
-            logger.warning(
-                f"[{request_id}] Token metadata mismatch: "
-                f"token({token_petition_id}/{token_doc_id}) != request({registration.petition_id}/{registration.document_identifier})"
-            )
-            raise HTTPException(
-                status_code=401,
-                detail="Token metadata does not match request"
-            )
+        # Verify the token was minted for THIS petition and THIS document
+        _require_bound_token(
+            request_id,
+            token_payload,
+            {
+                registration.document_identifier: _DOC_ID_ALIASES,
+                registration.petition_id: ("petition_id",),
+            },
+            required_binding=_DOC_ID_ALIASES,
+        )
 
         logger.info(f"[{request_id}] Access token validated successfully for FPD document")
 
@@ -132,12 +184,13 @@ async def register_fpd_document(registration: FPDDocumentRegistration, request: 
         # Get FPD document store
         fpd_store = get_fpd_store()
 
-        # Register the document using PFW's secure API key
+        # The key is NOT written into the row: the download route reads the
+        # live one from the secure store. The check above stays so a missing
+        # key fails here, at registration, rather than at download time.
         success = fpd_store.register_document(
             petition_id=registration.petition_id,
             document_identifier=registration.document_identifier,
             download_url=registration.download_url,
-            api_key=pfw_uspto_api_key,  # Use PFW's secure API key, not the token
             application_number=registration.application_number,
             enhanced_filename=registration.enhanced_filename
         )
@@ -192,11 +245,11 @@ async def register_fpd_document(registration: FPDDocumentRegistration, request: 
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[{request_id}] Error registering FPD document: {e}")
+    except Exception:
+        logger.exception(f"[{request_id}] Error registering FPD document")
         raise HTTPException(
             status_code=500,
-            detail=f"Registration failed: {str(e)}"
+            detail="Registration failed"
         )
 
 
@@ -213,14 +266,15 @@ async def register_ptab_document(registration: PTABDocumentRegistration, request
         registration: PTAB document registration payload
         request: FastAPI request object (for client IP logging)
     """
+    request_id = generate_request_id()
+
     try:
         # Get client IP for logging and rate limiting
         client_ip = request.client.host if request.client else "unknown"
-        request_id = generate_request_id()
 
         # Rate-limit registration endpoints: 10 req/min per IP
         if not rate_limiter.is_allowed(client_ip, limit=10, window=60.0):
-            remaining_time = max(1, int(rate_limiter.get_reset_time(client_ip) - time.time()))
+            remaining_time = max(1, int(rate_limiter.get_reset_time(client_ip, limit=10, window=60.0) - time.time()))
             security_logger.log_rate_limit_violation(
                 client_ip, "/register-ptab-document", request_id
             )
@@ -246,6 +300,7 @@ async def register_ptab_document(registration: PTABDocumentRegistration, request
         is_valid, token_payload = get_pfw_auth().validate_incoming_token(
             registration.access_token,
             expected_service="ptab-mcp",   # Bind token to originating service
+            single_use=True,               # One token, one registration (audit L-4)
         )
 
         if not is_valid:
@@ -254,6 +309,19 @@ async def register_ptab_document(registration: PTABDocumentRegistration, request
                 status_code=401,
                 detail="Invalid or expired access token"
             )
+
+        # Verify the token was minted for THIS proceeding and THIS document.
+        # Absent before audit H-1: the handler went straight from the signature
+        # check to spending PFW's shared USPTO key on a caller-chosen URL.
+        _require_bound_token(
+            request_id,
+            token_payload,
+            {
+                registration.document_identifier: _DOC_ID_ALIASES,
+                registration.proceeding_number: _PROCEEDING_ALIASES,
+            },
+            required_binding=_DOC_ID_ALIASES,
+        )
 
         logger.info(f"[{request_id}] Access token validated successfully for PTAB document")
 
@@ -282,12 +350,13 @@ async def register_ptab_document(registration: PTABDocumentRegistration, request
         # Get PTAB document store
         ptab_store = get_ptab_store()
 
-        # Register the document using PFW's secure API key
+        # The key is NOT written into the row: the download route reads the
+        # live one from the secure store. The check above stays so a missing
+        # key fails here, at registration, rather than at download time.
         success = ptab_store.register_document(
             proceeding_number=registration.proceeding_number,
             document_identifier=registration.document_identifier,
             download_url=registration.download_url,
-            api_key=pfw_uspto_api_key,  # Use PFW's secure API key, not the token
             patent_number=registration.patent_number,
             application_number=registration.application_number,
             proceeding_type=registration.proceeding_type,
@@ -345,10 +414,10 @@ async def register_ptab_document(registration: PTABDocumentRegistration, request
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[{request_id}] Error registering PTAB document: {e}")
+    except Exception:
+        logger.exception(f"[{request_id}] Error registering PTAB document")
         raise HTTPException(
             status_code=500,
-            detail=f"Registration failed: {str(e)}"
+            detail="Registration failed"
         )
 

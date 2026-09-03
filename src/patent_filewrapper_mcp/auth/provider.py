@@ -28,10 +28,11 @@ from __future__ import annotations
 
 import hmac
 import logging
+import os
 import secrets
 import time
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from fastmcp.server.auth.auth import AccessToken, OAuthProvider
@@ -43,6 +44,7 @@ from mcp.server.auth.provider import (
     AuthorizationCode,
     AuthorizationParams,
     RefreshToken,
+    RegistrationError,
     TokenError,
     construct_redirect_uri,
 )
@@ -68,6 +70,34 @@ SCOPE_ADMIN = "pfw:admin"
 _JWT_KEY_SALT = "pfw-mcp-oauth-v1"
 
 _TXN_TTL_SECONDS = 15 * 60
+
+# H-1 / open Dynamic Client Registration: DCR has to stay on (claude.ai and
+# every other MCP client self-registers), but an arbitrary redirect_uri on a
+# registered client is the first half of an identity-takeover chain — the
+# attacker registers a client pointing at their own host, sends the victim a
+# crafted sign-in link, and receives an authorization code for the victim's
+# identity. Registration is therefore allowed only for hosts a real MCP client
+# actually redirects to. Subdomains of a listed host are accepted. Extend with
+# PFW_AUTH_ALLOWED_REDIRECT_HOSTS (comma-separated); set
+# PFW_AUTH_OPEN_REGISTRATION=true to restore the previous open behavior.
+# Clients already in oauth_clients are unaffected; this gates new registrations
+# only, so no connector in use today is disturbed.
+_DEFAULT_REDIRECT_HOSTS = frozenset(
+    {
+        "claude.ai",
+        "claude.com",
+        "anthropic.com",
+        "chatgpt.com",
+        "openai.com",
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
+)
+
+# Cookie binding the in-flight login transaction to the browser that is
+# actually signing in, checked at the IdP callback.
+_TXN_COOKIE = "pfw_txn"
 _CODE_TTL_SECONDS = 5 * 60
 _JWKS_TTL_SECONDS = 6 * 60 * 60
 _HTTP_TIMEOUT = 15.0
@@ -118,7 +148,20 @@ class PfwAuthProvider(OAuthProvider):
         self._settings = settings
         self._users = users
         self._internal_token = settings.auth_internal_token
+        # Admin over the static bearer is a SEPARATE, optional secret so the
+        # search credential and the administration credential rotate apart.
+        self._internal_admin_token = settings.auth_internal_admin_token
         self._register_url = settings.auth_register_url
+        self._open_registration = (
+            os.getenv("PFW_AUTH_OPEN_REGISTRATION", "false").lower() == "true"
+        )
+        self._allowed_redirect_hosts = _DEFAULT_REDIRECT_HOSTS | {
+            host.strip().lower()
+            for host in os.getenv(
+                "PFW_AUTH_ALLOWED_REDIRECT_HOSTS", ""
+            ).split(",")
+            if host.strip()
+        }
         self._access_ttl = settings.auth_access_ttl
         self._refresh_ttl = settings.auth_refresh_ttl
         # Tokens are audience-bound to the MCP resource URL; the transport
@@ -176,12 +219,70 @@ class PfwAuthProvider(OAuthProvider):
         self._client_cache[client_id] = client
         return client
 
+    def _redirect_host_allowed(self, uri: str) -> bool:
+        host = (urlparse(uri).hostname or "").lower()
+        if not host:
+            return False
+        return any(
+            host == allowed or host.endswith("." + allowed)
+            for allowed in self._allowed_redirect_hosts
+        )
+
+    def _reject_unapproved_redirect_uris(
+        self, client_info: OAuthClientInformationFull
+    ) -> None:
+        """Refuse DCR for a client whose redirect_uri host is not approved."""
+        if self._open_registration:
+            return
+        for uri in client_info.redirect_uris or []:
+            if not self._redirect_host_allowed(str(uri)):
+                log.warning(
+                    "OAuth client registration refused: redirect_uri host is not "
+                    "in the allowlist (client_name=%s)",
+                    client_info.client_name,
+                )
+                raise RegistrationError(
+                    error="invalid_redirect_uri",
+                    error_description=(
+                        "redirect_uri host is not permitted by this server"
+                    ),
+                )
+
+    def _bind_txn(self, response: Response, txn_id: str) -> Response:
+        """Bind an in-flight login transaction to this browser.
+
+        The IdP callback refuses a transaction whose cookie is absent or does
+        not match, so a captured txn id cannot be redeemed from a different
+        browser. SameSite=Lax still travels on the top-level GET navigation
+        back from Google or Entra.
+        """
+        txn = self._txns.get(txn_id)
+        if txn is None:
+            return response
+        response.set_cookie(
+            _TXN_COOKIE,
+            txn["binding"],
+            max_age=_TXN_TTL_SECONDS,
+            path="/auth",
+            httponly=True,
+            secure=str(self.base_url).startswith("https"),
+            samesite="lax",
+        )
+        return response
+
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         assert client_info.client_id is not None
+        self._reject_unapproved_redirect_uris(client_info)
         await self._users.put_client(
             client_info.client_id, client_info.model_dump(mode="json")
         )
         self._client_cache[client_info.client_id] = client_info
+        # Every dynamic registration leaves a record; there was none before.
+        log.info(
+            "OAuth client registered: %s (%d redirect uri(s))",
+            client_info.client_id,
+            len(client_info.redirect_uris or []),
+        )
 
     # ------------------------------------------------------- authorize (step 1)
 
@@ -200,11 +301,16 @@ class PfwAuthProvider(OAuthProvider):
             "resource": getattr(params, "resource", None),
             "created_at": time.time(),
             "nonce": secrets.token_urlsafe(16),
+            "binding": secrets.token_urlsafe(16),
         }
         if len(self._idps) == 1:
-            # Single configured IdP: skip the chooser.
+            # Single configured IdP: skip the chooser, but still route through
+            # /auth/start so the transaction can be bound to this browser
+            # before the hop to the IdP. One extra 302, no UX change.
             only = next(iter(self._idps))
-            return self._upstream_authorize_url(only, txn_id)
+            return (
+                f"{self.base_url}".rstrip("/") + f"/auth/start/{only}?txn={txn_id}"
+            )
         return f"{self.base_url}".rstrip("/") + f"/auth/select?txn={txn_id}"
 
     def _prune_txns(self) -> None:
@@ -255,7 +361,7 @@ class PfwAuthProvider(OAuthProvider):
                 ),
                 status_code=400,
             )
-        return HTMLResponse(pages.select_page(txn_id))
+        return self._bind_txn(HTMLResponse(pages.select_page(txn_id)), txn_id)
 
     async def _start_endpoint(self, request: Request) -> Response:
         idp = request.path_params["idp"]
@@ -269,7 +375,10 @@ class PfwAuthProvider(OAuthProvider):
                 ),
                 status_code=400,
             )
-        return RedirectResponse(self._upstream_authorize_url(idp, txn_id), 302)
+        return self._bind_txn(
+            RedirectResponse(self._upstream_authorize_url(idp, txn_id), 302),
+            txn_id,
+        )
 
     async def _callback_endpoint(self, request: Request) -> Response:
         idp = request.path_params["idp"]
@@ -283,6 +392,22 @@ class PfwAuthProvider(OAuthProvider):
                 pages.error_page(
                     "Sign-in expired",
                     "This sign-in attempt is no longer valid. Start again "
+                    "from your MCP client.",
+                ),
+                status_code=400,
+            )
+        if request.cookies.get(_TXN_COOKIE) != txn.get("binding"):
+            # The transaction was started in a different browser, so this
+            # callback is not the sign-in it claims to be. Fail closed.
+            log.warning(
+                "OAuth callback rejected: login transaction is not bound to "
+                "this browser (idp=%s)",
+                idp,
+            )
+            return HTMLResponse(
+                pages.error_page(
+                    "Sign-in expired",
+                    "This sign-in did not start in this browser. Start again "
                     "from your MCP client.",
                 ),
                 status_code=400,
@@ -360,12 +485,14 @@ class PfwAuthProvider(OAuthProvider):
             ttl_seconds=_CODE_TTL_SECONDS,
         )
         log.info("OAuth login authorized: %s via %s scopes=%s", email, idp, scopes)
-        return RedirectResponse(
+        response = RedirectResponse(
             construct_redirect_uri(
                 txn["redirect_uri"], code=our_code, state=txn["client_state"] or None
             ),
             302,
         )
+        response.delete_cookie(_TXN_COOKIE, path="/auth")
+        return response
 
     async def _exchange_and_verify(
         self, idp: str, code: str, nonce: str
@@ -591,16 +718,31 @@ class PfwAuthProvider(OAuthProvider):
     # -------------------------------------------------------- bearer validation
 
     async def load_access_token(self, token: str) -> AccessToken | None:
+        # The admin-scoped internal bearer is a SEPARATE, optional secret: only
+        # holders of PFW_AUTH_INTERNAL_ADMIN_TOKEN get pfw:admin.
+        # Checked first since it is the more privileged match.
+        if self._internal_admin_token and hmac.compare_digest(
+            token, self._internal_admin_token
+        ):
+            return AccessToken(
+                token=token,
+                client_id="internal-admin",
+                scopes=[SCOPE_USER, SCOPE_ADMIN],
+                expires_at=int(time.time()) + self._access_ttl,
+                subject="internal-admin",
+            )
         # Static internal bearer for headless clients (internal gateways/Claude
-        # Code). Full scopes; constant-time compare.
+        # Code). pfw:user only — it exists so a gateway can search, and a
+        # leaked search credential must not convert into a durable admin
+        # identity in the user table. Constant-time compare.
         if self._internal_token and hmac.compare_digest(
             token, self._internal_token
         ):
             return AccessToken(
                 token=token,
                 client_id="internal",
-                scopes=[SCOPE_USER, SCOPE_ADMIN],
-                expires_at=None,
+                scopes=[SCOPE_USER],
+                expires_at=int(time.time()) + self._access_ttl,
                 subject="internal",
             )
         try:

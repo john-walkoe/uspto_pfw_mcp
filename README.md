@@ -80,7 +80,7 @@ The PowerShell script will:
         "USPTO_API_KEY": "your_actual_USPTO_api_key_here",
         "MISTRAL_API_KEY": "your_mistral_api_key_here_OPTIONAL",
         "MISTRAL_OCR_MODEL": "mistral-ocr-latest_OPTIONAL_pin_a_dated_slug",
-        "DOCLING_SERVE_URL": "http://localhost:5001_OPTIONAL_free_OCR_fallback",
+        "DOCLING_SERVE_URL": "http://localhost:5001",
         "PROXY_PORT": "8080"
       }
     }
@@ -104,13 +104,12 @@ The PowerShell script will:
 - **📊 Progressive Disclosure** - context reduction through optimized minimal → balanced → detailed workflows
 - **🔗 Cross-MCP Integration** - Purpose-built for multi-database patent research with Developer's other PTAB, FPD, Citations, and Pinecone (Assistant or RAG) MCPs
   - **🆕 Centralized Document Hub** - PFW proxy now serves as unified download infrastructure for all USPTO MCPs (accepts FPD document registrations)
-- **📝 Attorney-Focused Prompt Templates** - 10+ sophisticated workflow templates for legal research, litigation, and due diligence
+- **📝 Attorney-Focused Prompt Templates** - 10+ sophisticated workflow templates for legal research, litigation, and due diligence (opt-in server-side: set `PFW_ENABLE_PROMPTS=true` to register them; off by default)
 
-- **✨ Intelligent Document Extraction** - 3-tier hybrid extraction: free PyPDF2 → Mistral OCR (preferred, ~$0.001/page) → Docling free OCR fallback (self-hosted, set `DOCLING_SERVE_URL`)
+- **✨ Intelligent Document Extraction** - 4-tier hybrid extraction: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR (self-hosted, set `DOCLING_SERVE_URL`). Both OCR backends are optional
 - **🌐 Secure Browser Downloads** - Click proxy URLs to download PDFs directly while keeping API keys secure
 - **👁️ Advanced OCR Capabilities** - Extract text for LLM use from scanned PDFs, formulas, diagrams, and complex layouts via Mistral OCR or Docling (EasyOCR engine)
 - **📁 Document Bag Integration** - Full prosecution document access (Abstract, Claims, NOA, etc.) alongside XML content analysis of patents/applications
-- **💰 Mistral OCR Cost Transparency** - Real-time cost calculation (~$0.001-$0.003 per patent document) when using Mistral OCR
 - **🚀 High Performance** - Optimized for AI workflows with targeted field selection + retry logic with exponential backoff
 - **🛡️ Production Ready** - Enhanced error handling, structured logging with request IDs, and comprehensive security guidelines
 - **💻 Cross-Platform** - Works seamlessly on Linux and Windows
@@ -131,9 +130,9 @@ The PowerShell script will:
 
 These 3 tools are loaded immediately for fast access:
 
-1. **`pfw_search_applications_minimal`** - Primary discovery for patent applications
-2. **`pfw_get_guidance`** - Workflow guidance and documentation
-3. **`pfw_get_application_documents`** - Document lists for patent applications
+1. **`PFW_search_applications_minimal`** - Primary discovery for patent applications
+2. **`PFW_get_guidance`** - Workflow guidance and documentation
+3. **`PFW_get_application_documents`** - Document lists for patent applications
 
 ### Progressive Tool Discovery
 
@@ -177,7 +176,7 @@ MCP tools: loaded on-demand (N servers)  ← Tool search IS working
 - *"Show me Apple's patent applications filed in 2024"*
 - *"Get me PDFs download links for the patent "Integrated delivery and protection device for digital objects"*
 - *"I need you to look at the patent details of 7971071 and summarize it for me"*
-- *"Research this IPR case IPR2025-00562 and compare it to the original prosecution"* -* Requires that the USPTO Patent Trial and Appeal Board (PTAB) be installed - [uspto_ptab_mcp](https://github.com/john-walkoe/uspto_ptab_mcp.git) and also recommended to ask LLM to perform a pfw_get_guidance tool call prior to this or any cross MCP prompt (see quick reference chart for section selection, additional details in [Usage Examples](USAGE_EXAMPLES.md))
+- *"Research this IPR case IPR2025-00562 and compare it to the original prosecution"* -* Requires that the USPTO Patent Trial and Appeal Board (PTAB) be installed - [uspto_ptab_mcp](https://github.com/john-walkoe/uspto_ptab_mcp.git) and also recommended to ask LLM to perform a PFW_get_guidance tool call prior to this or any cross MCP prompt (see quick reference chart for section selection, additional details in [Usage Examples](USAGE_EXAMPLES.md))
 
 **LLM Performs these steps:**
 
@@ -190,7 +189,7 @@ The field configuration supports an optimized research progression:
 3. **Content analysis** via XML retrieval for selected patents with structured data for LLM's use in analysis
 4. **Select additional prosecution documents for examination** (Optional) e.g. Notice of Allowance, Applicant Citations (disclosed prior art), Examiner's Office Action Rejections, etc.
 5. **Retrieve doc_id(s) of the selected from documentBag** (Optional) use get application documents tool to get the doc_id(s)
-6. **Document Extraction for LLM use and/or Download Links of PDFs for user's use** (Optional) Document extraction via intelligent hybrid tool that auto-optimizes for cost and quality and Downloads of the documents as PDFs uses URLs from a HTTP proxy that obscures the USPTO's API key from chat history
+6. **Document Extraction for LLM use and/or Download Links of PDFs for user's use** (Optional) Document extraction via intelligent hybrid tool that auto-optimizes for speed and quality and Downloads of the documents as PDFs uses URLs from a HTTP proxy that obscures the USPTO's API key from chat history
 
 ##  🎯 Prompt Templates
 
@@ -212,37 +211,82 @@ This MCP server includes sophisticated AI-optimized prompt templates for complex
 
 ## 🖼️ MCP Apps (Visual UI in Claude)
 
-PFW MCP includes three built-in visual views rendered as iframes inside Claude Desktop:
+PFW MCP includes four built-in visual views rendered as iframes inside Claude Desktop (a fifth, the user-management panel, appears only on OAuth deployments with `PFW_ENABLE_USER_MANAGEMENT=true`):
 
 | Trigger | View | What it shows |
 |---------|------|---------------|
-| Any `pfw_search_*` tool | Search Results | Results table with status/art unit filter pills, Patent Center links |
-| `pfw_get_patent_or_application_xml` | Claims & Abstract Reader | Tabbed Claims / Abstract viewer with IND/DEP claim detection |
-| `pfw_get_document_download` / `pfw_get_granted_patent_documents_download` | Recent Downloads | Last 10 downloaded documents with clickable PDF links |
+| Any `PFW_search_*` tool | Search Results | Results table with status/art unit filter pills, Patent Center links |
+| `PFW_get_patent_or_application_xml` | Claims & Abstract Reader | Tabbed Claims / Abstract viewer with IND/DEP claim detection |
+| `PFW_get_document_download` / `PFW_get_granted_patent_documents_download` | Recent Downloads | Last 10 downloaded documents with clickable PDF links |
+| `PFW_get_family` | Patent Family | Generation-by-generation family tree with CON/CIP/DIV relation labels, Patent Center and Google Patents links |
 
-MCP Apps require `FASTMCP_TRANSPORT=http` mode. Claude Desktop picks up the `ui://pfw/` resources automatically via the FastMCP 3.0 Apps extension.
+MCP Apps require `FASTMCP_TRANSPORT=http` mode. Claude Desktop picks up the `ui://pfw/` resources automatically via the FastMCP 4 Apps extension (imported from `fastmcp.apps`).
 
 ##  📊Available Functions
 
 > **Registered MCP tool names**: the tables below use the tools' display-style
-> names. In `tools/list` the server registers 15 tools under these exact names:
-> `search_applications`, `search_inventor`, `search_applications_minimal`,
-> `search_applications_balanced`, `search_inventor_minimal`,
-> `search_inventor_balanced`, `get_application_documents`,
-> `get_patent_or_application_xml`, `get_granted_patent_documents_download`,
-> `get_oa_rejections`, `get_oa_text`, `pfw_get_document_content_with_ocr`,
-> `pfw_get_document_download`, `pfw_get_guidance`, and (OAuth deployments with
+> names. In `tools/list` the server registers 17 tools under these exact names:
+> `PFW_search_applications`, `PFW_search_inventor`, `PFW_search_applications_minimal`,
+> `PFW_search_applications_balanced`, `PFW_search_inventor_minimal`,
+> `PFW_search_inventor_balanced`, `PFW_get_application_documents`,
+> `PFW_get_patent_or_application_xml`, `PFW_get_granted_patent_documents_download`,
+> `PFW_get_oa_rejections`, `PFW_get_oa_text`, `PFW_get_document_content_with_ocr`,
+> `PFW_get_document_download`, `PFW_get_family`, `PFW_get_term_adjustment`,
+> `PFW_get_guidance`, and (OAuth deployments with
 > `PFW_ENABLE_USER_MANAGEMENT=true` only) `pfw_manage_users`.
+
+### Identifier formats
+
+A bare 8-digit number is simultaneously a valid US patent number and a valid
+application serial (patent numbers passed 12,000,000 in 2024), so the tools
+that take an identifier cannot tell them apart on their own. Resolution queries
+the patent-number lane first and the application-serial lane second, and every
+affected response reports `identifier_resolved_as`, `identifier_lanes_tried`
+and, when the input was ambiguous, `identifier_ambiguous` plus an
+`identifier_note`.
+
+Write the identifier in a form that removes the ambiguity:
+
+| You mean | Write it as | Why |
+|----------|-------------|-----|
+| Application serial 11/752,072 | `11/752,072` | A slash marks a serial unambiguously; resolution short-circuits to the application lane |
+| Application serial, no slash available | `11752072` plus `content_type='application'` | Forces the application lane |
+| Granted patent 7,971,071 | `7971071` or `7,971,071` | Seven digits or fewer is a patent number, unambiguous |
+| Granted patent 11,752,072 | `11752072` or `11,752,072` | A comma-only number stays on the patent-first lane, which is what granted patents want |
+
+`11752072` typed bare is therefore patent **11,752,072** (application
+16816197, "QUICK SET CEMENTS FOR DENTAL PULP CAPPING AND RELATED METHODS OF
+USE"), not application 11/752,072. Passing an unrecognized `content_type`
+value is a 400, not a silent fall back to `auto`.
+
+### Response markers (how a bounded or paged response says so)
+
+An oversized tool result is replaced by a client-side truncation error the
+server never sees, so responses are bounded server-side and every bound is
+announced. Budgets are CHARACTER budgets (`len(json.dumps(...))`), never token
+estimates. All four markers are **absent on a no-op** - an unbounded response
+comes back byte-identical.
+
+| Marker | Appears on | Carries |
+|--------|-----------|---------|
+| `_bounds` | any response slimmed or truncated to fit | `applied`, `reason` (`"size"` or `"window"`), `size_chars`, `size_limit`, `stages`, `slimmed_fields`, `items_returned`, `items_total`, `note` |
+| `_window` | paged text (`PFW_get_document_content_with_ocr`, `PFW_get_oa_text`) | `unit` (`"char"` or `"page"`), `offset`, `returned`, `total`, `has_more`, `next_offset`, `note`. Feed `next_offset` back as `char_offset` to continue |
+| `paging` | every search | `limit_requested`, `limit_applied`, `offset`, `returned`, `total`, `has_more`, `next_offset` |
+| `limit_clamped` | a search asking for more than `MAX_SEARCH_LIMIT` (100) | `requested`, `applied`, `note`. The call CLAMPS and runs; it does not 400. `limit < 1` is still a 400 |
+
+`PFW_get_guidance("limits")` prints the live budgets and the same contract.
+Environment variables: `USPTO_MAX_RESPONSE_CHARS`, `USPTO_MAX_CONTENT_CHARS`,
+`USPTO_RESPONSE_BOUNDS_ENABLED` (see [INSTALL.md](INSTALL.md#environment-variables)).
 
 ### Search Functions (6 Focused Tools)
 | Function (Display Name) | Context Reduction | Use Case |
 |----------|------------------|----------|
-| `pfw_search_applications` (Search applications custom) | Variable | Custom patent search with user-defined fields |
-| `pfw_search_inventor` (Search inventor custom) | Variable | Smart inventor search with multiple strategies |
-| `pfw_search_applications_minimal` (Search applications minimal) | typical 95-99% | Ultra-fast search (user-customizable minimal fields) |
-| `pfw_search_applications_balanced` (Search applications balanced) | typical 85-95% | Key fields for discovery (no documentBag) |
-| `pfw_search_inventor_minimal` (Search inventor minimal) | typical 95-99% | Ultra-fast inventor search (user-customizable) |
-| `pfw_search_inventor_balanced` (Search inventor balanced) | typical 85-95% | Balanced inventor search (no documentBag) |
+| `PFW_search_applications` (Search applications custom) | Variable | Custom patent search with user-defined fields |
+| `PFW_search_inventor` (Search inventor custom) | Variable | Smart inventor search with multiple strategies |
+| `PFW_search_applications_minimal` (Search applications minimal) | typical 95-99% | Ultra-fast search (user-customizable minimal fields) |
+| `PFW_search_applications_balanced` (Search applications balanced) | typical 85-95% | Key fields for discovery (no documentBag) |
+| `PFW_search_inventor_minimal` (Search inventor minimal) | typical 95-99% | Ultra-fast inventor search (user-customizable) |
+| `PFW_search_inventor_balanced` (Search inventor balanced) | typical 85-95% | Balanced inventor search (no documentBag) |
 
 ##  Search Strategies
 
@@ -271,18 +315,20 @@ MCP Apps require `FASTMCP_TRANSPORT=http` mode. Claude Desktop picks up the `ui:
 
 | Function (Display Name)                                      | Purpose                                                      | Requirements                                       |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | -------------------------------------------------- |
-| `pfw_get_patent_or_application_xml` (Get patent or application xml) | Get structured XML content for patents/applications for LLM use with **91-99% token reduction** via `include_raw_xml=False` (recommended) and optional `include_fields` for selective extraction | USPTO_API_KEY                                      |
-| `pfw_get_granted_patent_documents_download` (Get granted patent documents download) | Get complete granted patent package (Abstract, Drawings, Specification, Claims) in one call as secure browser-accessible download URLs | USPTO_API_KEY                                      |
-| `pfw_get_application_documents` (Get application documents)  | Get prosecution documents' doc_id from documentBag with advanced filtering (document_code, direction_category) | USPTO_API_KEY                                      |
-| `pfw_get_document_content_with_ocr` (PFW get document content with ocr) | 3-tier hybrid text extraction: PyPDF2 → Mistral OCR (preferred) → Docling (free fallback) | USPTO_API_KEY (+ MISTRAL_API_KEY or DOCLING_SERVE_URL for scanned docs) |
-| `pfw_get_document_download` (PFW get document download)      | Secure browser-accessible download URLs                      | USPTO_API_KEY                                      |
-| `pfw_get_oa_rejections` (PFW get OA rejections)              | Search USPTO OA Rejections API v2 — rejection type indicators (§101/§102/§103/§112) by application/examiner/art unit | USPTO_API_KEY                                      |
-| `pfw_get_oa_text` (PFW get OA text)                          | Search USPTO OA Actions API v1 — full office action body text and section-specific excerpts | USPTO_API_KEY                                      |
-| `pfw_get_guidance` (PFW get guidance)                        | **RECOMMENDED**: Context-efficient selective guidance sections (95-99% token reduction) | None                                               |
+| `PFW_get_patent_or_application_xml` (Get patent or application xml) | Get structured XML content for patents/applications for LLM use with **91-99% token reduction** via `include_raw_xml=False` (recommended) and optional `include_fields` for selective extraction | USPTO_API_KEY                                      |
+| `PFW_get_granted_patent_documents_download` (Get granted patent documents download) | Get complete granted patent package (Abstract, Drawings, Specification, Claims) in one call as secure browser-accessible download URLs | USPTO_API_KEY                                      |
+| `PFW_get_application_documents` (Get application documents)  | Get prosecution documents' doc_id from documentBag with advanced filtering (document_code, direction_category) | USPTO_API_KEY                                      |
+| `PFW_get_document_content_with_ocr` (PFW get document content with ocr) | 4-tier hybrid text extraction: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR | USPTO_API_KEY (+ MISTRAL_API_KEY or DOCLING_SERVE_URL for scanned docs) |
+| `PFW_get_document_download` (PFW get document download)      | Secure browser-accessible download URLs                      | USPTO_API_KEY                                      |
+| `PFW_get_oa_rejections` (PFW get OA rejections)              | Search USPTO OA Rejections API v2 — rejection type indicators (§101/§102/§103/§112) by application/examiner/art unit | USPTO_API_KEY                                      |
+| `PFW_get_oa_text` (PFW get OA text)                          | Search USPTO OA Actions API v1 — full office action body text and section-specific excerpts | USPTO_API_KEY                                      |
+| `PFW_get_family` (PFW get family)                            | Normalized continuity family graph (nodes + edges with CON/CIP/DIV relation types, earliest ancestors) plus foreign priority claims. Optional depth-2 walk. | USPTO_API_KEY                                      |
+| `PFW_get_term_adjustment` (PFW get term adjustment)          | Patent Term Adjustment from the ODP /adjustment endpoint: total days, A/B/C and applicant delay, capped event history. No expiration date is computed. | USPTO_API_KEY                                      |
+| `PFW_get_guidance` (PFW get guidance)                        | **RECOMMENDED**: Context-efficient selective guidance sections (95-99% token reduction) | None                                               |
 
 ### Document Processing Capabilities
 
-- **XML Content Tier (`pfw_get_patent_or_application_xml`)**: Structured patent/application content with **extreme context optimization**
+- **XML Content Tier (`PFW_get_patent_or_application_xml`)**: Structured patent/application content with **extreme context optimization**
   - **🎯 RECOMMENDED: `include_raw_xml=False`** - Removes ~50K token raw XML overhead (91% token reduction!)
   - **Selective field extraction (`include_fields`)** - Request only needed fields for 95-99% token reduction
   - **Default optimized response** - Returns abstract, claims, description (~5K tokens with `include_raw_xml=False`)
@@ -292,7 +338,7 @@ MCP Apps require `FASTMCP_TRANSPORT=http` mode. Claude Desktop picks up the `ui:
   - **LLM-optimized parsing** - Extracts abstract, claims, inventors, classifications, citations on demand
   - **Dual XML support** - Handles both PTGRXML (granted patents) and APPXML (applications)
   - **Data limitation** - Only available for patents/applications filed after January 1, 2001
-- **Complete Patent Package Tier (`pfw_get_granted_patent_documents_download`)**: Single-call granted patent retrieval
+- **Complete Patent Package Tier (`PFW_get_granted_patent_documents_download`)**: Single-call granted patent retrieval
   - **All-in-one convenience** - Retrieves Abstract, Drawings, Specification, Claims in one call (replaces 4 separate calls)
   - **Intelligent component selection** - Auto-selects original vs. granted claims, optional drawings
   - **Organized download links** - Returns structured metadata with proxy download URLs for all components
@@ -301,7 +347,7 @@ MCP Apps require `FASTMCP_TRANSPORT=http` mode. Claude Desktop picks up the `ui:
   - **Graceful degradation** - Succeeds if 3+ of 4 components available, clearly indicates missing items
   - **LLM-optimized guidance** - Built-in formatting instructions for clickable markdown links
   - **Total page count** - Shows overall document size upfront for planning (typically 40-80 pages)
-- **Prosecution Documents Tier (`pfw_get_application_documents`)**: - Targeted document access from documentBag
+- **Prosecution Documents Tier (`PFW_get_application_documents`)**: - Targeted document access from documentBag
   - **Token-efficient design** - Get prosecution documents only when needed (no search bloat)
   - **Advanced filtering** - Filter by `document_code` (NOA, CTFR, 892, etc.) and `direction_category` (INCOMING/OUTGOING/INTERNAL)
   - **Context reduction** - Achieve 98.6% reduction for heavily-litigated applications (200+ docs → 1-2 docs)
@@ -309,14 +355,15 @@ MCP Apps require `FASTMCP_TRANSPORT=http` mode. Claude Desktop picks up the `ui:
   - **Workflow optimization** - Use after discovery search for specific applications
   - **Document guidance** - Intelligent summary and download recommendations
   - **Replaces documentBag in search** - Prevents 100x token explosion in discovery workflows
-- **✨ Intelligent Extraction Tier (`pfw_get_document_content_with_ocr`)**: - 3-tier auto-optimized extraction
-  - **Tier 1 — PyPDF2** (free, instant): Works on text-based PDFs
-  - **Tier 2 — Mistral OCR** (preferred paid, ~$0.001/page): Handles scanned USPTO documents; requires `MISTRAL_API_KEY`
-  - **Tier 3 — Docling** (free fallback): Self-hosted EasyOCR via `DOCLING_SERVE_URL`; handles same scanned docs as Mistral at no cost
-  - **Cost optimization** - Only calls paid Mistral when PyPDF2 fails; skips Mistral if no API key
-  - **Transparent reporting** - Returns `extraction_method` and `processing_cost_usd` in every response
+- **✨ Intelligent Extraction Tier (`PFW_get_document_content_with_ocr`)**: - auto-optimized extraction
+  - **Tier 0 — Free text variants** (instant, no OCR): the `.docx`, `xmlarchive`, or as-uploaded PDF the USPTO API serves alongside the PDF render (USPTO-authored papers and e-filed claims/remarks/IDS); each variant is checked against the requested application number
+  - **Tier 1 — PyPDF2** (instant): Works on text-based PDFs; an all-empty text layer is reported as a failure, not a success
+  - **Tier 2 - Mistral OCR**: Handles scanned USPTO documents; requires `MISTRAL_API_KEY` (optional)
+  - **Tier 3 - Docling OCR**: Self-hosted EasyOCR via `DOCLING_SERVE_URL`; handles the same scanned documents as Mistral, and can be configured instead of Mistral rather than only after it
+  - **Tier escalation** - An OCR tier runs only when the native text layer is missing or unusable; a tier with no credential or endpoint configured is skipped
+  - **Transparent reporting** - Returns `extraction_method` in every response
   - **Unified interface** - Single tool handles all document types (eliminates tool confusion)
-- **Browser Download Tier (`pfw_get_document_download`)**: Secure proxy downloads
+- **Browser Download Tier (`PFW_get_document_download`)**: Secure proxy downloads
   - **Click-to-download** URLs that work directly in any browser
   - **API key security** - USPTO API credentials never exposed in chat history or browser
   - **Rate limiting compliance** - Automatic enforcement of USPTO's 5 downloads per 10 seconds
@@ -328,7 +375,7 @@ MCP Apps require `FASTMCP_TRANSPORT=http` mode. Claude Desktop picks up the `ui:
   - **🆕 Centralized proxy hub** - PFW proxy (port 8080) now accepts document registrations from FPD MCP for unified download experience across USPTO MCPs.  (Planned future PTAB centralized proxy hub)
   - **CORS locked to localhost by default** - Proxy and MCP App only accept requests from `localhost`; configurable for reverse proxy or MCP gateway deployments via `CORS_EXTRA_ORIGIN` and `MCP_APP_EXTRA_DOMAINS` env vars — see [INSTALL.md](INSTALL.md#environment-variables)
 
-#### Enhanced Filename Format used in `pfw_get_document_download` and `pfw_get_granted_patent_documents_download`
+#### Enhanced Filename Format used in `PFW_get_document_download` and `PFW_get_granted_patent_documents_download`
 
 The system automatically generates descriptive filenames using application metadata:
 
@@ -340,16 +387,21 @@ APP-14171705_PAT-9049188_HYBRID_DEVICE_HAVING_A_PERSONAL_DIGITAL_CLM.pdf
 
 **For PFW Documents - Pending Applications:**
 ```
-APP-17896175_COMMUNICATION_METHOD_AND_APPARATUS_SPEC.pdf
-APP-16543210_MACHINE_LEARNING_OPTIMIZATION_SYSTEM_DRW.pdf
+APP-18462633_SURFACE_DENSITY_DEVICE_CALIBRATION_APPARATU_SPEC.pdf
+APP-18823722_BACK_CONTACT_SOLAR_CELL_AND_METHOD_FOR_PREP_DRW.pdf
 ```
 
 **For FPD Documents - Petition Decisions:**
 
 ```
-PET-2025-09-03_APP-18462633_PAT-8803593_PATENT_PROSECUTION_HIGHWAY_DECISION.pdf
-PET-2024-05-15_APP-17414168_REVIVAL_PETITION_DECISION.pdf
+PET-2025-09-03_APP-13632078_PAT-8803593_PATENT_PROSECUTION_HIGHWAY_DECISION.pdf
+PET-2024-05-15_APP-17414168_PAT-12252554_REVIVAL_PETITION_DECISION.pdf
 ```
+
+> The application numbers inside a generated filename are the bare digits the
+> USPTO API returns (`applicationNumberText`). When you TYPE an application
+> serial into a tool, use the slash-comma form (`11/752,072`) instead: see
+> [Identifier formats](#identifier-formats) above.
 
 **Features:**
 - **APP-** prefix for clear application number identification
@@ -365,24 +417,24 @@ PET-2024-05-15_APP-17414168_REVIVAL_PETITION_DECISION.pdf
 
 | Function (Display Name)               | Purpose                              | Requirements |
 | ------------------------------------- | ------------------------------------ | ------------ |
-| `pfw_get_guidance` (PFW get guidance) | Context-efficient selective guidance | None         |
+| `PFW_get_guidance` (PFW get guidance) | Context-efficient selective guidance | None         |
 
 #### Context-Efficient Guidance System
 
-**NEW: `pfw_get_guidance` Tool** - Solves MCP Resources visibility problem with selective guidance sections:
+**NEW: `PFW_get_guidance` Tool** - Solves MCP Resources visibility problem with selective guidance sections:
 
 🎯 **Quick Reference Chart** - Know exactly which section to call:
-- 🔍 "Find patents by inventor/company/art unit" → `pfw_get_guidance("fields")`
-- 📄 "Get complete patent package/documents" → `pfw_get_guidance("documents")`
-- 🔖 "Decode document codes (NOA, CTFR, 892, etc.)" → `pfw_get_guidance("document_codes")`
-- 🤝 "Research IPR vs prosecution patterns" → `pfw_get_guidance("workflows_ptab")`
-- 🚩 "Analyze petition red flags + prosecution" → `pfw_get_guidance("workflows_fpd")`
-- 📊 "Citation analysis for examiner behavior" → `pfw_get_guidance("workflows_citations")`
-- 🧠 "Domain-based RAG for legal framework (§101, §103, §112)" → `pfw_get_guidance("workflows_pinecone")`
-- 🏢 "Complete company due diligence" → `pfw_get_guidance("workflows_complete")`
-- ⚙️ "Convenience parameter searches" → `pfw_get_guidance("tools")`
-- ❌ "Search errors or download issues" → `pfw_get_guidance("errors")`
-- 💰 "Reduce API costs" → `pfw_get_guidance("cost")`
+- 🔍 "Find patents by inventor/company/art unit" → `PFW_get_guidance("fields")`
+- 📄 "Get complete patent package/documents" → `PFW_get_guidance("documents")`
+- 🔖 "Decode document codes (NOA, CTFR, 892, etc.)" → `PFW_get_guidance("document_codes")`
+- 🤝 "Research IPR vs prosecution patterns" → `PFW_get_guidance("workflows_ptab")`
+- 🚩 "Analyze petition red flags + prosecution" → `PFW_get_guidance("workflows_fpd")`
+- 📊 "Citation analysis for examiner behavior" → `PFW_get_guidance("workflows_citations")`
+- 🧠 "Domain-based RAG for legal framework (§101, §103, §112)" → `PFW_get_guidance("workflows_pinecone")`
+- 🏢 "Complete company due diligence" → `PFW_get_guidance("workflows_complete")`
+- ⚙️ "Convenience parameter searches" → `PFW_get_guidance("tools")`
+- ❌ "Search errors or download issues" → `PFW_get_guidance("errors")`
+- ⚡ "Optimize extraction and context usage" → `PFW_get_guidance("cost")`
 
 
 
@@ -430,7 +482,7 @@ For comprehensive usage examples, including:
 - **Complete lifecycle due diligence** examples
 - **Litigation research patterns**
 - **Art unit quality assessment**
-- **Cost optimization strategies**
+- **Extraction and context efficiency strategies**
 
 See the detailed **[USAGE_EXAMPLES.md](USAGE_EXAMPLES.md)** documentation.
 
@@ -465,7 +517,7 @@ The **Patent File Wrapper (PFW) MCP** serves as the foundation for patent resear
 - **PFW + Enriched Citations**: AI-powered examiner citation analysis and prior art research patterns
 - **PFW + FPD**: Understand petition history and procedural issues during prosecution
 - **PFW + FPD + PTAB**: Complete patent lifecycle tracking from filing through post-grant challenges
-- **PFW + Pinecone (Assistant or RAG)**: Research MPEP guidance before extracting expensive prosecution documents
+- **PFW + Pinecone (Assistant or RAG)**: Research MPEP guidance before pulling full prosecution documents into context
 
 ### Key Integration Patterns
 
@@ -497,7 +549,7 @@ For detailed integration workflows, cross-referencing examples, and complete use
 
 ### Step 1: Manual End-to-End Tests (Start Here)
 
-Open Claude Desktop with this MCP server connected and paste the prompt from **[tests/TEST_SUITE.md](tests/TEST_SUITE.md)**. This runs 19 tests across all 14 tools against the live USPTO API with known expected outputs — no code required.
+Open Claude Desktop with this MCP server connected and paste the prompt from **[tests/TEST_SUITE.md](tests/TEST_SUITE.md)**. This runs 21 tests (Test 0 through Test 20) across the 12 tools it covers against the live USPTO API with known expected outputs - no code required. It does not exercise `PFW_get_family`, `PFW_get_term_adjustment`, `PFW_search_inventor` or `PFW_search_inventor_balanced`.
 
 Run after initial setup, after upgrades, or after modifying tool logic.
 
@@ -532,6 +584,10 @@ uspto_pfw_mcp/
 │   └── patent_filewrapper_mcp/
 │       ├── main.py                 # FastMCP server assembly (instructions, resources, tool registration)
 │       ├── server_bootstrap.py     # Entry point, transport selection, proxy lifecycle
+│       ├── fastmcp_compat.py       # FastMCP 4 / MCP SDK 2.x shims (defer_loading, tool titles)
+│       ├── middleware.py           # Streamable-HTTP probe shim and x-api-key gate
+│       ├── guidance.py             # PFW_get_guidance section bodies
+│       ├── app_uris.py             # ui://pfw/ MCP App resource URIs
 │       ├── client_registry.py      # Shared USPTO API client (lazy init)
 │       ├── __init__.py
 │       ├── __main__.py
@@ -539,11 +595,11 @@ uspto_pfw_mcp/
 │       ├── shared_secure_storage.py # Cross-platform secure API key storage (DPAPI / Fernet)
 │       ├── config/
 │       │   ├── field_manager.py   # Configuration management
-│       │   ├── tool_reflections.py # Migration notices (guidance moved to pfw_get_guidance)
+│       │   ├── tool_reflections.py # Migration notices (guidance moved to PFW_get_guidance)
 │       │   └── log_config.py      # 🆕 Logging configuration with file-based rotation
 │       ├── api/
-│       │   ├── enhanced_client.py  # 3-tier OCR extraction (PyPDF2 → Mistral → Docling)
-│       │   ├── docling_client.py   # Docling-serve REST client (free OCR via DOCLING_SERVE_URL)
+│       │   ├── enhanced_client.py  # 4-tier extraction (free-text variants → PyPDF2 → Mistral → Docling)
+│       │   ├── docling_client.py   # docling-serve REST client (self-hosted OCR via DOCLING_SERVE_URL)
 │       │   ├── oa_rejections_client.py  # USPTO OA Rejections API v2
 │       │   ├── oa_text_client.py   # USPTO OA Actions API v1
 │       │   ├── field_constants.py # Field constant definitions
@@ -585,12 +641,16 @@ uspto_pfw_mcp/
 │       │   ├── internal_auth.py   # Shared authentication
 │       │   ├── log_sanitizer.py   # Automatic sensitive data sanitization
 │       │   ├── safe_logger.py     # Safe logger with auto-sanitization
+│       │   ├── response_bounds.py # Shared response-size guard (_bounds / _window)
+│       │   ├── fernet_key_store.py
 │       │   └── uspto_shared_rate_limiter.py # Cross-process shared USPTO rate limiter
 │       ├── util/
 │       │   ├── database.py
 │       │   ├── dpapi_utils.py
 │       │   ├── error_handlers.py
 │       │   ├── identifier_normalization.py
+│       │   ├── identifier_resolution.py # Patent-vs-application lane resolution
+│       │   ├── linux_secret_store.py
 │       │   ├── input_processing.py
 │       │   ├── logging.py         # Enhanced logging utilities
 │       │   ├── package_manager.py
@@ -599,23 +659,24 @@ uspto_pfw_mcp/
 │           └── search_query.json  # Sample JSON structures
 ├── deploy/
 │   ├── linux_setup.sh            # Linux deployment script
-│   ├── deploy_linux.sh
 │   ├── windows_setup.ps1         # PowerShell deployment script
 │   ├── manage_api_keys.ps1       # API key management utilities
 │   ├── Validation-Helpers.psm1   # PowerShell validation module
 │   └── validation_helpers.sh     # Bash validation helpers
-├── tests/                         # Current test files
+├── tests/                         # Current test files (see tests/README.md for the full list)
 │   ├── README.md                  # Testing documentation
+│   ├── TEST_SUITE.md              # Manual end-to-end suite against the live USPTO API
+│   ├── conftest.py
 │   ├── test_fields_fix.py        # Core functionality test
 │   ├── test_proxy_simple.py      # Proxy server test
-│   ├── test_mcp_server.py        # MCP server startup test
-│   ├── test_quality_detection.py # OCR quality detection test
-│   ├── test_unified_key_management.py # Secure key storage test
+│   ├── test_quality_detection.py # Extraction quality detection test
+│   ├── test_unified_key_management.py # Secure key storage test (excluded by default)
+│   ├── test_identifier_resolution_order.py # Resolve-then-validate order guard
+│   ├── test_response_bounds.py   # Shared response-size guard
 │   ├── test_download.py
 │   ├── test_enhanced_filename.py
 │   ├── test_fpd_integration.py
 │   ├── test_granted_patent_documents_download.py
-│   ├── test_include_fields.py
 │   ├── test_injection_scan.py    # Runtime injection scanner + tool wiring tests
 │   ├── test_mistral_key_logic.py
 │   ├── test_optional_mistral.py
@@ -623,14 +684,14 @@ uspto_pfw_mcp/
 │   ├── test_ptab_integration.py
 │   ├── test_resilience_features.py
 │   ├── test_tool_reflections.py
-│   ├── simple_test.py
 │   └── test_utils.py
 ├── reference/
 │   ├── README.md
 │   ├── Document_Descriptions_List.csv
 │   └── PatentFileWrapper_swagger.yaml
-├── logs/
-│   └── security.log              # Security logging output
+├── scripts/
+│   ├── manage_mcp_users.py       # Bootstrap and manage the OAuth mcp_users table
+│   └── rotate_internal_auth_secret.py # Rolling rotation for INTERNAL_AUTH_SECRET
 ├── docs/
 │   └── CONTENT_PROVENANCE.md     # Retrieved-text provenance and injection-annotation posture
 ├── pyproject.toml                 # Package configuration
@@ -640,8 +701,11 @@ uspto_pfw_mcp/
 ├── USAGE_EXAMPLES.md             # Function examples and workflows
 ├── CUSTOMIZATION.md              # Field configuration and optimization guide
 ├── PROMPTS.md                    # Prompt templates documentation
+├── API_KEY_GUIDE.md             # USPTO and optional Mistral key setup
+├── SSO_SETUP.md                 # OAuth 2.1 sign-in (Google / Entra ID)
 ├── SECURITY_GUIDELINES.md       # Security best practices
-└── SECURITY_SCANNING.md         # Automated secret detection guide
+├── SECURITY_SCANNING.md         # Automated secret detection guide
+└── .env.example                 # Every environment variable, commented
 ```
 
 ##  🔍Troubleshooting
@@ -765,8 +829,8 @@ rewritten, because verbatim fidelity of legal text is the product. Instead,
 the server labels and annotates:
 
 - **`provenance_note`** — every text-returning tool
-  (`pfw_get_document_content_with_ocr`, `get_oa_text`,
-  `get_patent_or_application_xml`) attaches a machine-readable note stating
+  (`PFW_get_document_content_with_ocr`, `PFW_get_oa_text`,
+  `PFW_get_patent_or_application_xml`) attaches a machine-readable note stating
   that retrieved file-wrapper text is quoted data, not instructions, and that
   applicant- or examiner-drafted characterizations are attributed positions.
 - **`injection_scan`** — a detection-only runtime scanner

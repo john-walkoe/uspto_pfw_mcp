@@ -1,132 +1,51 @@
 #!/usr/bin/env python3
+"""Document download works off the restored Document Bag.
+
+Calls the live USPTO ODP API. Previously this signalled every failure with
+`return False`, which pytest reports as PASS: if pfw_get_document_download
+stopped working entirely, this file printed [FAIL] and went green (audit T-4).
 """
-Test script to verify document download functionality works after Document Bag restoration
-"""
 
-import asyncio
-import os
-import sys
-from pathlib import Path
+from conftest import requires_live_uspto
 
-# Set API key from environment or use test key
-os.environ["USPTO_API_KEY"] = os.getenv("USPTO_API_KEY", "test_key_for_testing")
+from patent_filewrapper_mcp.main import (
+    pfw_get_document_download,
+    pfw_search_applications_balanced,
+)
 
-# Add the src directory to Python path
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
+# USPTO_API_KEY is set by tests/conftest.py. It used to be set here at import
+# time with no teardown, which is what made the suite pass only in
+# alphabetical collection order (audit T-3).
 
-from patent_filewrapper_mcp.main import pfw_get_document_download, pfw_search_applications_balanced  # noqa: E402
+_APP_NUMBER = "11752072"
 
+
+@requires_live_uspto
 async def test_document_download():
-    """Test that document download now works with restored Document Bag"""
+    """An ABST document identifier from documentBag yields a download URL."""
+    result = await pfw_search_applications_balanced(
+        f"applicationNumberText:{_APP_NUMBER}", limit=1
+    )
+    assert result.get("success"), f"balanced search failed: {result.get('message')}"
+    assert result.get("applications"), "balanced search returned no applications"
 
-    print("="*80)
-    print("TESTING: Document Download with Restored Document Bag")
-    print("="*80)
+    document_bag = result["applications"][0].get("documentBag", [])
+    assert document_bag, (
+        "documentBag is empty — this is the regression where Associated "
+        "Documents overwrote the Document Bag"
+    )
 
-    try:
-        # Get the application with document bag
-        app_number = "11752072"
-        query = f"applicationNumberText:{app_number}"
+    abstract_doc = next(
+        (d for d in document_bag if d.get("documentCode") == "ABST"), None
+    )
+    assert abstract_doc, "no ABST document in documentBag"
 
-        print("Step 1: Getting document identifiers from balanced search")
-        result = await pfw_search_applications_balanced(query, limit=1)
+    doc_identifier = abstract_doc.get("documentIdentifier")
+    assert doc_identifier, "ABST document carries no documentIdentifier"
 
-        if not result.get('success') or not result.get('applications'):
-            print("FAIL: Could not get application data")
-            return False
-
-        app = result['applications'][0]
-        document_bag = app.get('documentBag', [])
-
-        # Find Abstract document
-        abstract_doc = None
-        for doc in document_bag:
-            if doc.get('documentCode') == 'ABST':
-                abstract_doc = doc
-                break
-
-        if not abstract_doc:
-            print("FAIL: No Abstract document found in document bag")
-            return False
-
-        doc_identifier = abstract_doc.get('documentIdentifier')
-        print(f"Found Abstract document with identifier: {doc_identifier}")
-
-        # Test document download
-        print("Step 2: Testing document download")
-        download_result = await pfw_get_document_download(app_number, doc_identifier)
-
-        if download_result.get('error'):
-            print(f"FAIL: Document download failed: {download_result.get('message', 'Unknown error')}")
-            return False
-
-        print("PASS: Document download request successful")
-
-        # Check the download result
-        proxy_url = download_result.get('proxy_download_url')
-        doc_info = download_result.get('document_info', {})
-
-        print(f"Proxy download URL: {proxy_url}")
-        print(f"Document code: {doc_info.get('document_code', 'N/A')}")
-        print(f"Document description: {doc_info.get('document_description', 'N/A')}")
-        print(f"Page count: {doc_info.get('page_count', 'N/A')}")
-
-        # Validate the response
-        has_proxy_url = bool(proxy_url)
-        has_doc_info = bool(doc_info)
-
-        print()
-        print("="*60)
-        if has_proxy_url and has_doc_info:
-            print("SUCCESS: Document download functionality is working!")
-            print("PASS: Abstract can be downloaded using document identifier")
-            print("PASS: Document Bag restoration is complete and functional")
-            print()
-            print("User can now:")
-            print(f"- Click this URL to download Abstract: {proxy_url}")
-            print("- Use pfw_get_document_download with any document identifier from documentBag")
-            print("- Access prosecution documents for analysis")
-        else:
-            print("FAIL: Document download response incomplete")
-            if not has_proxy_url:
-                print("FAIL: No proxy download URL provided")
-            if not has_doc_info:
-                print("FAIL: No document info provided")
-
-        print("="*60)
-        return has_proxy_url and has_doc_info
-
-    except Exception as e:
-        print(f"FAIL: Test failed with exception: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-async def main():
-    """Main test function"""
-    print("Document Download Test - Verifying Session 1 Completion")
-
-    success = await test_document_download()
-
-    if success:
-        print("\nFINAL VERIFICATION: Session 1 is 100% COMPLETE!")
-        print()
-        print("✅ Document Bag endpoint functionality: RESTORED")
-        print("✅ Balanced search includes both documentBag and associatedDocuments: CONFIRMED")
-        print("✅ Document download works with document identifiers: VERIFIED")
-        print()
-        print("Session 1 Objectives Met:")
-        print("- Fixed regression where Document Bag was overwritten by Associated Documents")
-        print("- Both prosecution documents (PDF) AND XML files are now available")
-        print("- pfw_get_document_download works again")
-        print()
-        print("🚀 READY FOR SESSION 2: XML Content Retrieval Implementation")
-    else:
-        print("\nSession 1 still has issues - need to investigate further")
-
-    return success
-
-if __name__ == "__main__":
-    result = asyncio.run(main())
-    sys.exit(0 if result else 1)
+    download_result = await pfw_get_document_download(_APP_NUMBER, doc_identifier)
+    assert not download_result.get("error"), (
+        f"download failed: {download_result.get('message')}"
+    )
+    assert download_result.get("proxy_download_url"), "no proxy_download_url returned"
+    assert download_result.get("document_info"), "no document_info returned"

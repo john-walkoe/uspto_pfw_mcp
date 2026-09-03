@@ -2,7 +2,6 @@
 
 import sys
 import asyncio
-sys.path.insert(0, '../src')
 
 from patent_filewrapper_mcp.main import pfw_get_guidance
 

@@ -78,7 +78,7 @@ async def document_filtering_assistant_prompt(
 ```python
 # Try patent number first (if provided)
 if patent_number:
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=patent_number,
         fields=['applicationNumberText', 'patentNumber', 'inventionTitle',
                 'applicationStatusDescription'],
@@ -91,7 +91,7 @@ if patent_number:
 
 # Fallback to application number
 elif application_number:
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=application_number,
         fields=['applicationNumberText', 'patentNumber', 'inventionTitle'],
         limit=1
@@ -99,7 +99,7 @@ elif application_number:
 
 # Fallback to fuzzy title search
 elif title_keywords:
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=title_keywords,
         fields=['applicationNumberText', 'patentNumber', 'inventionTitle'],
         limit=10
@@ -135,35 +135,35 @@ This handles identifier resolution, download link generation, and presentation a
 {'''
 ```python
 # Priority 1: Notice of Allowance (examiner reasoning)
-noa_docs = await pfw_get_application_documents(
+noa_docs = await PFW_get_application_documents(
     app_number=app_number,
     document_code='NOA',
     limit=1
 )
 
 # Priority 2: Office Actions (rejection analysis)
-office_actions = await pfw_get_application_documents(
+office_actions = await PFW_get_application_documents(
     app_number=app_number,
     document_code='CTFR|CTNF',  # Final and Non-Final rejections
     limit=5
 )
 
 # Priority 3: Examiner Citations (prior art)
-examiner_cites = await pfw_get_application_documents(
+examiner_cites = await PFW_get_application_documents(
     app_number=app_number,
     document_code='892',
     limit=1
 )
 
 # Priority 4: Claims (claim interpretation)
-claims = await pfw_get_application_documents(
+claims = await PFW_get_application_documents(
     app_number=app_number,
     document_code='CLM',
     limit=10  # Includes as-filed and amended claims
 )
 
 # Priority 5: Amendments (prosecution strategy)
-amendments = await pfw_get_application_documents(
+amendments = await PFW_get_application_documents(
     app_number=app_number,
     document_code='A...',  # All amendment types
     limit=5
@@ -175,7 +175,7 @@ for doc_response in [noa_docs, office_actions, examiner_cites, claims, amendment
     if doc_response.get('documentBag'):
         for doc in doc_response['documentBag']:
             doc_id = doc['documentIdentifier']
-            download_link = await pfw_get_document_download(
+            download_link = await PFW_get_document_download(
                 app_number=app_number,
                 document_identifier=doc_id,
                 generate_persistent_link=True
@@ -194,21 +194,21 @@ for doc_response in [noa_docs, office_actions, examiner_cites, claims, amendment
 {'''
 ```python
 # Priority 1: Abstract and Claims (patent scope)
-basic_docs = await pfw_get_application_documents(
+basic_docs = await PFW_get_application_documents(
     app_number=app_number,
     document_code='ABST|CLM',
     limit=10
 )
 
 # Priority 2: Citations (prior art landscape)
-citations = await pfw_get_application_documents(
+citations = await PFW_get_application_documents(
     app_number=app_number,
     document_code='892|1449',  # Examiner and applicant citations
     limit=3
 )
 
 # Priority 3: Notice of Allowance (prosecution outcome)
-noa = await pfw_get_application_documents(
+noa = await PFW_get_application_documents(
     app_number=app_number,
     document_code='NOA',
     limit=1
@@ -223,28 +223,28 @@ noa = await pfw_get_application_documents(
 {"#### Prior Art Research - Technical Content" if research_purpose == "prior_art" else ""}
 {'''
 ```python
-# Priority 1: XML (FREE technical content - no OCR costs)
-xml_content = await pfw_get_patent_or_application_xml(
+# Priority 1: XML (structured technical content - no OCR needed)
+xml_content = await PFW_get_patent_or_application_xml(
     app_number=app_number
 )
 # Extract: abstract, claims, description from structured XML
 
 # Priority 2: Examiner Citations (prior art cited by examiner)
-examiner_cites = await pfw_get_application_documents(
+examiner_cites = await PFW_get_application_documents(
     app_number=app_number,
     document_code='892',
     limit=1
 )
 
 # Priority 3: Applicant Citations (IDS, 1449)
-applicant_cites = await pfw_get_application_documents(
+applicant_cites = await PFW_get_application_documents(
     app_number=app_number,
     document_code='1449|IDS',
     limit=2
 )
 
 # Priority 4: Claims (for claim scope analysis)
-claims = await pfw_get_application_documents(
+claims = await PFW_get_application_documents(
     app_number=app_number,
     document_code='CLM',
     limit=5
@@ -258,21 +258,21 @@ claims = await pfw_get_application_documents(
 {'''
 ```python
 # Priority 1: Abstract (quick overview)
-abstract = await pfw_get_application_documents(
+abstract = await PFW_get_application_documents(
     app_number=app_number,
     document_code='ABST',
     limit=1
 )
 
 # Priority 2: Claims (patent scope)
-claims = await pfw_get_application_documents(
+claims = await PFW_get_application_documents(
     app_number=app_number,
     document_code='CLM',
     limit=3  # As-filed and final claims
 )
 
 # Priority 3: NOA (prosecution quality indicator)
-noa = await pfw_get_application_documents(
+noa = await PFW_get_application_documents(
     app_number=app_number,
     document_code='NOA',
     limit=1
@@ -323,7 +323,7 @@ for doc_code in priority_order:
 # For documents requiring text analysis
 for doc in litigation_package:
     # Extract text content with auto PyPDF2/OCR fallback
-    content = await pfw_get_document_content_with_ocr(
+    content = await PFW_get_document_content_with_ocr(
         app_number=app_number,
         document_identifier=doc['document_id'],
         max_pages=50  # Limit for large documents
@@ -333,7 +333,7 @@ for doc in litigation_package:
     print(f"Extracted {{len(content['text'])}} characters from {{doc['type']}}")
 ```
 
-**Cost Note:** PyPDF2 is free (80%+ success rate), Mistral OCR is $0.001-0.003/page (fallback)
+**Extraction Note:** PyPDF2 handles text-based PDFs (80%+ success rate); Mistral OCR is the fallback for scanned documents
 
 ---
 
@@ -359,7 +359,7 @@ for doc in litigation_package:
 
 **Prior Art Research:**
 - Use `prior_art_analysis_CITATION` for enhanced examiner citation analysis (2017+)
-- Use `pfw_get_patent_or_application_xml` for FREE technical content
+- Use `PFW_get_patent_or_application_xml` for FREE technical content
 
 **Portfolio Review:**
 - Use `inventor_portfolio_analysis` for inventor-level insights

@@ -17,6 +17,74 @@ from ..shared.safe_logger import get_safe_logger
 logger = get_safe_logger(__name__)
 
 
+#: Placeholder strings that should be treated as "no key set" rather than
+#: passed to Mistral as a credential. Overridable/extendable via
+#: MISTRAL_PLACEHOLDER_PATTERNS (comma-separated).
+#:
+#: This list is the UNION of two that had already drifted apart (audit D-2):
+#: api/enhanced_client.py carried its own copy with `change_me`/`replace_me`
+#: and OCRService's carried `temp_key`/`test_key`/`example_key` and four more.
+#: EnhancedPatentClient.__init__ validated with its list and handed the
+#: survivor to OCRService, which took the `api_key is not None` branch, so six
+#: of the service's patterns never ran in the server path. One owner now.
+_PLACEHOLDER_PATTERNS = (
+    "your_mistral_api_key_here",
+    "your_key_here",
+    "your_api_key_here",
+    "placeholder",
+    "optional",
+    "change_me",
+    "replace_me",
+    "mistral_api_key",
+    "enter_your_key",
+    "add_your_key",
+    "your_mistral_key",
+    "api_key_here",
+    "replace_with_your_key",
+    "insert_key_here",
+    "temp_key",
+    "test_key",
+    "example_key",
+)
+
+#: Anything shorter than this is a placeholder, not a credential.
+_MIN_KEY_LENGTH = 10
+
+
+def validate_mistral_api_key(raw_key: Optional[str]) -> Optional[str]:
+    """Return the key, or None when it is absent or a known placeholder.
+
+    Prevents placeholder text being used as a real API key, which would
+    produce an authentication error instead of the "no OCR configured"
+    guidance the tier waterfall is written to give.
+    """
+    if not raw_key:
+        return None
+
+    env_patterns = os.getenv("MISTRAL_PLACEHOLDER_PATTERNS", "")
+    patterns = list(_PLACEHOLDER_PATTERNS)
+    if env_patterns:
+        patterns.extend(p.strip() for p in env_patterns.split(",") if p.strip())
+
+    normalized_key = raw_key.lower().strip()
+    for pattern in patterns:
+        if pattern in normalized_key:
+            logger.info(
+                f"Detected placeholder pattern '{pattern}' in MISTRAL_API_KEY. "
+                "Treating as missing key."
+            )
+            return None
+
+    if len(raw_key.strip()) < _MIN_KEY_LENGTH:
+        logger.info(
+            f"Detected suspiciously short API key ({len(raw_key)} chars). "
+            "Treating as missing key."
+        )
+        return None
+
+    return raw_key.strip()
+
+
 class OCRService:
     """Service for handling OCR operations with Mistral API"""
 
@@ -66,58 +134,83 @@ class OCRService:
         self.ocr_rate_limit = 10  # Max OCR calls per minute
         self.ocr_window = 60  # Time window in seconds
 
+        # Cumulative daily PAGE budget. The per-minute call limit caps the
+        # burst RATE but not the total: 10 calls/minute at 50 pages each is
+        # 720,000 pages a day, and this is metered spend (audit M-14). Pages
+        # are the billed unit, so the budget is in pages, not calls.
+        self.ocr_daily_page_budget = int(
+            os.getenv("MISTRAL_OCR_DAILY_PAGE_BUDGET", "2000")
+        )
+        self._ocr_pages_today = 0
+        self._ocr_budget_day = None
+
     def _validate_mistral_api_key(self, raw_key: Optional[str]) -> Optional[str]:
+        """Bound alias for `validate_mistral_api_key` (audit D-2)."""
+        return validate_mistral_api_key(raw_key)
+
+    def _check_ocr_daily_budget(self, request_id: str, pages: int) -> None:
+        """Refuse an OCR call that would exceed today's page budget.
+
+        Checked BEFORE the upload, so a refusal costs nothing. Set
+        MISTRAL_OCR_DAILY_PAGE_BUDGET to 0 or below to disable.
+
+        Raises:
+            OCRRateLimitError: carrying seconds until the budget resets.
         """
-        Validate Mistral API key and detect common placeholder patterns.
+        if self.ocr_daily_page_budget <= 0:
+            return
 
-        Args:
-            raw_key: Raw API key from environment variable
+        self._roll_budget_day()
 
-        Returns:
-            Valid API key or None if invalid/placeholder
+        if self._ocr_pages_today + pages > self.ocr_daily_page_budget:
+            seconds_left = 86400 - (int(time.time()) % 86400)
+            logger.warning(
+                f"[{request_id}] OCR daily page budget reached: "
+                f"{self._ocr_pages_today}/{self.ocr_daily_page_budget} pages"
+            )
+            raise OCRRateLimitError(
+                f"Daily OCR page budget reached "
+                f"({self._ocr_pages_today}/{self.ocr_daily_page_budget} pages). "
+                f"Resets in {seconds_left // 3600}h. Raise "
+                f"MISTRAL_OCR_DAILY_PAGE_BUDGET to change it.",
+                retry_after_seconds=seconds_left,
+                request_id=request_id,
+            )
+
+    def _roll_budget_day(self) -> None:
+        """Reset the counter when the UTC day has turned over."""
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        if self._ocr_budget_day != today:
+            self._ocr_budget_day = today
+            self._ocr_pages_today = 0
+
+    def _record_ocr_pages(self, pages: int) -> None:
+        """Charge pages against today's budget once they have been billed.
+
+        Rolls the day FIRST: otherwise a charge recorded before the day was
+        established was wiped by the next check's roll, so pages billed by the
+        first call of a process went uncounted.
         """
-        if not raw_key:
-            return None
+        self._roll_budget_day()
+        self._ocr_pages_today += max(0, pages)
 
-        # Common placeholder patterns that should be treated as missing.
-        # Allow override via MISTRAL_PLACEHOLDER_PATTERNS env var (comma-separated).
-        # The default covers common mistake patterns; additional patterns can be added
-        # without a code change.
-        env_patterns = os.getenv("MISTRAL_PLACEHOLDER_PATTERNS", "")
-        placeholder_patterns = [
-            "your_mistral_api_key_here",
-            "your_key_here",
-            "your_api_key_here",
-            "placeholder",
-            "optional",
-            "mistral_api_key",
-            "enter_your_key",
-            "add_your_key",
-            "your_mistral_key",
-            "api_key_here",
-            "replace_with_your_key",
-            "insert_key_here",
-            "temp_key",
-            "test_key",
-            "example_key",
-        ]
-        if env_patterns:
-            placeholder_patterns.extend([p.strip() for p in env_patterns.split(",") if p.strip()])
+    async def _delete_uploaded_file(self, client, headers, file_id, request_id) -> None:
+        """Delete the PDF we uploaded to Mistral.
 
-        normalized_key = raw_key.lower().strip()
-
-        # Check against placeholder patterns
-        for pattern in placeholder_patterns:
-            if pattern in normalized_key:
-                logger.info(f"Detected placeholder pattern '{pattern}' in MISTRAL_API_KEY. Treating as missing key.")
-                return None
-
-        # Additional check for very short keys that are likely placeholders
-        if len(raw_key.strip()) < 10:
-            logger.info(f"Detected suspiciously short API key ({len(raw_key)} chars). Treating as missing key.")
-            return None
-
-        return raw_key.strip()
+        Every OCR'd document used to accumulate in the account forever: an
+        uncontrolled retention surface for client work product and a cost that
+        grows with usage (audit resilience F-8). Best effort — a cleanup
+        failure must not fail an extraction that already succeeded.
+        """
+        try:
+            await client.delete(
+                f"{self.mistral_base_url}/files/{file_id}", headers=headers
+            )
+        except Exception as e:
+            logger.warning(
+                f"[{request_id}] Uploaded-file cleanup failed "
+                f"({type(e).__name__}); the file remains in the account"
+            )
 
     def _check_ocr_rate_limit(self, request_id: str) -> None:
         """
@@ -150,7 +243,8 @@ class OCRService:
         logger.info(f"[{request_id}] OCR rate limit check passed. {len(self.ocr_calls)}/{self.ocr_rate_limit} calls in window")
 
     async def extract_document_content(self, pdf_content: bytes, page_count: int,
-                                     app_number: str, document_identifier: str) -> Dict[str, Any]:
+                                     app_number: str, document_identifier: str,
+                                     page_offset: int = 0) -> Dict[str, Any]:
         """
         Extract document content using Mistral OCR API
 
@@ -159,6 +253,13 @@ class OCRService:
             page_count: Number of pages in the document
             app_number: Patent application number
             document_identifier: Document identifier
+            page_offset: Number of document pages that precede this slice.
+                `pdf_content` is the WINDOW when page_from/page_to were used,
+                so Mistral's own page index restarts at 0 and the headers would
+                read `=== PAGE 1 ===` for document page 51 while `page_window`
+                said 51-53. The offset makes `=== PAGE N ===` the true document
+                page on this branch, as it already is on the PyPDF2 branch
+                (api/enhanced_client.py::extract_with_pypdf2).
 
         Returns:
             Dictionary containing OCR-extracted content and metadata
@@ -173,8 +274,12 @@ class OCRService:
                     "Set it with: set MISTRAL_API_KEY=your_key_here (Windows) or export MISTRAL_API_KEY=your_key_here (Linux/Mac)"
                 )
 
-            # Check OCR rate limit before proceeding
+            # Rate limit AND cumulative budget, both before anything is
+            # uploaded, so a refusal costs nothing.
             self._check_ocr_rate_limit(request_id)
+            self._check_ocr_daily_budget(
+                request_id, min(page_count, self.ocr_max_pages)
+            )
 
             logger.info(f"[{request_id}] Starting OCR extraction for {app_number}/{document_identifier} ({page_count} pages)")
 
@@ -191,7 +296,19 @@ class OCRService:
                 "purpose": "ocr"
             }
 
-            client_kwargs = {"timeout": self.ocr_timeout}
+            # Split budgets. One shared 30s timeout covered both the multipart
+            # upload (size-bound) and the OCR of up to MISTRAL_OCR_MAX_PAGES
+            # pages (page-bound), and a 50-page OCR does not reliably finish in
+            # 30s. When it did not, the upload had happened and Mistral had
+            # already done and BILLED the work, and the timeout fell into a
+            # catch-all that reported "appears to be a scanned image"
+            # (audit resilience F-1).
+            pages_to_ocr = min(page_count, self.ocr_max_pages)
+            effective_timeout = max(
+                self.ocr_timeout,
+                float(os.getenv("MISTRAL_OCR_SECONDS_PER_PAGE", "6")) * pages_to_ocr,
+            )
+            client_kwargs = {"timeout": httpx.Timeout(effective_timeout, connect=10.0)}
             if self.ocr_http_limits is not None:
                 client_kwargs["limits"] = self.ocr_http_limits
             async with httpx.AsyncClient(**client_kwargs) as client:
@@ -208,67 +325,21 @@ class OCRService:
                 if not file_id:
                     return format_error_response("Failed to upload file to Mistral OCR service")
 
-                # Step 2: Process with OCR
-                ocr_payload = {
-                    "model": self.mistral_ocr_model,
-                    "document": {
-                        "type": "file",
-                        "file_id": file_id
-                    },
-                    # Cost-control page cap (truncation surfaced in the result)
-                    "pages": list(range(min(page_count, self.ocr_max_pages))),
-                    "include_image_base64": False  # Save tokens
-                }
-
-                ocr_response = await client.post(
-                    f"{self.mistral_base_url}/ocr",
-                    headers={
-                        "Authorization": f"Bearer {self.mistral_api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json=ocr_payload
-                )
-                ocr_response.raise_for_status()
-                ocr_data = ocr_response.json()
-
-                # Extract content from OCR response
-                pages_processed = ocr_data.get("usage_info", {}).get("pages_processed", 0)
-                estimated_cost = pages_processed * 0.001  # $1 per 1000 pages
-
-                # Combine all page content
-                extracted_content = []
-                for page in ocr_data.get("pages", []):
-                    page_markdown = page.get("markdown", "")
-                    if page_markdown.strip():
-                        extracted_content.append(f"=== PAGE {page.get('index', 0) + 1} ===\n{page_markdown}")
-
-                full_content = "\n\n".join(extracted_content)
-
-                result = {
-                    "success": True,
-                    "application_number": app_number,
-                    "document_identifier": document_identifier,
-                    "page_count": page_count,
-                    "pages_processed": pages_processed,
-                    "extracted_content": full_content,
-                    "structured_output": "markdown",
-                    "processing_cost_usd": round(estimated_cost, 4),
-                    "cost_breakdown": f"${estimated_cost:.4f} for {pages_processed} pages at $0.001/page",
-                    "ocr_model": ocr_data.get("model", self.mistral_ocr_model),
-                    "file_size_bytes": len(pdf_content),
-                    "document_annotation": ocr_data.get("document_annotation", ""),
-                    "usage_info": ocr_data.get("usage_info", {}),
-                    "note": "Content extracted using Mistral OCR - supports scanned documents, formulas, and complex layouts"
-                }
-                # Surface silent truncation from the cost-control cap (audit F48)
-                pages_truncated = max(0, page_count - self.ocr_max_pages)
-                if pages_truncated > 0:
-                    result["pages_truncated"] = pages_truncated
-                    result["truncation_note"] = (
-                        f"Only the first {self.ocr_max_pages} of {page_count} pages were "
-                        f"OCR'd (cost-control cap; raise MISTRAL_OCR_MAX_PAGES to change)."
+                try:
+                    return await self._run_ocr(
+                        client=client,
+                        file_id=file_id,
+                        pdf_content=pdf_content,
+                        page_count=page_count,
+                        page_offset=page_offset,
+                        app_number=app_number,
+                        document_identifier=document_identifier,
+                        request_id=request_id,
                     )
-                return result
+                finally:
+                    await self._delete_uploaded_file(
+                        client, mistral_headers, file_id, request_id
+                    )
 
         except OCRRateLimitError as e:
             logger.warning(f"[{request_id}] OCR rate limit exceeded: {e.message}")
@@ -277,8 +348,96 @@ class OCRService:
             if e.response.status_code == 401:
                 return format_error_response("Mistral API authentication failed - check MISTRAL_API_KEY")
             elif e.response.status_code == 402:
-                return format_error_response("Mistral API payment required - insufficient credits")
+                logger.warning(f"Mistral API returned 402 (payment required) for {app_number}/{document_identifier}")
+                return format_error_response("OCR capacity limit reached; try again later")
             else:
                 return format_error_response(f"Mistral API error {e.response.status_code}: {e.response.text}")
         except Exception as e:
-            return format_error_response(f"Failed to extract document content with Mistral OCR: {str(e)}")
+            # Log server-side; the caller gets a sanitized message. The
+            # exception text used to be returned verbatim with no log line,
+            # so the operator saw nothing and the caller saw whatever the
+            # exception embedded (URLs, paths, provider text).
+            logger.exception(f"OCR extraction failed ({type(e).__name__})")
+            return format_error_response(
+                "Failed to extract document content", exception=e
+            )
+
+    async def _run_ocr(
+        self, *, client, file_id, pdf_content, page_count, page_offset,
+        app_number, document_identifier, request_id,
+    ) -> Dict[str, Any]:
+        """OCR an already-uploaded file and build the result envelope.
+
+        Split out of extract_document_content so the upload has a `finally`
+        that deletes the file on every path, including the error and
+        cancellation ones (audit resilience F-8).
+        """
+        # Step 2: Process with OCR
+        ocr_payload = {
+            "model": self.mistral_ocr_model,
+            "document": {
+                "type": "file",
+                "file_id": file_id
+            },
+            # Cost-control page cap (truncation surfaced in the result)
+            "pages": list(range(min(page_count, self.ocr_max_pages))),
+            "include_image_base64": False  # Save tokens
+        }
+
+        ocr_response = await client.post(
+            f"{self.mistral_base_url}/ocr",
+            headers={
+                "Authorization": f"Bearer {self.mistral_api_key}",
+                "Content-Type": "application/json"
+            },
+            json=ocr_payload
+        )
+        ocr_response.raise_for_status()
+        ocr_data = ocr_response.json()
+
+        # Extract content from OCR response
+        pages_processed = ocr_data.get("usage_info", {}).get("pages_processed", 0)
+        # Internal cost accounting (operator-facing log only — never
+        # surfaced in tool responses)
+        estimated_cost = pages_processed * 0.001  # $1 per 1000 pages
+        self._record_ocr_pages(pages_processed)
+        logger.info(
+            f"[{request_id}] OCR spend: ${estimated_cost:.4f} for {pages_processed} pages "
+            f"({self._ocr_pages_today}/{self.ocr_daily_page_budget} today)"
+        )
+
+        # Combine all page content
+        extracted_content = []
+        for page in ocr_data.get("pages", []):
+            page_markdown = page.get("markdown", "")
+            if page_markdown.strip():
+                page_number = page.get('index', 0) + 1 + page_offset
+                extracted_content.append(f"=== PAGE {page_number} ===\n{page_markdown}")
+
+        full_content = "\n\n".join(extracted_content)
+
+        result = {
+            "success": True,
+            "application_number": app_number,
+            "document_identifier": document_identifier,
+            "page_count": page_count,
+            "page_offset": page_offset,
+            "pages_processed": pages_processed,
+            "extracted_content": full_content,
+            "structured_output": "markdown",
+            "ocr_model": ocr_data.get("model", self.mistral_ocr_model),
+            "file_size_bytes": len(pdf_content),
+            "document_annotation": ocr_data.get("document_annotation", ""),
+            "usage_info": ocr_data.get("usage_info", {}),
+            "note": "Content extracted using Mistral OCR - supports scanned documents, formulas, and complex layouts"
+        }
+        # Surface silent truncation from the page cap (audit F48)
+        pages_truncated = max(0, page_count - self.ocr_max_pages)
+        if pages_truncated > 0:
+            result["pages_truncated"] = pages_truncated
+            result["truncation_note"] = (
+                f"Only the first {self.ocr_max_pages} of {page_count} pages were "
+                f"OCR'd (server page limit)."
+            )
+        return result
+

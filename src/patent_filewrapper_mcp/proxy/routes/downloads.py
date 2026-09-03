@@ -30,6 +30,27 @@ logger = get_safe_logger(__name__)
 router = APIRouter()
 
 
+def _live_uspto_api_key():
+    """PFW's own USPTO API key, read at download time.
+
+    Registration rows used to carry an encrypted copy of the key; they no
+    longer do, so the download path resolves it the same way registration
+    does: secure store first, USPTO_API_KEY second.
+    """
+    import os
+
+    try:
+        from ...shared_secure_storage import get_uspto_api_key
+        key = get_uspto_api_key()
+    except Exception as e:
+        logger.warning(
+            f"Secure storage unavailable ({type(e).__name__}); "
+            "falling back to USPTO_API_KEY"
+        )
+        key = None
+    return key or os.getenv("USPTO_API_KEY")
+
+
 async def _stream_registered_document(
     source: str,
     primary_id: str,
@@ -69,7 +90,16 @@ async def _stream_registered_document(
             logger.error(f"[{request_id}] Stored {source} download_url failed host validation")
             raise HTTPException(status_code=502, detail="Stored download URL is not a uspto.gov endpoint")
 
-        api_key = doc_metadata['api_key']
+        # The key is resolved LIVE, not read out of the registration row: a
+        # long-lived copy of the fleet's shared ODP credential does not belong
+        # in a SQLite file that outlives the download it was registered for.
+        api_key = _live_uspto_api_key()
+        if not api_key:
+            logger.error(f"[{request_id}] No USPTO API key available for {source} download")
+            raise HTTPException(
+                status_code=500,
+                detail="Configuration error: No USPTO API key available"
+            )
         enhanced_filename = doc_metadata.get('enhanced_filename')
         filename = enhanced_filename or fallback_filename
         logger.info(f"[{request_id}] Streaming {source} document: {primary_id}/{document_identifier} as {filename}")
@@ -125,10 +155,10 @@ async def _stream_registered_document(
             status_code=502,
             detail=f"USPTO API error for {source} document: {e.response.status_code}"
         )
-    except Exception as e:
+    except Exception:
         security_logger.log_download_access(primary_id, document_identifier, client_ip, False, request_id)
-        logger.error(f"[{request_id}] {source} proxy download failed for {primary_id}/{document_identifier}: {e}")
-        raise HTTPException(status_code=500, detail=f"{source} download failed: {str(e)}")
+        logger.exception(f"[{request_id}] {source} proxy download failed for {primary_id}/{document_identifier}")
+        raise HTTPException(status_code=500, detail=f"{source} download failed")
 
 
 async def _download_fpd_document(petition_id: str, document_identifier: str, client_ip: str, request_id: str):
@@ -192,31 +222,122 @@ async def download_document(
         document_identifier: Document ID from documentBag (e.g., 'L7AJVPB2GREENX5')
         request: FastAPI request object (for client IP)
     """
+    client_ip = request.client.host if request.client else "unknown"
+    request_id = generate_request_id()
+
+    # Apply rate limiting. Charged HERE only: the persistent-link resolver
+    # charges it once itself and then calls _dispatch_download directly, so
+    # the advertised 5-per-10s is 5, not 2 (audit M-21).
+    if not rate_limiter.is_allowed(client_ip):
+        import time
+        remaining_time = max(1, int(rate_limiter.get_reset_time(client_ip) - time.time()))
+
+        # Log rate limit violation
+        security_logger.log_rate_limit_violation(client_ip, f"/download/{app_number}/{document_identifier}", request_id)
+
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": True,
+                "message": "Rate limit exceeded. USPTO allows 5 downloads per 10 seconds.",
+                "retry_after": remaining_time,
+                "remaining_requests": 0,
+                "request_id": request_id
+            },
+            headers={"Retry-After": str(int(remaining_time))}
+        )
+
+    return await _dispatch_download(
+        app_number, document_identifier, request, client_ip, request_id
+    )
+
+
+def _upstream_status(docs_result: dict) -> int:
+    """Map a client error envelope onto an HTTP status for the browser.
+
+    get_documents returns the same envelope shape for a USPTO timeout (408),
+    an auth failure (401), a circuit-breaker-open 503 and a genuinely unknown
+    application. Reporting all four as 404 told a user retrying during a USPTO
+    outage that the document does not exist (audit exception-flow F-2).
+    """
     try:
-        # Get client IP for rate limiting
-        client_ip = request.client.host if request.client else "unknown"
-        request_id = generate_request_id()
+        upstream = int(docs_result.get('status_code', 502))
+    except (TypeError, ValueError):
+        upstream = 502
+    if upstream == 404:
+        return 404
+    if upstream in (429, 503):
+        return 503
+    return 502
 
-        # Apply rate limiting
-        if not rate_limiter.is_allowed(client_ip):
-            import time
-            remaining_time = max(1, int(rate_limiter.get_reset_time(client_ip) - time.time()))
 
-            # Log rate limit violation
-            security_logger.log_rate_limit_violation(client_ip, f"/download/{app_number}/{document_identifier}", request_id)
+def _select_pdf_option(documents: list, document_identifier: str) -> dict:
+    """The document's PDF download option, or the right 404 explaining which
+    step failed."""
+    target_doc = next(
+        (d for d in documents if d.get('documentIdentifier') == document_identifier),
+        None,
+    )
+    if not target_doc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document with identifier '{document_identifier}' not found"
+        )
 
-            return JSONResponse(
-                status_code=429,
-                content={
-                    "error": True,
-                    "message": "Rate limit exceeded. USPTO allows 5 downloads per 10 seconds.",
-                    "retry_after": remaining_time,
-                    "remaining_requests": 0,
-                    "request_id": request_id
-                },
-                headers={"Retry-After": str(int(remaining_time))}
-            )
+    pdf_option = next(
+        (o for o in target_doc.get('downloadOptionBag', [])
+         if o.get('mimeTypeIdentifier') == 'PDF'),
+        None,
+    )
+    if not pdf_option:
+        raise HTTPException(status_code=404, detail="PDF not available for this document")
+    if not pdf_option.get('downloadUrl'):
+        raise HTTPException(status_code=404, detail="Download URL not available")
 
+    return target_doc, pdf_option
+
+
+async def _pfw_download_filename(app_number: str, doc_code: str, document_identifier: str) -> str:
+    """Title-and-patent-number filename, falling back to the flat form.
+
+    Best effort by design: the metadata lookup is a convenience, so a failure
+    degrades the filename rather than the download.
+    """
+    from ...api.helpers import extract_patent_number, generate_safe_filename
+
+    try:
+        search_result = await _server.api_client.search_applications(
+            f"applicationNumberText:{app_number}",
+            limit=1,
+            offset=0,
+            fields=["applicationMetaData.inventionTitle", "applicationMetaData.patentNumber"]
+        )
+        if search_result.get('success'):
+            apps = search_result.get('patentFileWrapperDataBag') or search_result.get('applications')
+            if apps:
+                app_data = apps[0]
+                invention_title = app_data.get('applicationMetaData', {}).get('inventionTitle')
+                if invention_title:
+                    return generate_safe_filename(
+                        app_number, invention_title, doc_code,
+                        extract_patent_number(app_data),
+                    )
+    except Exception as e:
+        logger.warning(f"Could not fetch application metadata for {app_number}: {e}")
+
+    return f"{app_number}_{document_identifier}_{doc_code}.pdf"
+
+
+async def _dispatch_download(
+    app_number: str,
+    document_identifier: str,
+    request: Request,
+    client_ip: str,
+    request_id: str,
+):
+    """Route a download to the PFW, FPD or PTAB path. NOT rate limited: the
+    caller owns that, so one request is charged exactly once (audit M-21)."""
+    try:
         # Check if this is an FPD document (UUID format)
         fpd_store = get_fpd_store()
         if fpd_store.is_fpd_petition_id(app_number):
@@ -244,7 +365,7 @@ async def download_document(
                 str(e),
                 request_id
             )
-            raise HTTPException(status_code=400, detail=f"Invalid application number: {e}")
+            raise HTTPException(status_code=400, detail="Invalid application number")
 
         # Get document metadata and download URL
         logger.info(f"Proxying download for app {app_number}, doc {document_identifier}, IP {client_ip}")
@@ -252,72 +373,23 @@ async def download_document(
         # Get documents to find the specific document
         docs_result = await _server.api_client.get_documents(app_number)
         if docs_result.get('error'):
-            raise HTTPException(status_code=404, detail=docs_result.get('message', 'Document not found'))
-
-        documents = docs_result.get('documentBag', [])
-
-        # Find the target document
-        target_doc = None
-        for doc in documents:
-            if doc.get('documentIdentifier') == document_identifier:
-                target_doc = doc
-                break
-
-        if not target_doc:
             raise HTTPException(
-                status_code=404,
-                detail=f"Document with identifier '{document_identifier}' not found"
+                status_code=_upstream_status(docs_result),
+                detail=docs_result.get('message', 'Document unavailable'),
             )
 
-        # Find PDF download option
-        download_options = target_doc.get('downloadOptionBag', [])
-        pdf_option = None
-
-        for option in download_options:
-            if option.get('mimeTypeIdentifier') == 'PDF':
-                pdf_option = option
-                break
-
-        if not pdf_option:
-            raise HTTPException(status_code=404, detail="PDF not available for this document")
-
-        download_url = pdf_option.get('downloadUrl')
-        if not download_url:
-            raise HTTPException(status_code=404, detail="Download URL not available")
+        target_doc, pdf_option = _select_pdf_option(
+            docs_result.get('documentBag', []), document_identifier
+        )
+        download_url = pdf_option['downloadUrl']
 
         # Get document metadata for response headers
         doc_code = target_doc.get('documentCode', 'UNKNOWN')
         page_count = pdf_option.get('pageTotalQuantity', 0)
 
-        # Get invention title and patent number for better filename
-        invention_title = None
-        patent_number = None
-        try:
-            # Search for the application to get the title and patent number info
-            search_result = await _server.api_client.search_applications(
-                f"applicationNumberText:{app_number}",
-                limit=1,
-                offset=0,
-                fields=["applicationMetaData.inventionTitle", "applicationMetaData.patentNumber"]
-            )
-            if search_result.get('success'):
-                apps = search_result.get('patentFileWrapperDataBag') or search_result.get('applications')
-                if apps:
-                    app_data = apps[0]
-                    invention_title = app_data.get('applicationMetaData', {}).get('inventionTitle')
-                    # Extract patent number using helper function
-                    from ...api.helpers import extract_patent_number
-                    patent_number = extract_patent_number(app_data)
-        except Exception as e:
-            logger.warning(f"Could not fetch application metadata for {app_number}: {e}")
-
-        # Generate filename using invention title and patent number if available
-        if invention_title:
-            from ...api.helpers import generate_safe_filename
-            filename = generate_safe_filename(app_number, invention_title, doc_code, patent_number)
-        else:
-            # Fallback to old format if no title available
-            filename = f"{app_number}_{document_identifier}_{doc_code}.pdf"
+        filename = await _pfw_download_filename(
+            app_number, doc_code, document_identifier
+        )
 
         # Stream the PDF from USPTO API
         # (magic-byte verified before response headers go out — audit M4)
@@ -374,7 +446,7 @@ async def download_document(
         # Log failed download access
         security_logger.log_download_access(app_number, document_identifier, client_ip, False, request_id)
         logger.error(f"Proxy download failed for {app_number}/{document_identifier}: {e}")
-        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Download failed")
 
 
 @router.get("/document/persistent/{link_hash}")
@@ -435,12 +507,39 @@ async def download_document_persistent(link_hash: str, request: Request):
 
         logger.info(f"Resolving persistent link {link_hash[:8]}... for app {app_number}, doc {document_identifier} (access #{link_info['access_count']})")
 
-        # Continue with standard download logic
-        return await download_document(app_number, document_identifier, request)
+        # Continue with standard download logic. _dispatch_download, NOT
+        # download_document: the limiter was already charged above, and
+        # charging it twice made the advertised 5-per-10s effectively 2 on
+        # this path (audit M-21).
+        return await _dispatch_download(
+            app_number, document_identifier, request, client_ip, request_id
+        )
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Persistent link download failed for {link_hash[:8]}...: {e}")
-        raise HTTPException(status_code=500, detail=f"Persistent download failed: {str(e)}")
+    except Exception:
+        logger.exception(f"Persistent link download failed for {link_hash[:8]}...")
+        raise HTTPException(status_code=500, detail="Persistent download failed")
+
+
+@router.delete(
+    "/document/persistent/{link_hash}",
+    dependencies=[Depends(_check_proxy_token)],
+)
+async def revoke_document_persistent(link_hash: str):
+    """Revoke a persistent link.
+
+    The GET on this path is deliberately tokenless because browsers cannot
+    send X-Proxy-Token on navigation (Lesson 43). Revocation is an operator
+    action, not a navigation, so it IS token-gated — otherwise anyone holding
+    a leaked hash could also delete it and the audit trail with it.
+    """
+    from ..secure_link_cache import get_link_cache
+
+    revoked = get_link_cache().revoke_link(link_hash)
+    return {
+        "success": True,
+        "revoked": revoked,
+        "link_hash_prefix": f"{link_hash[:8]}...",
+    }
 

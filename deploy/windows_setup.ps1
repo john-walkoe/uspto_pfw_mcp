@@ -815,19 +815,23 @@ Write-Host "  [OK] Storage Architecture: Single-key-per-file (shared across USPT
 Write-Host "  [OK] Proxy Port: 8080 (centralized proxy server)" -ForegroundColor Green
 Write-Host "  [OK] Installation Directory: $CurrentDir" -ForegroundColor Green
 Write-Host ""
-Write-Host "Available Tools (12):" -ForegroundColor Cyan
-Write-Host "  - pfw_search_applications_minimal (ultra-fast discovery)" -ForegroundColor White
-Write-Host "  - pfw_search_applications_balanced (detailed analysis)" -ForegroundColor White
-Write-Host "  - pfw_search_by_assignee (patent portfolio analysis)" -ForegroundColor White
-Write-Host "  - pfw_search_by_inventor (inventor analysis)" -ForegroundColor White
-Write-Host "  - pfw_search_by_art_unit (art unit quality)" -ForegroundColor White
-Write-Host "  - pfw_search_by_application_type (type analysis)" -ForegroundColor White
-Write-Host "  - pfw_get_application_details (full details)" -ForegroundColor White
-Write-Host "  - pfw_get_application_documents (document access)" -ForegroundColor White
-Write-Host "  - pfw_get_transaction_history (prosecution history)" -ForegroundColor White
-Write-Host "  - pfw_get_document_download (PDF downloads)" -ForegroundColor White
-Write-Host "  - pfw_get_enhanced_search (multi-field advanced search)" -ForegroundColor White
-Write-Host "  - pfw_get_tool_reflections (workflow guidance)" -ForegroundColor White
+Write-Host "Available Tools (16, plus pfw_manage_users on OAuth deployments):" -ForegroundColor Cyan
+Write-Host "  - PFW_search_applications_minimal (ultra-fast discovery)" -ForegroundColor White
+Write-Host "  - PFW_search_applications_balanced (detailed analysis)" -ForegroundColor White
+Write-Host "  - PFW_search_applications (custom field search)" -ForegroundColor White
+Write-Host "  - PFW_search_inventor_minimal (ultra-fast inventor search)" -ForegroundColor White
+Write-Host "  - PFW_search_inventor_balanced (detailed inventor search)" -ForegroundColor White
+Write-Host "  - PFW_search_inventor (custom inventor search)" -ForegroundColor White
+Write-Host "  - PFW_get_application_documents (document access)" -ForegroundColor White
+Write-Host "  - PFW_get_patent_or_application_xml (claims and abstract)" -ForegroundColor White
+Write-Host "  - PFW_get_granted_patent_documents_download (granted patent package)" -ForegroundColor White
+Write-Host "  - PFW_get_oa_rejections (rejection triage)" -ForegroundColor White
+Write-Host "  - PFW_get_oa_text (office action full text)" -ForegroundColor White
+Write-Host "  - PFW_get_document_content_with_ocr (text extraction)" -ForegroundColor White
+Write-Host "  - PFW_get_document_download (PDF downloads)" -ForegroundColor White
+Write-Host "  - PFW_get_family (continuity and foreign priority)" -ForegroundColor White
+Write-Host "  - PFW_get_term_adjustment (patent term adjustment)" -ForegroundColor White
+Write-Host "  - PFW_get_guidance (workflow guidance)" -ForegroundColor White
 Write-Host ""
 Write-Host "Centralized Proxy Server:" -ForegroundColor Cyan
 Write-Host "  Start with: uv run pfw-proxy" -ForegroundColor Yellow
@@ -835,8 +839,8 @@ Write-Host "  Port: 8080 (provides enhanced features for all USPTO MCPs)" -Foreg
 Write-Host ""
 Write-Host "Key Management:" -ForegroundColor Cyan
 Write-Host "  Manage keys: ./deploy/manage_api_keys.ps1" -ForegroundColor Yellow
-Write-Host "  Test keys:   uv run python tests/test_unified_key_management.py" -ForegroundColor Yellow
+Write-Host "  Test keys:   ./deploy/manage_api_keys.ps1 (option [4] Test API key functionality)" -ForegroundColor Yellow
 Write-Host "  Cross-MCP:   Keys shared with FPD, PTAB, and Citations MCPs" -ForegroundColor White
 Write-Host ""
-Write-Host "Test with: pfw_search_applications_minimal" -ForegroundColor Yellow
-Write-Host "Learn workflows: pfw_get_tool_reflections" -ForegroundColor Yellow
+Write-Host "Test with: PFW_search_applications_minimal" -ForegroundColor Yellow
+Write-Host "Learn workflows: PFW_get_guidance" -ForegroundColor Yellow

@@ -2,12 +2,20 @@
 
 import os
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
-from .config.log_config import setup_logging
+from fastmcp.apps import AppConfig, ResourceCSP
+
+# FastMCP 4 / mcp-types 2 dropped extra="allow" on ToolAnnotations, which
+# silently strips the `defer_loading` flag off every tool. Must run before any
+# tool is registered. See fastmcp_compat for the full rationale.
+from .fastmcp_compat import apply as _apply_fastmcp_compat
+
+_apply_fastmcp_compat()
+
+from .config.log_config import setup_logging  # noqa: E402
 # Removed: from .config.tool_reflections import get_all_tool_reflections, get_tool_reflection
-# These functions have been migrated to pfw_get_guidance() for context efficiency
-from .util.package_manager import PackageManager
-from .shared.safe_logger import get_safe_logger
+# These functions have been migrated to PFW_get_guidance() for context efficiency
+from .util.package_manager import PackageManager  # noqa: E402
+from .shared.safe_logger import get_safe_logger  # noqa: E402
 
 # Set up logging with file-based rotation and sink-level sanitization.
 # Content-minimization posture: flow metadata only (see config/log_config.py).
@@ -17,25 +25,40 @@ logger = get_safe_logger(__name__)
 # Server instructions for Claude Code tool search optimization
 # This guides Claude's MCPSearch tool to discover the right tools progressively
 SERVER_INSTRUCTIONS = """
-PFW MCP provides USPTO Patent File Wrapper data through 15 tools.
+PFW MCP provides USPTO Patent File Wrapper data through 17 tools.
 
 ALWAYS-AVAILABLE TOOLS (non-deferred, immediate access):
-1. pfw_search_applications_minimal - Primary discovery for patent applications
-2. pfw_get_guidance - Workflow guidance and documentation
-3. pfw_get_application_documents - Document lists for prosecution history
+1. PFW_search_applications_minimal - Primary discovery for patent applications
+2. PFW_get_guidance - Workflow guidance and documentation
+3. PFW_get_application_documents - Document lists for prosecution history
 
 PROGRESSIVE WORKFLOW:
-1. Discovery: pfw_search_applications_minimal / pfw_search_inventor_minimal
-2. Analysis: pfw_search_applications_balanced / pfw_search_inventor_balanced
-3. Documents: pfw_get_application_documents (filter by CTNF, NOA, 892, etc.)
-4. OA Analysis: pfw_get_oa_rejections (rejection indicators), pfw_get_oa_text (full OA text)
-5. Content: pfw_get_document_content_with_ocr (OCR text), pfw_get_document_download (PDF link)
-6. Patents: pfw_get_patent_or_application_xml (claims + abstract), pfw_get_granted_patent_documents_download
+1. Discovery: PFW_search_applications_minimal / PFW_search_inventor_minimal
+2. Analysis: PFW_search_applications_balanced / PFW_search_inventor_balanced
+3. Office actions (rejections, allowance reasoning, examiner argument) — USE THESE FIRST:
+   a. PFW_get_oa_rejections — structured triage: which OAs carry 101/102/103/112, Alice
+      flags, citation counts. Cheap and small. Coverage Oct 1, 2017 onward.
+   b. PFW_get_oa_text — the examiner's actual text in ONE call. No document bag, no PDF,
+      no scanning step in between. action_type='CTNF'|'CTFR'|'NOA'|'CTRS', section='101'|'102'|'103'|'112'
+      to target one rejection. Coverage reaches office actions mailed roughly 2008 onward,
+      far broader than the OA-rejections floor. num_found=0 is a normal empty result.
+4. Documents: PFW_get_application_documents (filter by CLM, 892, 1449, IDS, etc.) — the
+   fallback path. Needed for non-OA documents, for office actions older than the OA text
+   dataset, and when an actual PDF is wanted.
+5. Content: PFW_get_document_content_with_ocr (extracts document text; runs a full OCR pass on
+   scanned PDFs, so do not use it for an office action PFW_get_oa_text can already serve),
+   PFW_get_document_download (PDF link)
+6. Patents: PFW_get_patent_or_application_xml (claims + abstract), PFW_get_granted_patent_documents_download
+7. Family & term: PFW_get_family (normalized continuity graph — parents, children,
+   CON/CIP/DIV relation types, foreign priority; empty parents or children is an
+   answer, not missing data), PFW_get_term_adjustment (PTA days and event history;
+   no expiration date is computed)
 
 MCP APPS (visual iframe display):
-- All pfw_search_* tools → Search results table with status/art unit filters
-- pfw_get_patent_or_application_xml → Claims & abstract reader with tab navigation
-- pfw_get_document_download / pfw_get_granted_patent_documents_download → Recent downloads panel
+- All PFW_search_* tools → Search results table with status/art unit filters
+- PFW_get_patent_or_application_xml → Claims & abstract reader with tab navigation
+- PFW_get_document_download / PFW_get_granted_patent_documents_download → Recent downloads panel
+- PFW_get_family → Family tree by generation with relation labels and Patent Center / Google Patents links
 
 ADMIN (OAuth deployments only): pfw_manage_users — registered-user management
 (hidden unless the signed-in identity has the pfw:admin scope).
@@ -98,6 +121,32 @@ mcp = FastMCP(
 )
 
 
+def _pin_tool_titles(server: FastMCP) -> None:
+    """Keep the tool display name equal to the tool name (pre-FastMCP-4 behavior).
+
+    FastMCP 4 always emits a `title` on tools/list, deriving one from the name
+    when none is set (`_default_title`: "PFW_get_guidance" becomes
+    "PFW Get Guidance"). FastMCP 3 emitted no title, so every client displayed
+    the name.
+
+    Every reference to these tools — SERVER_INSTRUCTIONS above, the guidance
+    sections, README, USAGE_EXAMPLES — names them in the underscore form, so
+    letting the framework retitle them would put a different string in the UI
+    than in the text telling the user which tool to ask for. Pinning the title
+    to the name keeps the displayed label byte-identical to pre-4 while still
+    satisfying clients that drop title-less tools (the reason FastMCP added the
+    default).
+
+    Applied centrally rather than as a `title=` kwarg on each registration so a
+    newly added tool cannot silently pick up a derived title.
+    """
+    from fastmcp.tools.base import Tool
+
+    for component in server.local_provider._components.values():
+        if isinstance(component, Tool) and not component.title:
+            component.title = component.name
+
+
 def _attach_admin_scope_checks(server: FastMCP) -> None:
     """Per-identity gate for the admin tool set (OAuth mode only).
 
@@ -141,10 +190,17 @@ def _attach_admin_scope_checks(server: FastMCP) -> None:
 # =============================================================================
 # MCP APPS — Resource URIs and HTML view registration
 # =============================================================================
-from .ui import SEARCH_RESULTS_HTML, XML_VIEW_HTML, DOWNLOADS_HTML, USER_MANAGEMENT_HTML  # noqa: E402
+from .ui import (  # noqa: E402
+    SEARCH_RESULTS_HTML,
+    XML_VIEW_HTML,
+    DOWNLOADS_HTML,
+    FAMILY_VIEW_HTML,
+    USER_MANAGEMENT_HTML,
+)
 
 from .app_uris import (  # noqa: E402
     _DOWNLOADS_URI,
+    _FAMILY_URI,
     _SEARCH_URI,
     _USER_MANAGEMENT_URI,
     _XML_URI,
@@ -182,6 +238,11 @@ def downloads_view() -> str:
     return DOWNLOADS_HTML
 
 
+@mcp.resource(_FAMILY_URI, app=AppConfig(csp=_CSP))
+def family_view() -> str:
+    return FAMILY_VIEW_HTML
+
+
 @mcp.resource(_USER_MANAGEMENT_URI, app=AppConfig(csp=_CSP))
 def user_management_view() -> str:
     return USER_MANAGEMENT_HTML
@@ -190,9 +251,40 @@ def user_management_view() -> str:
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request):
-    """Health check endpoint for reverse proxy / Docker deployments."""
-    from starlette.responses import PlainTextResponse
-    return PlainTextResponse("OK")
+    """Health check endpoint for reverse proxy / Docker deployments.
+
+    Reports the two conditions the container CAN act on (audit resilience
+    F-6): a permanently failed API client and an open circuit breaker. It
+    used to be a static PlainTextResponse("OK"), so a container in either
+    state answered healthy forever and was never restarted or de-pointed —
+    the rich health data existed, but only on the :8080 proxy's `/`, which
+    nothing polls and the IP allowlist restricts to localhost.
+
+    Deliberately unauthenticated and deliberately free of any detail beyond
+    a reason code.
+    """
+    from starlette.responses import JSONResponse
+
+    from .client_registry import _api_client_error, _clients
+
+    if _api_client_error is not None:
+        return JSONResponse(
+            {"status": "unhealthy", "reason": "api_client_init_failed"},
+            status_code=503,
+        )
+
+    for client in _clients.values():
+        try:
+            if client.circuit_breaker.is_open():
+                return JSONResponse(
+                    {"status": "degraded", "reason": "circuit_open"},
+                    status_code=503,
+                )
+        except Exception:
+            # A health check must never be the thing that breaks.
+            pass
+
+    return JSONResponse({"status": "healthy"})
 
 
 
@@ -205,7 +297,8 @@ from .client_registry import _client, api_client, get_api_client  # noqa: E402, 
 package_manager = PackageManager(api_client) if api_client else None
 
 # Register all prompt templates AFTER mcp object is created
-# This registers all 10 comprehensive prompt templates with the MCP server
+# Registration-gated by PFW_ENABLE_PROMPTS (default off): when unset/false,
+# register_prompts() is a no-op and no prompts appear in prompts/list.
 # E402: Deliberate late import — FastMCP instance MUST be created (line ~50) before
 # prompts can register themselves against it. No alternative avoid-cycles pattern exists.
 from .prompts import register_prompts  # noqa: E402
@@ -230,7 +323,8 @@ def read_doc_codes() -> str:
     """
     try:
         import httpx
-        import csv
+
+        from .reference.doc_codes import build_doc_code_table
 
         # Use HTTP proxy to serve the document codes table (server-internal call, always localhost)
         _doc_codes_port = int(os.getenv('PFW_PROXY_PORT', os.getenv('PROXY_PORT', '8080')))
@@ -250,122 +344,10 @@ def read_doc_codes() -> str:
         except Exception as proxy_error:
             logger.warning(f"Proxy server not available, generating from local CSV: {proxy_error}")
 
-        # Fallback to local CSV processing
-        csv_path = "reference/Document_Descriptions_List.csv"
-
-        # Check if file exists relative to current working directory
-        # (no local `import os` here — it would shadow the module-level os and
-        # make the os.getenv above raise UnboundLocalError)
-        if not os.path.exists(csv_path):
-            # Try relative to script directory
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.join(script_dir, "..", "..")
-            csv_path = os.path.join(project_root, "reference", "Document_Descriptions_List.csv")
-
-        if not os.path.exists(csv_path):
-            raise ValueError("Document_Descriptions_List.csv not found")
-
-        # Parse CSV and format as markdown
-        output = []
-        output.append("# USPTO Document Code Decoder Table")
-        output.append("")
-        output.append("**Source**: [USPTO EFS-Web Document Description List](https://www.uspto.gov/patents/apply/filing-online/efs-info-document-description)")
-        output.append("**Updated**: April 27, 2022")
-        output.append("")
-        output.append("This table provides document codes used in USPTO patent prosecution, PTAB proceedings, and FPD petitions.")
-        output.append("")
-
-        # Common prosecution codes
-        output.append("## Common Prosecution Document Codes")
-        output.append("")
-        output.append("| Code | Description | Business Process |")
-        output.append("|------|-------------|------------------|")
-
-        prosecution_codes = []
-        ptab_codes = []
-
-        # Try multiple encodings to handle the CSV file
-        encodings_to_try = ['utf-8', 'utf-8-sig', 'latin1', 'cp1252', 'iso-8859-1']
-
-        for encoding in encodings_to_try:
-            try:
-                logger.info(f"Trying to read CSV with encoding: {encoding}")
-                with open(csv_path, 'r', encoding=encoding) as file:
-                    csv_reader = csv.reader(file)
-                    headers = None
-
-                    for row in csv_reader:
-                        if not headers:
-                            headers = row
-                            continue
-
-                        if len(row) >= 4:
-                            category = row[0].strip()
-                            description = row[1].strip()
-                            business_process = row[2].strip()
-                            doc_code = row[3].strip()
-
-                            if doc_code and doc_code != "DOC CODE":
-                                # Clean up description and handle encoding issues
-                                description = description.replace('\n', ' ').replace('\r', ' ')
-                                business_process = business_process.replace('\n', ' ').replace('\r', ' ')
-
-                                # Remove any problematic characters
-                                description = ''.join(char if ord(char) < 128 else '?' for char in description)
-                                business_process = ''.join(char if ord(char) < 128 else '?' for char in business_process)
-
-                                # Limit lengths for readability
-                                if len(description) > 100:
-                                    description = description[:97] + "..."
-                                if len(business_process) > 80:
-                                    business_process = business_process[:77] + "..."
-
-                                code_entry = {
-                                    'code': doc_code,
-                                    'description': description,
-                                    'process': business_process,
-                                    'category': category
-                                }
-
-                                if 'PTAB' in category:
-                                    ptab_codes.append(code_entry)
-                                else:
-                                    prosecution_codes.append(code_entry)
-
-                logger.info(f"Successfully read CSV with {encoding} encoding")
-                break  # Success - exit the encoding loop
-
-            except UnicodeDecodeError as e:
-                logger.warning(f"Failed to read CSV with {encoding} encoding: {e}")
-                continue
-            except Exception as e:
-                logger.error(f"Error reading CSV with {encoding} encoding: {e}")
-                continue
-        else:
-            # If we get here, all encodings failed
-            raise ValueError(f"Unable to read CSV file with any of the attempted encodings: {encodings_to_try}")
-
-        # Add common prosecution codes
-        for code_info in prosecution_codes[:50]:  # Limit to first 50 for readability
-            output.append(f"| {code_info['code']} | {code_info['description']} | {code_info['process']} |")
-
-        # Add PTAB codes
-        if ptab_codes:
-            output.append("")
-            output.append("## PTAB Document Codes")
-            output.append("")
-            output.append("| Code | Description | Business Process |")
-            output.append("|------|-------------|------------------|")
-
-            for code_info in ptab_codes:
-                output.append(f"| {code_info['code']} | {code_info['description']} | {code_info['process']} |")
-
-        # Add footer
-        output.append("")
-        output.append("---")
-        output.append("*This table is generated from the USPTO EFS-Web Document Description List and includes the most commonly used document codes in patent prosecution and PTAB proceedings.*")
-
-        result = "\n".join(output)
+        # Fallback to local CSV processing. This used to be a second copy of
+        # the proxy's parser and had drifted from it in four ways, two of them
+        # defects: no markdown `|` escape and no FPD bucket (audit D-1).
+        result = build_doc_code_table()
         logger.info(f"Generated document codes table ({len(result)} characters)")
         return result
 
@@ -395,18 +377,21 @@ def _registered_tool_fn(name: str):
     return None
 
 
-pfw_get_guidance = _registered_tool_fn("pfw_get_guidance")
-pfw_get_document_download = _registered_tool_fn("pfw_get_document_download")
-pfw_search_applications = _registered_tool_fn("search_applications")
-pfw_search_applications_minimal = _registered_tool_fn("search_applications_minimal")
-pfw_search_applications_balanced = _registered_tool_fn("search_applications_balanced")
-pfw_get_application_documents = _registered_tool_fn("get_application_documents")
-pfw_get_document_content = _registered_tool_fn("pfw_get_document_content_with_ocr")
-pfw_get_patent_or_application_xml = _registered_tool_fn("get_patent_or_application_xml")
-pfw_get_granted_patent_documents_download = _registered_tool_fn("get_granted_patent_documents_download")
+pfw_get_guidance = _registered_tool_fn("PFW_get_guidance")
+pfw_get_document_download = _registered_tool_fn("PFW_get_document_download")
+pfw_search_applications = _registered_tool_fn("PFW_search_applications")
+pfw_search_applications_minimal = _registered_tool_fn("PFW_search_applications_minimal")
+pfw_search_applications_balanced = _registered_tool_fn("PFW_search_applications_balanced")
+pfw_get_application_documents = _registered_tool_fn("PFW_get_application_documents")
+pfw_get_document_content = _registered_tool_fn("PFW_get_document_content_with_ocr")
+pfw_get_patent_or_application_xml = _registered_tool_fn("PFW_get_patent_or_application_xml")
+pfw_get_granted_patent_documents_download = _registered_tool_fn("PFW_get_granted_patent_documents_download")
 
-# All tools are registered above this line; attach per-identity admin scope
-# checks last so the gate covers the full tool set (OAuth mode only).
+# All tools are registered above this line.
+_pin_tool_titles(mcp)
+
+# Attach per-identity admin scope checks last so the gate covers the full
+# tool set (OAuth mode only).
 if _AUTH_PROVIDER is not None:
     _attach_admin_scope_checks(mcp)
 

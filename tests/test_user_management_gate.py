@@ -38,3 +38,23 @@ def test_manage_users_absent_by_default():
 
 def test_manage_users_registered_when_enabled():
     assert _probe({"PFW_ENABLE_USER_MANAGEMENT": "true"}) == "PRESENT"
+
+
+def test_manage_users_refuses_http_without_oauth():
+    """HTTP + no OAuth provider must fail startup, not register ungated.
+
+    The shared INTERNAL_AUTH_SECRET is the only gate on that surface and it is
+    the same value across the four USPTO MCPs, so registering the tool there
+    hands suite-wide user administration to any holder of the transport
+    secret. stdio is unaffected (covered by the test above).
+    """
+    env = dict(os.environ)
+    env.setdefault("USPTO_API_KEY", "x" * 30)
+    env["PFW_ENABLE_USER_MANAGEMENT"] = "true"
+    env["FASTMCP_TRANSPORT"] = "http"
+    result = subprocess.run(
+        [sys.executable, "-c", _PROBE],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert result.returncode != 0
+    assert "PFW_ENABLE_USER_MANAGEMENT=true requires" in result.stderr

@@ -28,9 +28,12 @@ unaffected — you can adopt this file's setup or ignore it entirely.
 - Access tokens: 1 h HS256 JWTs minted by this server. Refresh tokens: 30 d
   IDLE timeout — rotation issues a fresh token on every use and re-checks the
   user row, so deactivating a user locks them out within an hour.
-- Headless/machine clients skip the browser flow entirely by presenting the
-  static `PFW_AUTH_INTERNAL_TOKEN` as `Authorization: Bearer …` (grants
-  both scopes).
+- Headless/machine clients skip the browser flow entirely by presenting a
+  static bearer as `Authorization: Bearer …`. There are two, deliberately:
+  `PFW_AUTH_INTERNAL_TOKEN` grants `pfw:user` ONLY, and the separate
+  `PFW_AUTH_INTERNAL_ADMIN_TOKEN` grants `pfw:user` + `pfw:admin`. Issue the
+  admin one only to the internal caller that actually has to manage users;
+  most deployments leave it unset.
 
 ## 1. Register the IdP applications (one-time, in a browser)
 
@@ -109,7 +112,8 @@ administration path.
 - Do NOT inject an x-api-key (or any credential) header on `/mcp` at the
   proxy — in oauth mode that would carry anonymous visitors past sign-in.
 - SSE needs `proxy_buffering off` and long read timeouts.
-- PFW extra: the download proxy (port 8084) and its tokenless
+- PFW extra: the download proxy (default port 8080, set by `PROXY_PORT` or
+  `PFW_PROXY_PORT`) and its tokenless
   `/document/persistent/{hash}` capability links are a SEPARATE ingress with
   their own credential scheme — keep those paths open and never put bearer
   auth on them.
@@ -121,8 +125,8 @@ servers **on the same host** (the store enables WAL + busy_timeout). One
 `mcp_users` row then grants access to every server mounting that file. Do not
 share the file across hosts or network filesystems.
 
-(In the USPTO suite deployment PFW HOSTS the shared paid-tier file that PTAB
-and FPD mount.)
+(In a full USPTO-suite deployment PFW hosts the shared `mcp_users` file that
+PTAB and FPD mount, so one row admits a user to all three.)
 
 ## 6. Verify
 

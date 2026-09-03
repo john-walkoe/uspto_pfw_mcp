@@ -20,9 +20,9 @@ The MCP server supports user-customizable field sets through YAML configuration 
 ### Available Field Sets (Progressive Workflow)
 
 - **`applications_minimal`** - Ultra-minimal for application searches: **15 essential fields** for high-volume discovery (20-50 results)
-- **`applications_balanced`** - Comprehensive application analysis: **18 key fields** for detailed application/patent analysis and fields used in cross searches with the USPTO Patent Trial and Appeal Board MCP
+- **`applications_balanced`** - Comprehensive application analysis: **24 key fields** (as shipped in `field_configs.yaml`) for detailed application/patent analysis and fields used in cross searches with the USPTO Patent Trial and Appeal Board MCP
 - **`inventor_minimal`** - Ultra-minimal for inventor searches: **15 essential fields** for high-volume inventor discovery
-- **`inventor_balanced`** - Comprehensive inventor analysis: **18 key fields** for detailed inventor analysis and fields used in cross searches with the USPTO PTAB (Patent Trial and Appeal Board) MCP
+- **`inventor_balanced`** - Comprehensive inventor analysis: **24 key fields** (as shipped in `field_configs.yaml`) for detailed inventor analysis and fields used in cross searches with the USPTO PTAB (Patent Trial and Appeal Board) MCP
 
 ### Professional Field Categories Available
 
@@ -125,7 +125,12 @@ The `field_configs.yaml` file contains over 40 professional patent prosecution f
 #### Parent/Child Relationships
 - `parentPatentNumber` - Parent patent numbers (short form)
 - `parentContinuityBag` - Full parent/child tracking
+- `parentContinuityBag.parentApplicationNumberText` / `childContinuityBag.childApplicationNumberText` - Scalar family awareness without the full bag (enabled in both balanced tiers)
+- `foreignPriorityBag` - Foreign priority claims. TOP-LEVEL field: an `applicationMetaData.foreignPriorityBag` path silently returns nothing
 - `childPatentNumber` - Child patent numbers (short form)
+
+For the family STRUCTURE itself (relation types, ancestry, generations) use the
+`PFW_get_family` tool rather than widening the search field set.
 
 #### International/PCT Fields
 - `applicationMetaData.nationalStageIndicator` - PCT national stage indicator
@@ -138,7 +143,7 @@ The `field_configs.yaml` file contains over 40 professional patent prosecution f
 
 #### Document Access
 - `associatedDocuments` - XML files metadata
-- `documentBag` - Prosecution documents (WARNING: 100x token explosion - use pfw_get_application_documents instead)
+- `documentBag` - Prosecution documents (WARNING: 100x token explosion - use PFW_get_application_documents instead)
 
 #### Advanced Publication Tracking
 - `applicationMetaData.publicationCategoryBag` - Publication categories
@@ -161,17 +166,17 @@ All minimal and balanced search tools support an optional `fields` parameter for
 
 ```python
 # Standard minimal search (15 fields, 95% reduction)
-pfw_search_applications_minimal(art_unit='2128', limit=50)
+PFW_search_applications_minimal(art_unit='2128', limit=50)
 
 # Ultra-minimal search (2 fields, 99% reduction)
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit='2128',
     fields=['applicationNumberText', 'examinerNameText'],
     limit=50
 )
 
 # Citation workflow optimization (3 fields only)
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     examiner_name='SMITH, JANE',
     fields=['applicationNumberText', 'examinerNameText', 'filingDate'],
     limit=30
@@ -183,7 +188,7 @@ pfw_search_applications_minimal(
 **Ultra-Minimal Mode (Custom Fields Parameter)**:
 - Citation workflows: PFW → Citations integration
 - Single-record lookups: Patent number → app number conversion
-- High-volume extraction: 100+ results where only 2-3 fields needed
+- High-volume extraction: a full page of 100 results where only 2-3 fields are needed
 - Cross-MCP integration: Extract minimal fields for PTAB/FPD cross-reference
 
 **Preset Minimal (YAML Configuration)**:
@@ -245,7 +250,7 @@ fields = [
 
 #### Token Budget Management
 
-**High-Volume Workflows (100+ results)**:
+**High-Volume Workflows (a full page of 100 results)**:
 - Use ultra-minimal mode (2-3 fields)
 - Extract only essential fields for initial filtering
 - Progress to detailed analysis only for selected results
@@ -374,7 +379,7 @@ For advanced users who need programmatic field selection:
 
 ```python
 # Use the fields parameter to override any preset
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='artificial intelligence',
     fields=['applicationNumberText', 'inventionTitle', 'patentNumber'],
     limit=50

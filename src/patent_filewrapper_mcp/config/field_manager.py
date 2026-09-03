@@ -94,7 +94,15 @@ class FieldConfigManager:
             "applicationMetaData.",
             "parentContinuityBag.",
             "childContinuityBag.",
+            # Top-level in the ODP response, NOT under applicationMetaData —
+            # a prefixed path silently returns nothing (live-probed 2026-08-21).
+            "foreignPriorityBag",
+            # `termAdjustmentBag` is accepted here only because callers have
+            # historically passed it; it is NOT an ODP field (live-probed
+            # 2026-08-21). The real one is `patentTermAdjustmentData`, which
+            # PFW_get_term_adjustment reads.
             "termAdjustmentBag",
+            "patentTermAdjustmentData",
             "transactionBag",
             "assignmentBag",
             "documentBag"

@@ -18,7 +18,7 @@ class PFWReflection(BaseReflection):
     - Field customization and context reduction strategies
     - Document selection and extraction patterns
     - Cross-MCP integration workflows
-    - Attorney-specific use cases and cost optimization
+    - Attorney-specific use cases and extraction optimization
     """
 
     def __init__(self):
@@ -40,7 +40,7 @@ class PFWReflection(BaseReflection):
             'attorney-tools',
             'api-optimization',
             'cross-mcp-integration',
-            'cost-optimization'
+            'extraction-optimization'
         ]
 
     def _get_mcp_type(self) -> str:
@@ -75,26 +75,35 @@ class PFWReflection(BaseReflection):
 - **Balanced Search** → Analysis (5-20 results)
 - **Custom Fields** → Targeted extraction (2-3 fields for 99% reduction)
 
-### 2. Document Access Patterns
+### 2. Office Action Access Patterns
+- **Rejection triage** → `PFW_get_oa_rejections` (structured 101/102/103/112 + Alice flags, Oct 2017 onward)
+- **Full OA text** → `PFW_get_oa_text` in one call, no document bag and no scanning step, covering OAs mailed roughly 2008 onward
+- Fall back to the document bag only for non-OA documents, older office actions, or when a PDF is needed
+
+### 3. Document Access Patterns
 - **Proxy Downloads** → Browser-accessible PDFs
-- **Content Extraction** → Text analysis (PyPDF2 + Mistral OCR)
+- **Content Extraction** → Text analysis (PyPDF2 + OCR; never use it on an OA `PFW_get_oa_text` can already serve)
 - **Persistent Links** → 7-day encrypted access
 
-### 3. Context Reduction Techniques
+### 4. Context Reduction Techniques
 - Use minimal searches for discovery (95% context reduction)
 - Customize fields via field_configs.yaml
+- `PFW_get_oa_text(section='103')` narrows an office action to one rejection, though the section sub-documents are sparsely populated and an empty section falls back to the full body
 - Leverage cross-MCP integration for comprehensive analysis
 
-### 4. Key Tools by Use Case
-- **Discovery**: `pfw_search_applications_minimal`
-- **Analysis**: `pfw_search_applications_balanced`
-- **Documents**: `pfw_get_application_documents`
-- **Downloads**: `pfw_get_document_download`
-- **Content**: `pfw_get_document_content_with_ocr`
+### 5. Key Tools by Use Case
+- **Discovery**: `PFW_search_applications_minimal`
+- **Analysis**: `PFW_search_applications_balanced`
+- **Rejection triage**: `PFW_get_oa_rejections`
+- **Office action text**: `PFW_get_oa_text`
+- **Documents**: `PFW_get_application_documents`
+- **Downloads**: `PFW_get_document_download`
+- **Content**: `PFW_get_document_content_with_ocr`
 
-### 5. Cross-MCP Integration
+### 6. Cross-MCP Integration
 - **FPD**: Check petition history for prosecution quality
 - **PTAB**: Verify trial proceedings impact
+- **Citations**: two lanes — `Citations_search_oa_citations_minimal` for raw 892/1449 lists (broader coverage, use as the default sweep), the enriched `Citations_search_citations_minimal` lane for AI-extracted passage detail on selected references only
 - **Pinecone Assistant MCP**: Access MPEP knowledge base with AI-powered chat (`assistant_context`, `assistant_strategic_multi_search_context`)
 - **Pinecone RAG MCP**: Access MPEP knowledge base with custom embeddings (`semantic_search`, `strategic_semantic_search`)
 
@@ -108,7 +117,7 @@ For complete guidance, use the full tool reflections resource."""
             Complete PFW guidance combining all sections
         """
         # This reconstructs the comprehensive guidance by combining all sections
-        # from the new pfw_get_guidance system
+        # from the new PFW_get_guidance system
         sections_content = []
 
         # Add header
@@ -120,12 +129,12 @@ For complete guidance, use the full tool reflections resource."""
         sections_content.append("Comprehensive guidance for Patent File Wrapper, cross-MCP workflows, and patent attorney use cases.")
         sections_content.append("")
 
-        # Note: The full content is now delivered through pfw_get_guidance() sections
+        # Note: The full content is now delivered through PFW_get_guidance() sections
         # for context efficiency. This method provides a comprehensive overview.
         overview_content = """
 ## Migration Notice
 
-This comprehensive guidance has been migrated to a context-efficient sectioned approach using `pfw_get_guidance()`.
+This comprehensive guidance has been migrated to a context-efficient sectioned approach using `PFW_get_guidance()`.
 
 ### Available Sections:
 - **overview**: Available sections and tool summary
@@ -139,15 +148,15 @@ This comprehensive guidance has been migrated to a context-efficient sectioned a
 - **tools**: Tool-specific guidance and parameters
 - **errors**: Common error patterns and troubleshooting
 - **advanced**: Advanced workflows and optimization
-- **cost**: Cost optimization strategies
+- **cost**: Extraction and context efficiency strategies
 
 ### Usage:
 ```python
 # Get specific section (1-12K chars vs 62K total)
-guidance = pfw_get_guidance(section='tools')
+guidance = PFW_get_guidance(section='tools')
 
 # Quick reference chart
-guidance = pfw_get_guidance(section='overview')
+guidance = PFW_get_guidance(section='overview')
 ```
 
 ### Key Benefits:
@@ -156,7 +165,7 @@ guidance = pfw_get_guidance(section='overview')
 - **Same comprehensive content** organized for efficiency
 - **Backwards compatible** with MCP Resources
 
-For complete guidance access, use the `pfw_get_guidance(section='...')` function with specific section names listed above.
+For complete guidance access, use the `PFW_get_guidance(section='...')` function with specific section names listed above.
 """
 
         sections_content.append(overview_content)
@@ -182,19 +191,19 @@ Tool-specific guidance has been migrated to the new sectioned approach.
 **To get detailed guidance for this tool:**
 ```python
 # Get comprehensive tool guidance
-guidance = pfw_get_guidance(section='tools')
+guidance = PFW_get_guidance(section='tools')
 
 # Get workflow guidance
-guidance = pfw_get_guidance(section='workflows_pfw')
+guidance = PFW_get_guidance(section='workflows_pfw')
 
 # Get field strategies
-guidance = pfw_get_guidance(section='fields')
+guidance = PFW_get_guidance(section='fields')
 ```
 
 **Quick Reference:**
-- Use `pfw_get_guidance(section='overview')` to see all available sections
-- Use `pfw_get_guidance(section='tools')` for detailed tool guidance
-- Use `pfw_get_guidance(section='errors')` for troubleshooting
+- Use `PFW_get_guidance(section='overview')` to see all available sections
+- Use `PFW_get_guidance(section='tools')` for detailed tool guidance
+- Use `PFW_get_guidance(section='errors')` for troubleshooting
 
 The new sectioned approach provides the same comprehensive guidance with 95% context reduction (1-12KB per section vs 62KB total).
 """

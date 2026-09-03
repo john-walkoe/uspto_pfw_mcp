@@ -27,15 +27,38 @@ Available Prompts:
 - patent_invalidity_analysis_defense_Pinecone_PTAB_FPD_Citations: Multi-MCP patent invalidity defense (PFW+PTAB+FPD+Citations+Pinecone)
 """
 
+import os
+
+from ..shared.safe_logger import get_safe_logger
+
+logger = get_safe_logger(__name__)
+
+# Registration gate for the prompt templates (same pattern as the
+# pfw_manage_users tool gate in tools/admin_tools.py: filtered at
+# registration time, never appears in prompts/list). Default OFF.
+PROMPTS_ENABLED = (
+    os.getenv("PFW_ENABLE_PROMPTS", "false").lower() == "true"
+)
+
+
 def register_prompts(mcp_server):
     """Register all prompts with the MCP server.
 
     This function is called from main.py after the mcp object is created.
     It imports and registers all prompt modules with the server.
 
+    Gated by PFW_ENABLE_PROMPTS (default off): when unset/false, no prompts
+    are registered on the server at all.
+
     Args:
         mcp_server: The FastMCP server instance to register prompts with
     """
+    if not PROMPTS_ENABLED:
+        logger.info(
+            "Prompt templates not registered (PFW_ENABLE_PROMPTS is off; default)."
+        )
+        return
+
     # Store mcp server globally for prompt modules to use
     global mcp
     mcp = mcp_server

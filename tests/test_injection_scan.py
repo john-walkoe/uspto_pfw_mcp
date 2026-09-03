@@ -1,6 +1,6 @@
 """Tests for the runtime injection scanner (shared/injection_scan.py) and its
-wiring into the text-bearing tools (get_oa_text, pfw_get_document_content_with_ocr,
-get_patent_or_application_xml).
+wiring into the text-bearing tools (PFW_get_oa_text, PFW_get_document_content_with_ocr,
+PFW_get_patent_or_application_xml).
 
 The scanner is detection-only: kind labels, never matched text; the
 `injection_scan` envelope key must be COMPLETELY ABSENT on clean text.
@@ -105,7 +105,7 @@ async def _call_oa_text(monkeypatch, body_text, **kwargs):
     fake = _FakeMCP()
     oa_tools.register(fake)
     monkeypatch.setattr(oa_tools, "_oa_text_client", _StubOATextClient(body_text))
-    return await fake.tools["get_oa_text"](application_number="12345678", **kwargs)
+    return await fake.tools["PFW_get_oa_text"](application_number="12345678", **kwargs)
 
 
 async def test_get_oa_text_flags_canned_injection(monkeypatch):
@@ -141,7 +141,8 @@ class _StubOCRClient:
         self._content = content
 
     async def extract_document_content_hybrid(
-        self, app_number, document_identifier, auto_optimize, progress_cb=None
+        self, app_number, document_identifier, auto_optimize, progress_cb=None,
+        page_from=1, page_to=None
     ):
         return {
             "success": True,
@@ -149,7 +150,6 @@ class _StubOCRClient:
             "document_identifier": document_identifier,
             "extracted_content": self._content,
             "extraction_method": "pypdf2",
-            "processing_cost_usd": 0.0,
         }
 
 
@@ -160,7 +160,7 @@ async def _call_ocr(monkeypatch, content):
     document_tools.register(fake)
     stub = _StubOCRClient(content)
     monkeypatch.setattr(document_tools, "_client", lambda: stub)
-    return await fake.tools["pfw_get_document_content_with_ocr"](
+    return await fake.tools["PFW_get_document_content_with_ocr"](
         app_number="12345678", document_identifier="DOC1"
     )
 
@@ -209,7 +209,7 @@ async def _call_xml(monkeypatch, claims_text):
     document_tools.register(fake)
     stub = _StubXMLClient(claims_text)
     monkeypatch.setattr(document_tools, "_client", lambda: stub)
-    return await fake.tools["get_patent_or_application_xml"](identifier="7971071")
+    return await fake.tools["PFW_get_patent_or_application_xml"](identifier="7971071")
 
 
 async def test_xml_tool_flags_canned_injection(monkeypatch):

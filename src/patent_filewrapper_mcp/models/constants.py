@@ -14,11 +14,17 @@ class IdentifierType:
     APPLICATION = "application"
     PATENT = "patent"
     PUBLICATION = "publication"
+    #: An 8-digit bare number that is a VALID patent number AND a valid
+    #: application serial. Patent numbers passed 12,000,000 in 2024, so the
+    #: old "8-digit and >= 8M means application serial" rule silently mistyped
+    #: every recent grant. Only the API can settle it — see
+    #: util/identifier_resolution.py.
+    AMBIGUOUS = "ambiguous"
 
     @classmethod
     def all(cls) -> List[str]:
         """Get all valid identifier types"""
-        return [cls.APPLICATION, cls.PATENT, cls.PUBLICATION]
+        return [cls.APPLICATION, cls.PATENT, cls.PUBLICATION, cls.AMBIGUOUS]
 
 
 class DocumentDirection:

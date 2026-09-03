@@ -1,182 +1,94 @@
+"""Enhanced filenames survive the FPD document store round-trip, and the
+pydantic model rejects the filenames that would poison Content-Disposition.
+
+Rewritten from a 163-line console script with 11 `return False` exits and zero
+assertions: if FPDDocumentStore stopped storing enhanced filenames entirely,
+the old version printed [FAIL] and reported PASS (audit T-4). The `from src.`
+imports it used created a SECOND module object with its own module-level
+singletons, so monkeypatching the real package did nothing here (audit T-5).
 """
-Test enhanced filename integration for FPD documents
-"""
 
-import os
-import sys
+import pytest
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from patent_filewrapper_mcp.proxy.fpd_document_store import FPDDocumentStore
+from patent_filewrapper_mcp.proxy.models import FPDDocumentRegistration
 
-from src.patent_filewrapper_mcp.proxy.fpd_document_store import FPDDocumentStore
-from src.patent_filewrapper_mcp.proxy.models import FPDDocumentRegistration
-import tempfile
+_PETITION_ID = "de4df959-dfe6-5b63-9ff2-d583b7333abd"
+_ENHANCED = "PET-2025-09-03_APP-18462633_PATENT_PROSECUTION_HIGHWAY_DECISION.pdf"
 
-def test_enhanced_filename_storage():
-    """Test that enhanced filenames are stored and retrieved correctly"""
 
-    print("=" * 80)
-    print("ENHANCED FILENAME INTEGRATION TEST")
-    print("=" * 80)
+@pytest.fixture
+def store(tmp_path):
+    return FPDDocumentStore(db_path=str(tmp_path / "fpd_documents.db"))
 
-    # Create temporary database for testing
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.db', delete=False) as tmp_file:
-        tmp_db_path = tmp_file.name
 
-    try:
-        # Initialize store with temp database
-        store = FPDDocumentStore(db_path=tmp_db_path)
+def _register(store, petition_id, doc_id, enhanced_filename):
+    return store.register_document(
+        petition_id=petition_id,
+        document_identifier=doc_id,
+        download_url=(
+            f"https://api.uspto.gov/api/v1/download/applications/"
+            f"18462633/{doc_id}.pdf"
+        ),
+        application_number="18462633",
+        enhanced_filename=enhanced_filename,
+    )
 
-        print("\n[+] TEST 1: Store document WITH enhanced filename")
-        print("-" * 80)
 
-        petition_id = "de4df959-dfe6-5b63-9ff2-d583b7333abd"
-        doc_id = "MF47IXVI120X170"
-        enhanced_filename = "PET-2025-09-03_APP-18462633_PATENT_PROSECUTION_HIGHWAY_DECISION.pdf"
+class TestRoundTrip:
+    def test_an_enhanced_filename_survives_the_round_trip(self, store):
+        assert _register(store, _PETITION_ID, "MF47IXVI120X170", _ENHANCED) is True
 
-        success = store.register_document(
-            petition_id=petition_id,
-            document_identifier=doc_id,
-            download_url="https://api.uspto.gov/api/v1/download/applications/18462633/MF47IXVI120X170.pdf",
-            api_key="test_key_123",
-            application_number="18462633",
-            enhanced_filename=enhanced_filename
+        doc = store.get_document(_PETITION_ID, "MF47IXVI120X170")
+        assert doc, "get_document returned nothing for a just-registered document"
+        assert doc.get("enhanced_filename") == _ENHANCED
+
+    def test_a_document_with_no_enhanced_filename_stores_none(self, store):
+        petition_id = "550e8400-e29b-41d4-a716-446655440000"
+        assert _register(store, petition_id, "ABC123DEF", None) is True
+
+        doc = store.get_document(petition_id, "ABC123DEF")
+        assert doc, "get_document returned nothing"
+        assert doc.get("enhanced_filename") is None
+
+
+def _registration(**overrides):
+    payload = {
+        "source": "fpd",
+        "petition_id": _PETITION_ID,
+        "document_identifier": "TEST123",
+        "download_url": "https://api.uspto.gov/test.pdf",
+        # The model's field is access_token. The old version of this file
+        # passed `api_key=`, so EVERY construction here raised a missing-field
+        # ValidationError — and because ValidationError is a ValueError, the
+        # two "invalid filename is rejected" branches passed for the wrong
+        # reason while the two "valid filename is accepted" branches took the
+        # `return False` exit that pytest reads as PASS.
+        "access_token": "test_token_1234567890",
+        "application_number": "12345678",
+        "enhanced_filename": "PET-2024-05-15_APP-12345678_DECISION.pdf",
+    }
+    payload.update(overrides)
+    return FPDDocumentRegistration(**payload)
+
+
+class TestFilenameValidation:
+    def test_a_well_formed_pdf_filename_is_accepted(self):
+        assert (
+            _registration().enhanced_filename
+            == "PET-2024-05-15_APP-12345678_DECISION.pdf"
         )
 
-        if not success:
-            print("[FAIL] Failed to register document")
-            return False
+    def test_none_is_accepted_for_backward_compatibility(self):
+        assert _registration(enhanced_filename=None).enhanced_filename is None
 
-        # Retrieve and verify
-        doc_metadata = store.get_document(petition_id, doc_id)
-
-        if not doc_metadata:
-            print("[FAIL] Failed to retrieve document")
-            return False
-
-        retrieved_filename = doc_metadata.get('enhanced_filename')
-
-        if retrieved_filename != enhanced_filename:
-            print("[FAIL] Filename mismatch!")
-            print(f"  Expected: {enhanced_filename}")
-            print(f"  Got: {retrieved_filename}")
-            return False
-
-        print("[OK] Enhanced filename stored and retrieved correctly:")
-        print(f"     {retrieved_filename}")
-
-        print("\n[+] TEST 2: Store document WITHOUT enhanced filename")
-        print("-" * 80)
-
-        petition_id_2 = "550e8400-e29b-41d4-a716-446655440000"
-        doc_id_2 = "ABC123DEF"
-
-        success = store.register_document(
-            petition_id=petition_id_2,
-            document_identifier=doc_id_2,
-            download_url="https://api.uspto.gov/api/v1/download/applications/12345678/ABC123DEF.pdf",
-            api_key="test_key_456",
-            application_number="12345678",
-            enhanced_filename=None  # No enhanced filename
-        )
-
-        if not success:
-            print("[FAIL] Failed to register document without enhanced filename")
-            return False
-
-        doc_metadata_2 = store.get_document(petition_id_2, doc_id_2)
-
-        if not doc_metadata_2:
-            print("[FAIL] Failed to retrieve document")
-            return False
-
-        retrieved_filename_2 = doc_metadata_2.get('enhanced_filename')
-
-        if retrieved_filename_2 is not None:
-            print(f"[FAIL] Expected None for enhanced_filename, got: {retrieved_filename_2}")
-            return False
-
-        print("[OK] Document without enhanced filename works correctly (None)")
-
-        print("\n[+] TEST 3: Pydantic validation")
-        print("-" * 80)
-
-        # Test valid enhanced filename
-        try:
-            valid_registration = FPDDocumentRegistration(  # noqa: F841
-                source="fpd",
-                petition_id="de4df959-dfe6-5b63-9ff2-d583b7333abd",
-                document_identifier="TEST123",
-                download_url="https://api.uspto.gov/test.pdf",
-                api_key="test_key_1234567890",
-                application_number="12345678",
-                enhanced_filename="PET-2024-05-15_APP-12345678_DECISION.pdf"
-            )
-            print("[OK] Valid enhanced filename accepted by Pydantic")
-        except Exception as e:
-            print(f"[FAIL] Valid filename rejected: {e}")
-            return False
-
-        # Test invalid enhanced filename (wrong extension)
-        try:
-            invalid_registration = FPDDocumentRegistration(  # noqa: F841
-                source="fpd",
-                petition_id="de4df959-dfe6-5b63-9ff2-d583b7333abd",
-                document_identifier="TEST123",
-                download_url="https://api.uspto.gov/test.pdf",
-                api_key="test_key_1234567890",
-                application_number="12345678",
-                enhanced_filename="PET-2024-05-15_APP-12345678_DECISION.txt"
-            )
-            print("[FAIL] Invalid filename (.txt) should have been rejected")
-            return False
-        except ValueError as e:
-            print(f"[OK] Invalid extension (.txt) rejected correctly: {e}")
-
-        # Test invalid enhanced filename (invalid characters)
-        try:
-            invalid_registration = FPDDocumentRegistration(  # noqa: F841
-                source="fpd",
-                petition_id="de4df959-dfe6-5b63-9ff2-d583b7333abd",
-                document_identifier="TEST123",
-                download_url="https://api.uspto.gov/test.pdf",
-                api_key="test_key_1234567890",
-                application_number="12345678",
-                enhanced_filename="PET-2024-05-15_APP-12345678_DECISION!@#$.pdf"
-            )
-            print("[FAIL] Invalid characters (!@#$) should have been rejected")
-            return False
-        except ValueError:
-            print("[OK] Invalid characters rejected correctly")
-
-        # Test None as enhanced filename (should be allowed)
-        try:
-            none_registration = FPDDocumentRegistration(  # noqa: F841
-                source="fpd",
-                petition_id="de4df959-dfe6-5b63-9ff2-d583b7333abd",
-                document_identifier="TEST123",
-                download_url="https://api.uspto.gov/test.pdf",
-                api_key="test_key_1234567890",
-                application_number="12345678",
-                enhanced_filename=None
-            )
-            print("[OK] None as enhanced_filename accepted (backward compatibility)")
-        except Exception as e:
-            print(f"[FAIL] None should be allowed: {e}")
-            return False
-
-        print("\n" + "=" * 80)
-        print("ALL ENHANCED FILENAME TESTS PASSED!")
-        print("=" * 80)
-
-        return True
-
-    finally:
-        # Cleanup temp database
-        if os.path.exists(tmp_db_path):
-            os.remove(tmp_db_path)
-
-
-if __name__ == "__main__":
-    success = test_enhanced_filename_storage()
-    sys.exit(0 if success else 1)
+    @pytest.mark.parametrize(
+        "filename, why",
+        [
+            ("PET-2024-05-15_APP-12345678_DECISION.txt", "non-pdf extension"),
+            ("PET-2024-05-15_APP-12345678_DECISION!@#$.pdf", "invalid characters"),
+        ],
+    )
+    def test_a_bad_filename_is_rejected(self, filename, why):
+        with pytest.raises(ValueError):
+            _registration(enhanced_filename=filename)

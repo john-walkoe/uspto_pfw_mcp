@@ -4,7 +4,9 @@ CircuitBreaker, ResponseCache, and RetryBudget are self-contained — no
 USPTO knowledge — and are composed by EnhancedPatentClient.
 """
 import hashlib
+import json
 import time
+from collections import OrderedDict
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -84,18 +86,34 @@ class ResponseCache:
     is open, improving user experience during API failures.
     """
 
-    def __init__(self, ttl_seconds: int = 300, max_size: int = 100):
+    def __init__(self, ttl_seconds: int = 300, max_size: int = 100,
+                 max_entry_bytes: int = 512 * 1024):
         """
         Initialize response cache
 
         Args:
             ttl_seconds: Time-to-live for cached responses (default: 5 minutes)
             max_size: Maximum number of cached responses (default: 100)
+            max_entry_bytes: Largest single response worth keeping as a
+                failover copy (default: 512 KB)
         """
-        self.cache: Dict[str, Tuple[Dict[str, Any], float]] = {}
+        # OrderedDict, not dict: eviction was an O(n) min() scan over every
+        # entry on EVERY insert, and that scan ran while the other event loop
+        # could be deleting from the same dict (audit design-pattern F-6).
+        self.cache: "OrderedDict[str, Tuple[Dict[str, Any], float]]" = OrderedDict()
         self.ttl = ttl_seconds
         self.max_size = max_size
-        logger.info(f"Response cache initialized: TTL={ttl_seconds}s, max_size={max_size}")
+        # Bounded by ENTRIES only, this held max_size whole USPTO search
+        # responses — which the response-size guard elsewhere assumes can
+        # reach 40K-120K chars — for up to `ttl` seconds. A byte cap on each
+        # entry keeps the worst case to something a container can hold. This
+        # is a stale-on-outage failover copy, not a hot cache, so declining to
+        # store an outsized response costs nothing but the failover.
+        self.max_entry_bytes = max_entry_bytes
+        logger.info(
+            f"Response cache initialized: TTL={ttl_seconds}s, "
+            f"max_size={max_size}, max_entry_bytes={max_entry_bytes}"
+        )
 
     def _make_key(self, endpoint: str, **kwargs) -> str:
         """
@@ -130,6 +148,7 @@ class ResponseCache:
 
             if age < self.ttl:
                 logger.info(f"Cache HIT for {endpoint} (age={age:.1f}s)")
+                self.cache.move_to_end(key)  # LRU
                 return value
             else:
                 # Expired - remove from cache
@@ -148,14 +167,27 @@ class ResponseCache:
             value: Response data to cache
             **kwargs: Request parameters
         """
-        # Enforce max cache size - remove oldest entry if needed
-        if len(self.cache) >= self.max_size:
-            oldest_key = min(self.cache.keys(), key=lambda k: self.cache[k][1])
-            logger.debug(f"Cache full, removing oldest entry: {oldest_key}")
-            del self.cache[oldest_key]
+        if self.max_entry_bytes > 0:
+            try:
+                approx_bytes = len(json.dumps(value, default=str))
+            except (TypeError, ValueError):
+                approx_bytes = 0
+            if approx_bytes > self.max_entry_bytes:
+                logger.debug(
+                    f"Response for {endpoint} is {approx_bytes} bytes, too "
+                    f"large to keep as a failover copy; not cached"
+                )
+                return
+
+        # Enforce max cache size - evict least-recently-used. O(1) via
+        # popitem(last=False) instead of the O(n) min() scan this was.
+        while len(self.cache) >= self.max_size:
+            evicted, _ = self.cache.popitem(last=False)
+            logger.debug(f"Cache full, evicted LRU entry: {evicted}")
 
         key = self._make_key(endpoint, **kwargs)
         self.cache[key] = (value, time.time())
+        self.cache.move_to_end(key)
         logger.debug(f"Cached response for {endpoint} (cache size: {len(self.cache)}/{self.max_size})")
 
     def clear(self) -> None:

@@ -171,19 +171,23 @@ Configuration Summary:
   [OK] Proxy Port: 8080 (centralized proxy server)
   [OK] Installation Directory: C:/Users/YOUR_USERNAME/uspto_pfw_mcp
 
-Available Tools (12):
-  - pfw_search_applications_minimal (ultra-fast discovery)
-  - pfw_search_applications_balanced (detailed analysis)
-  - pfw_search_by_assignee (patent portfolio analysis)
-  - pfw_search_by_inventor (inventor analysis)
-  - pfw_search_by_art_unit (art unit quality)
-  - pfw_search_by_application_type (type analysis)
-  - pfw_get_application_details (full details)
-  - pfw_get_application_documents (document access)
-  - pfw_get_transaction_history (prosecution history)
-  - pfw_get_document_download (PDF downloads)
-  - pfw_get_enhanced_search (multi-field advanced search)
-  - pfw_get_tool_reflections (workflow guidance)
+Available Tools (16, plus pfw_manage_users on OAuth deployments):
+  - PFW_search_applications_minimal (ultra-fast discovery)
+  - PFW_search_applications_balanced (detailed analysis)
+  - PFW_search_applications (custom field search)
+  - PFW_search_inventor_minimal (ultra-fast inventor search)
+  - PFW_search_inventor_balanced (detailed inventor search)
+  - PFW_search_inventor (custom inventor search)
+  - PFW_get_application_documents (document access)
+  - PFW_get_patent_or_application_xml (claims and abstract)
+  - PFW_get_granted_patent_documents_download (granted patent package)
+  - PFW_get_oa_rejections (rejection triage)
+  - PFW_get_oa_text (office action full text)
+  - PFW_get_document_content_with_ocr (text extraction)
+  - PFW_get_document_download (PDF downloads)
+  - PFW_get_family (continuity and foreign priority)
+  - PFW_get_term_adjustment (patent term adjustment)
+  - PFW_get_guidance (workflow guidance)
 
 Centralized Proxy Server:
   Start with: uv run pfw-proxy
@@ -191,11 +195,11 @@ Centralized Proxy Server:
 
 Key Management:
   Manage keys: ./deploy/manage_api_keys.ps1
-  Test keys:   uv run python tests/test_unified_key_management.py
+  Test keys:   ./deploy/manage_api_keys.ps1 (option [4] Test API key functionality)
   Cross-MCP:   Keys shared with FPD, PTAB, and Citations MCPs
 
-Test with: pfw_search_applications_minimal
-Learn workflows: pfw_get_tool_reflections
+Test with: PFW_search_applications_minimal
+Learn workflows: PFW_get_guidance
 PS C:\Users\YOUR_USERNAME\uspto_pfw_mcp>
 ```
 
@@ -412,7 +416,7 @@ SUCCESS
   uv run patent-filewrapper-mcp --help
 
 [INFO] Test with Claude Code:
-  Ask Claude: 'Use uspto_pfw:pfw_search_applications_minimal to search for patents'
+  Ask Claude: 'Use uspto_pfw:PFW_search_applications_minimal to search for patents'
 
 ```
 
@@ -548,7 +552,7 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
    ![n8n Execute Tool Operation](documentation_photos/n8n_PFW_3.jpg)
 
    - Use "List Tools" operation to see available USPTO PFW functions
-   - Use "Execute Tool" operation with `search_applications_minimal`
+   - Use "Execute Tool" operation with `PFW_search_applications_minimal`
    - Parameters example: `{"query": "patentNumber:10701173"}`
 
 ### Example n8n Workflow Use Cases
@@ -568,15 +572,23 @@ The n8n integration enables powerful automation workflows combining USPTO patent
 - `USPTO_API_KEY`: Your USPTO Open Data Portal API key (required, free from [USPTO Open Data Portal](https://data.uspto.gov/myodp/)) - See **[API_KEY_GUIDE.md](API_KEY_GUIDE.md)** for step-by-step setup instructions
 
 **Optional with defaults:**
-- `MISTRAL_API_KEY`: For OCR on scanned documents (Default: none - uses free PyPDF2 extraction)
+- `MISTRAL_API_KEY`: OPTIONAL credential for the Mistral OCR tier, used on scanned documents that carry no usable native text layer (Default: none - the native-text tiers still run, and a self-hosted Docling backend can be configured instead via `DOCLING_SERVE_URL`)
 - `MISTRAL_OCR_MODEL`: Mistral OCR model slug (Default: `mistral-ocr-latest`, which tracks Mistral's current GA model = OCR 4; pin a dated slug e.g. `mistral-ocr-2503` / `mistral-ocr-4-0` for deterministic OCR)
 - `MISTRAL_OCR_TIMEOUT`: Mistral OCR request timeout in seconds (Default: "30.0")
 - `MISTRAL_OCR_MAX_PAGES`: Max pages sent to Mistral OCR per document (Default: "50")
 - `MISTRAL_PLACEHOLDER_PATTERNS`: Extra comma-separated regex patterns treated as blank/placeholder OCR output, appended to the built-in list (Default: none)
-- `DOCLING_SERVE_URL`: Optional self-hosted Docling Serve endpoint used as an OCR fallback tier before Mistral (Default: none - Docling tier skipped)
-- `DOCLING_TIMEOUT`: Docling request timeout in seconds (Default: "30.0" — see `api/docling_client.py` for the exact constant)
-- `DOCLING_MAX_PAGES`: Max pages sent to Docling per document (Default: see `api/docling_client.py`)
+- `DOCLING_SERVE_URL`: Base URL of a self-hosted `docling-serve` instance, used as the OCR tier after Mistral - and as the only OCR tier when `MISTRAL_API_KEY` is unset (Default: none - Docling tier skipped). Example: `http://localhost:5001`, or `https://your-docling-host.example.com` for a remote instance
+- `DOCLING_TIMEOUT`: Docling read timeout in seconds (Default: "300" - EasyOCR runs roughly 10-30s per page on CPU; raise it, e.g. `DOCLING_TIMEOUT=600`, for very large documents)
+- `DOCLING_MAX_PAGES`: Skip Docling for documents longer than this page count, which prevents MCP tool-call timeouts (Default: "25")
+- `PYPDF_MAX_PAGES`: Per-document page cap for the native PyPDF2 text-layer tier (Default: "200")
+- `MISTRAL_OCR_DAILY_PAGE_BUDGET`: Cumulative daily page ceiling for the Mistral OCR tier; 0 or below disables it (Default: "2000")
+- `MISTRAL_OCR_SECONDS_PER_PAGE`: Per-page OCR timeout allowance; the effective timeout is `max(MISTRAL_OCR_TIMEOUT, this * pages)` (Default: "6")
+- `PFW_MAX_DOCUMENT_BYTES`: Ceiling on a single document buffered for text extraction; over this the tool asks for a page window instead (Default: "100000000")
+- `PFW_EXTRACT_MIN_CHARS` / `PFW_EXTRACT_MIN_WORDS` / `PFW_EXTRACT_MAX_AVG_WORD_LEN` / `PFW_EXTRACT_MIN_ALPHA_RATIO`: Thresholds that decide when the native text layer is unusable and an OCR tier should run (Defaults: "50" / "10" / "20" / "0.6")
+- `USPTO_MAX_RESPONSE_CHARS` / `USPTO_MAX_CONTENT_CHARS` / `USPTO_RESPONSE_BOUNDS_ENABLED`: Response-size guard budgets in CHARACTERS, shared with the FPD and PTAB MCPs (Defaults: "40000" / "120000" / "true"). `PFW_get_guidance("limits")` prints the live values and the `_bounds` / `_window` marker contract
+- `PFW_ENABLE_PROMPTS`: Register the MCP prompt templates; nothing appears in `prompts/list` unless this is true (Default: "false")
 - `PROXY_PORT`: HTTP proxy server port (Default: "8080")
+- `PFW_PROXY_PORT`: PFW-specific override for the proxy port; checked before `PROXY_PORT` (Default: none)
 - `ENABLE_ALWAYS_ON_PROXY`: Start proxy immediately vs on-demand (Default: "true")
 - `ENABLE_PROXY_SERVER`: Enable/disable proxy functionality (Default: "true")
 - `CORS_EXTRA_ORIGIN`: Additional CORS origin(s) allowed by the centralized proxy — for deployments behind a reverse proxy or MCP gateway (Default: none — proxy accepts `localhost` only). Comma-separated. Example: `https://your-gateway.domain.com`
@@ -593,7 +605,21 @@ The n8n integration enables powerful automation workflows combining USPTO patent
 - `PFW_LOG_BACKUP_COUNT`: Rotating log file backups retained (Default: "5")
 - `ENVIRONMENT`: Set to `development`/`dev`/`local` to relax production-only checks (Default: "production")
 - `USPTO_DB_JOURNAL_MODE`: SQLite journal mode for local databases (Default: "WAL")
-- `INTERNAL_AUTH_SECRET`: Shared HMAC secret across the USPTO MCP suite; required (fail-fast) in HTTP transport mode. Default `uspto_mcp_shared_secret_2025` if unset — change it for any non-local deployment
+- `INTERNAL_AUTH_SECRET`: Shared HMAC secret across the USPTO MCP suite. There is NO default: the server refuses to start on the HTTP transport without it, and inter-MCP token signing raises rather than falling back to a built-in value. Generate one with `python -c "import secrets; print(secrets.token_hex(32))"` and use the same value across the MCPs that talk to each other
+
+**Rotating INTERNAL_AUTH_SECRET (S-06, PT-14):** the secret plays three roles
+across the suite (x-api-key transport gate, inter-MCP service-token HMAC
+root, and — in HTTP mode=none — the admin credential), so rotating it used to
+require restarting all four MCPs in the same instant. It no longer does:
+`INTERNAL_AUTH_SECRET` may be a comma-separated list, current value first
+(`new,old`), and both the transport gate and the service-token verifier
+accept every listed value. Two-step rotation:
+1. `uv run python scripts/rotate_internal_auth_secret.py` generates a new
+   value and prints the combined env line. Deploy it to all four MCPs and
+   roll them one at a time — each accepts both values while the others are
+   mid-rollout.
+2. Once every MCP confirms the new deploy, drop the old value
+   (`INTERNAL_AUTH_SECRET=new` only) and roll again to close the window.
 
 **Advanced (for development/testing):**
 - `USPTO_TIMEOUT`: API request timeout in seconds (Default: "30.0")
@@ -603,6 +629,7 @@ The n8n integration enables powerful automation workflows combining USPTO patent
 - `USPTO_MAX_RETRIES_PER_HOUR`: Per-hour retry budget for the enhanced USPTO client (Default: "100")
 - `FASTMCP_TRANSPORT`: `stdio` (default) or `http`
 - `FASTMCP_HOST` / `FASTMCP_PORT`: Bind interface/port in HTTP transport mode (Default: "127.0.0.1" / "8000")
+- `FASTMCP_STATELESS_HTTP`: Stateless streamable HTTP — no server-side session table, every request self-contained. Needed for clients that don't replay `mcp-session-id` and for load-balanced/multi-replica deploys (Default: "true")
 
 **OAuth sign-in (HTTP mode only, optional):** see [SSO_SETUP.md](SSO_SETUP.md) and `.env.example` for the full `PFW_AUTH_*` variable block, and the OAuth section in [README.md](README.md#oauth-sign-in-optional). Includes `PFW_ENABLE_USER_MANAGEMENT` — the `pfw_manage_users` admin tool is registered (and its scope-gate enforced at startup) only when this is `true`; it is silently absent from `tools/list` otherwise.
 
@@ -718,7 +745,14 @@ Both variables accept comma-separated values for multiple origins (e.g. `https:/
 - **Mistral API Key** (optional) - For OCR functionality from [Mistral AI](https://mistral.ai/solutions/document-ai) - See **[API_KEY_GUIDE.md](API_KEY_GUIDE.md)** for setup instructions
 - **Claude Desktop or Claude Code** - For MCP integration
 
-> **Note:** The Mistral API key is optional. Without it, document extraction uses free PyPDF2 (works for text-based PDFs). With it, OCR is available for scanned documents (~$0.001/page).
+> **Note:** The Mistral API key is optional. Extraction always tries the
+> capability tiers in order: the USPTO's own free-text variants, then the PDF's
+> native text layer via PyPDF2, then OCR. OCR is only reached for a scanned
+> page with no usable text layer, and it needs a backend: either
+> `MISTRAL_API_KEY`, or a self-hosted Docling backend such as `docling-serve`
+> pointed at by `DOCLING_SERVE_URL`. Configure either, both, or neither -
+> without an OCR backend the tool reports that a scanned document could not be
+> extracted rather than failing silently.
 
 ### 1. Install uv (if not already installed)
 
@@ -799,7 +833,7 @@ asyncio.run(test())
 "
 
 # Test in Claude Desktop/Code:
-patent-filewrapper:pfw_search_applications_minimal {"query": "artificial intelligence", "limit": 1}
+patent-filewrapper:PFW_search_applications_minimal {"query": "artificial intelligence", "limit": 1}
 ```
 
 ## 🗂️ Platform-Specific Notes
@@ -965,10 +999,10 @@ uv run patent-filewrapper-mcp --help
 In Claude Code, try these commands:
 ```
 # Test inventor search
-uspto_pfw:pfw_search_inventor {"name": "Smith", "limit": 2}
+uspto_pfw:PFW_search_inventor {"name": "Smith", "limit": 2}
 
 # Test application search
-uspto_pfw:pfw_search_applications_minimal {"query": "artificial intelligence", "limit": 1}
+uspto_pfw:PFW_search_applications_minimal {"query": "artificial intelligence", "limit": 1}
 ```
 
 **3. Verify MCP Connection:**
@@ -1012,7 +1046,7 @@ Expected response format:
 - [ ] Patent MCP package installed
 - [ ] System executable created and working
 - [ ] USPTO API key configured
-- [ ] Mistral API key configured (for OCR)
+- [ ] OCR backend configured if scanned documents matter (optional: `MISTRAL_API_KEY` and/or `DOCLING_SERVE_URL`)
 - [ ] Claude Desktop/Code config updated
 - [ ] Claude Desktop/Code restarted
 - [ ] MCP server responding to test queries

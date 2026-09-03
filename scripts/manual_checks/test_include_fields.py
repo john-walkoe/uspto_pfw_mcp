@@ -12,31 +12,31 @@ def demonstrate_include_fields_usage():
     examples = [
         {
             "use_case": "Default (optimized for general patent analysis)",
-            "call": "pfw_get_patent_or_application_xml(identifier='7971071')",
+            "call": "PFW_get_patent_or_application_xml(identifier='7971071')",
             "fields_returned": ["xml_type", "abstract", "claims", "description"],
             "context_size": "~5K tokens"
         },
         {
             "use_case": "Just claims (for claim analysis)",
-            "call": "pfw_get_patent_or_application_xml(identifier='7971071', include_fields=['claims'])",
+            "call": "PFW_get_patent_or_application_xml(identifier='7971071', include_fields=['claims'])",
             "fields_returned": ["xml_type", "claims"],
             "context_size": "~2K tokens"
         },
         {
             "use_case": "Claims + citations (for prior art analysis)",
-            "call": "pfw_get_patent_or_application_xml(identifier='7971071', include_fields=['claims', 'citations'])",
+            "call": "PFW_get_patent_or_application_xml(identifier='7971071', include_fields=['claims', 'citations'])",
             "fields_returned": ["xml_type", "claims", "citations"],
             "context_size": "~3K tokens"
         },
         {
             "use_case": "Just inventors (for portfolio analysis)",
-            "call": "pfw_get_patent_or_application_xml(identifier='7971071', include_fields=['inventors'])",
+            "call": "PFW_get_patent_or_application_xml(identifier='7971071', include_fields=['inventors'])",
             "fields_returned": ["xml_type", "inventors"],
             "context_size": "~500 tokens"
         },
         {
             "use_case": "Everything (maximum context)",
-            "call": """pfw_get_patent_or_application_xml(
+            "call": """PFW_get_patent_or_application_xml(
     identifier='7971071',
     include_fields=['abstract', 'claims', 'description', 'inventors', 'applicants', 'classifications', 'citations', 'publication_info']
 )""",
@@ -82,7 +82,7 @@ def demonstrate_include_fields_usage():
     print("=" * 80)
     print()
     print("1. Default includes core content only (abstract, claims, description)")
-    print("2. For metadata, prefer pfw_search_applications_balanced (already in context)")
+    print("2. For metadata, prefer PFW_search_applications_balanced (already in context)")
     print("3. For citations, consider uspto_enriched_citation_mcp (richer data)")
     print("4. Request only what you need to minimize token usage")
     print()

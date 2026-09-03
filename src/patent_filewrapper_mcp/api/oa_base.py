@@ -30,7 +30,7 @@ class OAClientBase:
         if not self.api_key:
             raise AuthenticationError("USPTO_API_KEY environment variable is required")
         self.timeout = timeout if timeout is not None else float(os.getenv("USPTO_OA_TIMEOUT", "30.0"))
-        self.max_retries = int(os.getenv("USPTO_OA_MAX_RETRIES", "2"))
+        self.max_retries = max(0, int(os.getenv("USPTO_OA_MAX_RETRIES", "2")))
 
     def _headers(self) -> Dict[str, str]:
         return {"X-API-KEY": self.api_key}

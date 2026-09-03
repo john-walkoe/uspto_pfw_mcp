@@ -3,7 +3,10 @@
 Several tools require API keys to function. For the USPTO PFW MCP Server:
 
 - **USPTO API Key**: Required and free
-- **Mistral API Key**: Optional, has a free tier for testing, but paid plan recommended for production use
+- **Mistral API Key**: Optional. It enables one of the two OCR backends the
+  server can use for scanned documents. The other is a self-hosted Docling
+  backend, which needs no key at all (see "Self-hosted OCR" below). Configure
+  either, both, or neither.
 
 Follow these steps to obtain your API keys:
 
@@ -116,7 +119,11 @@ However, if you use the API key separately outside the scope of the USPTO PFW MC
 - Scan and OCR client documents
 - Use other Mistral API endpoints (e.g., chat API)
 
-Then the **free tier may not be appropriate** due to the terms of service stating: **"API requests may be used to improve our services"**
+Then read the terms attached to the plan you selected before doing so. Some
+Mistral plans state that **"API requests may be used to improve our services"**,
+which may not be appropriate for client material. If that matters to you, the
+self-hosted Docling backend below keeps document bytes on infrastructure you
+control.
 
 ---
 
@@ -161,11 +168,37 @@ Then the **free tier may not be appropriate** due to the terms of service statin
 
 ---
 
+## Self-hosted OCR (no API key)
+
+The Mistral key is not the only way to reach the OCR tier. The server also
+speaks to a self-hosted [Docling](https://github.com/docling-project/docling)
+backend, typically `docling-serve`, which uses no third-party credential and
+keeps document bytes on infrastructure you control.
+
+Point the server at it with these environment variables (the names the code
+reads, defaults from `src/patent_filewrapper_mcp/api/docling_client.py`):
+
+| Variable | Meaning | Default |
+|----------|---------|---------|
+| `DOCLING_SERVE_URL` | Base URL of the `docling-serve` instance, e.g. `http://localhost:5001` or `https://your-docling-host.example.com` | none - the Docling tier is skipped |
+| `DOCLING_TIMEOUT` | Read timeout in seconds for OCR processing | `300` |
+| `DOCLING_MAX_PAGES` | Skip Docling for documents longer than this, so a large scan cannot exceed the client's tool-call timeout | `25` |
+
+Extraction reaches an OCR tier only when a page carries no usable native text
+layer. With `MISTRAL_API_KEY` set the Mistral tier runs first and Docling is
+the next tier; with no Mistral key configured, Docling is the OCR tier. With
+neither configured, the tool reports that a scanned document could not be
+extracted instead of failing silently.
+
+---
+
 ## Summary
 
 ✅ **USPTO API Key**: Required, free, no rotation available - safeguard carefully
 
-✅ **Mistral API Key**: Optional, free tier available, paid recommended for production
+✅ **Mistral API Key**: Optional - one of the two OCR backends
+
+✅ **`DOCLING_SERVE_URL`**: Optional - the self-hosted OCR backend, no key required
 
 Both keys are stored securely by the deployment script using Windows DPAPI encryption for the secure configuration method.
 

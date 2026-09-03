@@ -36,10 +36,10 @@ predefined_sets:
       # IMPORTANT: Keep documentBag functionality available but commented out
       # Users can uncomment this line if they need documentBag in search results
       # WARNING: Including documentBag can cause massive token usage (100,000+ characters for patents with extensive prosecution history)
-      # Use pfw_get_application_documents for targeted document access instead
+      # Use PFW_get_application_documents for targeted document access instead
 
       # Uncomment the line below ONLY if you need prosecution documents in search results:
-      # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
+      # - documentBag  # WARNING: Can cause 100x token increase - use PFW_get_application_documents instead
 
 
       # === DOCKET DATA ===
@@ -48,7 +48,13 @@ predefined_sets:
       # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
 
       # === DATES ===
-      # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
+      # - applicationMetaData.effectiveFilingDate       # NOT the earliest priority date.
+      #   Live-verified 2026-08-30: it is the 371 national-stage ENTRY date for a
+      #   national-stage case and the CHILD'S OWN filing date for a continuation
+      #   (app 13975827 reports 2013-08-26 while its provisional 61/694,492 was filed
+      #   2012-08-29). Any AIA or prior-art cutoff built on it inverts. Use the
+      #   `earliest_priority_date` / `priority_basis` the balanced tiers and
+      #   PFW_get_family compute from the priority chain instead.
       # - applicationMetaData.applicationStatusDate     # When status was last updated
       # - applicationMetaData.publicationDateBag        # Publication dates
       # - applicationMetaData.earliestPublicationNumber # Publication number
@@ -57,7 +63,7 @@ predefined_sets:
 
       # === INVENTORS & APPLICANTS ===
       # - applicationMetaData.firstInventorName         # First named inventor
-      # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
+      # - applicationMetaData.firstInventorToFileIndicator # AIA status ("Y"/"N") - ENABLED IN BALANCED
       # - applicationMetaData.assigneeBag               # Current assignees (array)
 
       # === APPLICATION TYPE & ENTITY ===
@@ -87,7 +93,12 @@ predefined_sets:
       # - applicationMetaData.internationalRegistrationNumber  # International registration number
       # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
       # - applicationMetaData.priorityClaimBag          # Priority claims
-      # - applicationMetaData.foreignPriorityBag        # Foreign priority data
+      # - foreignPriorityBag                            # Foreign priority data
+      #   PROVENANCE (live-probed 2026-08-21, ODP search API): this field is
+      #   TOP-LEVEL, not under applicationMetaData. The old
+      #   `applicationMetaData.foreignPriorityBag` path is DEAD — it returns
+      #   nothing rather than erroring, so uncommenting it would have silently
+      #   yielded an empty bag. See api/field_constants.py USPTOFields.
 
       # === PUBLICATIONS & RELATED DOCS ===
       # - applicationMetaData.relatedPublicationBag     # Related publications
@@ -95,7 +106,11 @@ predefined_sets:
       # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
 
       # === ADVANCED DATA ===
-      # - termAdjustmentBag                             # Patent term adjustments
+      # - patentTermAdjustmentData                      # Patent term adjustments
+      #   PROVENANCE (live-probed 2026-08-21, ODP search API): `termAdjustmentBag`
+      #   is NOT an ODP field at all — the real one is `patentTermAdjustmentData`
+      #   (top-level). PFW_get_term_adjustment reads it. See
+      #   api/field_constants.py USPTOFields.PATENT_TERM_ADJUSTMENT_DATA.
       # - transactionBag                                # Transaction history
 
   applications_balanced:
@@ -118,16 +133,21 @@ predefined_sets:
       - applicationMetaData.customerNumber              # Customer number
       - applicationMetaData.applicationStatusCode       # Status code
       - applicationMetaData.applicantBag                # All applicants (array)
-      - assignmentBag                                   # Assignment records
+      - assignmentBag                                   # Assignment records - OFTEN EMPTY.
+      #   Observed 2026-08-29 (US 11,333,007, Reel 048880 / Frame 0804): the API
+      #   returned an empty assignmentBag on two calls for a patent that IS assigned of
+      #   record. An empty bag is NOT evidence of no assignment. The working ownership
+      #   reads are applicationMetaData.firstApplicantName / applicantBag and the
+      #   Rule 3.73(c) statement document in the file wrapper.
       - applicationMetaData.applicationStatusDescriptionText  # Human-readable status
 
       # IMPORTANT: Keep documentBag functionality available but commented out
       # Users can uncomment this line if they need documentBag in search results
       # WARNING: Including documentBag can cause massive token usage (100,000+ characters for patents with extensive prosecution history)
-      # Use pfw_get_application_documents for targeted document access instead
+      # Use PFW_get_application_documents for targeted document access instead
 
       # Uncomment the line below ONLY if you need prosecution documents in search results:
-      # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
+      # - documentBag  # WARNING: Can cause 100x token increase - use PFW_get_application_documents instead
 
 
       # === DOCKET DATA ===
@@ -136,7 +156,13 @@ predefined_sets:
       # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
 
       # === DATES ===
-      # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
+      # - applicationMetaData.effectiveFilingDate       # NOT the earliest priority date.
+      #   Live-verified 2026-08-30: it is the 371 national-stage ENTRY date for a
+      #   national-stage case and the CHILD'S OWN filing date for a continuation
+      #   (app 13975827 reports 2013-08-26 while its provisional 61/694,492 was filed
+      #   2012-08-29). Any AIA or prior-art cutoff built on it inverts. Use the
+      #   `earliest_priority_date` / `priority_basis` the balanced tiers and
+      #   PFW_get_family compute from the priority chain instead.
       # - applicationMetaData.applicationStatusDate     # When status was last updated
       # - applicationMetaData.publicationDateBag        # Publication dates
       # - applicationMetaData.earliestPublicationNumber # Publication number
@@ -145,7 +171,14 @@ predefined_sets:
 
       # === INVENTORS & APPLICANTS ===
       # - applicationMetaData.firstInventorName         # First named inventor
-      # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
+      - applicationMetaData.firstInventorToFileIndicator # AIA first-inventor-to-file status.
+      #   Live-probed 2026-08-30: served as the STRING "Y"/"N" on applicationMetaData
+      #   (app 14257618 -> "Y"). Enabled in the balanced tiers 2026-08-30 — no tier
+      #   returned AIA status before, so pre-AIA vs AIA had to be inferred from dates.
+      #   NAMESAKE WARNING: parentContinuityBag[] and childContinuityBag[] entries carry
+      #   their own BOOLEAN `firstInventorToFileIndicator` describing THAT related
+      #   application, not this one. Do not read a continuity-bag boolean as this
+      #   application's AIA status.
       # - applicationMetaData.assigneeBag               # Current assignees (array)
 
       # === APPLICATION TYPE & ENTITY ===
@@ -164,9 +197,16 @@ predefined_sets:
       # === FAMILY & CONTINUITY ===
       # - parentContinuityBag                           # Parent application data (full)
       # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
-      # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
+      - parentContinuityBag.parentApplicationNumberText  # Parent application numbers (family awareness; scalar, not the full bag)
+      - parentContinuityBag.parentApplicationFilingDate  # Parent filing dates - feeds earliest_priority_date
+      - parentContinuityBag.claimParentageTypeCode      # CON / CIP / DIV / PRO (PRO = provisional)
+      #   Live-probed 2026-08-30: dotted parentContinuityBag subfield selection IS
+      #   served (app 13975827 returned parent 61694492, filed 2012-08-29, code PRO,
+      #   while its own effectiveFilingDate was 2013-08-26). These two scalars are what
+      #   lets the balanced tiers report earliest_priority_date / priority_basis instead
+      #   of leaving callers to misread effectiveFilingDate as the priority date.
       # - childContinuityBag                            # Child application data (full)
-      # - childContinuityBag.childApplicationNumberText # Child application numbers
+      - childContinuityBag.childApplicationNumberText  # Child application numbers (family awareness; scalar, not the full bag)
 
       # === INTERNATIONAL & PRIORITY ===
       # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
@@ -175,7 +215,7 @@ predefined_sets:
       # - applicationMetaData.internationalRegistrationNumber  # International registration number
       # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
       # - applicationMetaData.priorityClaimBag          # Priority claims
-      # - applicationMetaData.foreignPriorityBag        # Foreign priority data
+      - foreignPriorityBag                            # Foreign priority data (TOP-LEVEL field, not under applicationMetaData)
 
       # === PUBLICATIONS & RELATED DOCS ===
       # - applicationMetaData.relatedPublicationBag     # Related publications
@@ -183,7 +223,11 @@ predefined_sets:
       # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
 
       # === ADVANCED DATA ===
-      # - termAdjustmentBag                             # Patent term adjustments
+      # - patentTermAdjustmentData                      # Patent term adjustments
+      #   PROVENANCE (live-probed 2026-08-21, ODP search API): `termAdjustmentBag`
+      #   is NOT an ODP field at all — the real one is `patentTermAdjustmentData`
+      #   (top-level). PFW_get_term_adjustment reads it. See
+      #   api/field_constants.py USPTOFields.PATENT_TERM_ADJUSTMENT_DATA.
       # - transactionBag                                # Transaction history
 
   inventor_minimal:
@@ -212,10 +256,10 @@ predefined_sets:
       # IMPORTANT: Keep documentBag functionality available but commented out
       # Users can uncomment this line if they need documentBag in search results
       # WARNING: Including documentBag can cause massive token usage (100,000+ characters for patents with extensive prosecution history)
-      # Use pfw_get_application_documents for targeted document access instead
+      # Use PFW_get_application_documents for targeted document access instead
 
       # Uncomment the line below ONLY if you need prosecution documents in search results:
-      # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
+      # - documentBag  # WARNING: Can cause 100x token increase - use PFW_get_application_documents instead
 
 
       # === DOCKET DATA ===
@@ -224,7 +268,13 @@ predefined_sets:
       # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
 
       # === DATES ===
-      # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
+      # - applicationMetaData.effectiveFilingDate       # NOT the earliest priority date.
+      #   Live-verified 2026-08-30: it is the 371 national-stage ENTRY date for a
+      #   national-stage case and the CHILD'S OWN filing date for a continuation
+      #   (app 13975827 reports 2013-08-26 while its provisional 61/694,492 was filed
+      #   2012-08-29). Any AIA or prior-art cutoff built on it inverts. Use the
+      #   `earliest_priority_date` / `priority_basis` the balanced tiers and
+      #   PFW_get_family compute from the priority chain instead.
       # - applicationMetaData.applicationStatusDate     # When status was last updated
       # - applicationMetaData.publicationDateBag        # Publication dates
       # - applicationMetaData.earliestPublicationNumber # Publication number
@@ -233,7 +283,7 @@ predefined_sets:
 
       # === INVENTORS & APPLICANTS ===
       # - applicationMetaData.firstInventorName         # First named inventor
-      # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
+      # - applicationMetaData.firstInventorToFileIndicator # AIA status ("Y"/"N") - ENABLED IN BALANCED
       # - applicationMetaData.assigneeBag               # Current assignees (array)
 
       # === APPLICATION TYPE & ENTITY ===
@@ -263,7 +313,12 @@ predefined_sets:
       # - applicationMetaData.internationalRegistrationNumber  # International registration number
       # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
       # - applicationMetaData.priorityClaimBag          # Priority claims
-      # - applicationMetaData.foreignPriorityBag        # Foreign priority data
+      # - foreignPriorityBag                            # Foreign priority data
+      #   PROVENANCE (live-probed 2026-08-21, ODP search API): this field is
+      #   TOP-LEVEL, not under applicationMetaData. The old
+      #   `applicationMetaData.foreignPriorityBag` path is DEAD — it returns
+      #   nothing rather than erroring, so uncommenting it would have silently
+      #   yielded an empty bag. See api/field_constants.py USPTOFields.
 
       # === PUBLICATIONS & RELATED DOCS ===
       # - applicationMetaData.relatedPublicationBag     # Related publications
@@ -271,7 +326,11 @@ predefined_sets:
       # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
 
       # === ADVANCED DATA ===
-      # - termAdjustmentBag                             # Patent term adjustments
+      # - patentTermAdjustmentData                      # Patent term adjustments
+      #   PROVENANCE (live-probed 2026-08-21, ODP search API): `termAdjustmentBag`
+      #   is NOT an ODP field at all — the real one is `patentTermAdjustmentData`
+      #   (top-level). PFW_get_term_adjustment reads it. See
+      #   api/field_constants.py USPTOFields.PATENT_TERM_ADJUSTMENT_DATA.
       # - transactionBag                                # Transaction history
 
   inventor_balanced:
@@ -295,16 +354,21 @@ predefined_sets:
       - applicationMetaData.customerNumber              # Customer number
       - applicationMetaData.applicationStatusCode       # Status code
       - applicationMetaData.applicantBag                # All applicants (array)
-      - assignmentBag                                   # Assignment records
+      - assignmentBag                                   # Assignment records - OFTEN EMPTY.
+      #   Observed 2026-08-29 (US 11,333,007, Reel 048880 / Frame 0804): the API
+      #   returned an empty assignmentBag on two calls for a patent that IS assigned of
+      #   record. An empty bag is NOT evidence of no assignment. The working ownership
+      #   reads are applicationMetaData.firstApplicantName / applicantBag and the
+      #   Rule 3.73(c) statement document in the file wrapper.
       - applicationMetaData.applicationStatusDescriptionText  # Human-readable status
 
       # IMPORTANT: Keep documentBag functionality available but commented out
       # Users can uncomment this line if they need documentBag in search results
       # WARNING: Including documentBag can cause massive token usage (100,000+ characters for patents with extensive prosecution history)
-      # Use pfw_get_application_documents for targeted document access instead
+      # Use PFW_get_application_documents for targeted document access instead
 
       # Uncomment the line below ONLY if you need prosecution documents in search results:
-      # - documentBag  # WARNING: Can cause 100x token increase - use pfw_get_application_documents instead
+      # - documentBag  # WARNING: Can cause 100x token increase - use PFW_get_application_documents instead
 
 
       # === DOCKET DATA ===
@@ -313,7 +377,13 @@ predefined_sets:
       # - applicationMetaData.attorneyDocketNumber      # Alternative attorney docket field
 
       # === DATES ===
-      # - applicationMetaData.effectiveFilingDate       # Effective filing date (may differ from filing date)
+      # - applicationMetaData.effectiveFilingDate       # NOT the earliest priority date.
+      #   Live-verified 2026-08-30: it is the 371 national-stage ENTRY date for a
+      #   national-stage case and the CHILD'S OWN filing date for a continuation
+      #   (app 13975827 reports 2013-08-26 while its provisional 61/694,492 was filed
+      #   2012-08-29). Any AIA or prior-art cutoff built on it inverts. Use the
+      #   `earliest_priority_date` / `priority_basis` the balanced tiers and
+      #   PFW_get_family compute from the priority chain instead.
       # - applicationMetaData.applicationStatusDate     # When status was last updated
       # - applicationMetaData.publicationDateBag        # Publication dates
       # - applicationMetaData.earliestPublicationNumber # Publication number
@@ -322,7 +392,14 @@ predefined_sets:
 
       # === INVENTORS & APPLICANTS ===
       # - applicationMetaData.firstInventorName         # First named inventor
-      # - applicationMetaData.firstInventorToFileIndicator # First-to-file indicator (Y/N)
+      - applicationMetaData.firstInventorToFileIndicator # AIA first-inventor-to-file status.
+      #   Live-probed 2026-08-30: served as the STRING "Y"/"N" on applicationMetaData
+      #   (app 14257618 -> "Y"). Enabled in the balanced tiers 2026-08-30 — no tier
+      #   returned AIA status before, so pre-AIA vs AIA had to be inferred from dates.
+      #   NAMESAKE WARNING: parentContinuityBag[] and childContinuityBag[] entries carry
+      #   their own BOOLEAN `firstInventorToFileIndicator` describing THAT related
+      #   application, not this one. Do not read a continuity-bag boolean as this
+      #   application's AIA status.
       # - applicationMetaData.assigneeBag               # Current assignees (array)
 
       # === APPLICATION TYPE & ENTITY ===
@@ -341,9 +418,16 @@ predefined_sets:
       # === FAMILY & CONTINUITY ===
       # - parentContinuityBag                           # Parent application data (full)
       # - parentContinuityBag.parentPatentNumber        # Parent patent numbers only
-      # - parentContinuityBag.parentApplicationNumberText  # Parent application numbers
+      - parentContinuityBag.parentApplicationNumberText  # Parent application numbers (family awareness; scalar, not the full bag)
+      - parentContinuityBag.parentApplicationFilingDate  # Parent filing dates - feeds earliest_priority_date
+      - parentContinuityBag.claimParentageTypeCode      # CON / CIP / DIV / PRO (PRO = provisional)
+      #   Live-probed 2026-08-30: dotted parentContinuityBag subfield selection IS
+      #   served (app 13975827 returned parent 61694492, filed 2012-08-29, code PRO,
+      #   while its own effectiveFilingDate was 2013-08-26). These two scalars are what
+      #   lets the balanced tiers report earliest_priority_date / priority_basis instead
+      #   of leaving callers to misread effectiveFilingDate as the priority date.
       # - childContinuityBag                            # Child application data (full)
-      # - childContinuityBag.childApplicationNumberText # Child application numbers
+      - childContinuityBag.childApplicationNumberText  # Child application numbers (family awareness; scalar, not the full bag)
 
       # === INTERNATIONAL & PRIORITY ===
       # - applicationMetaData.nationalStageIndicator    # Is this a national stage PCT application? (true/false)
@@ -352,7 +436,7 @@ predefined_sets:
       # - applicationMetaData.internationalRegistrationNumber  # International registration number
       # - applicationMetaData.internationalRegistrationPublicationDate  # International registration pub date
       # - applicationMetaData.priorityClaimBag          # Priority claims
-      # - applicationMetaData.foreignPriorityBag        # Foreign priority data
+      - foreignPriorityBag                            # Foreign priority data (TOP-LEVEL field, not under applicationMetaData)
 
       # === PUBLICATIONS & RELATED DOCS ===
       # - applicationMetaData.relatedPublicationBag     # Related publications
@@ -360,16 +444,20 @@ predefined_sets:
       # - applicationMetaData.publicationCategoryBag    # Publication categories (Pre-Grant, Grant, etc.)
 
       # === ADVANCED DATA ===
-      # - termAdjustmentBag                             # Patent term adjustments
+      # - patentTermAdjustmentData                      # Patent term adjustments
+      #   PROVENANCE (live-probed 2026-08-21, ODP search API): `termAdjustmentBag`
+      #   is NOT an ODP field at all — the real one is `patentTermAdjustmentData`
+      #   (top-level). PFW_get_term_adjustment reads it. See
+      #   api/field_constants.py USPTOFields.PATENT_TERM_ADJUSTMENT_DATA.
       # - transactionBag                                # Transaction history
 
 # Usage Instructions:
 # 1. APPLICATION SEARCHES:
-#    - Edit 'applications_minimal' section for pfw_search_applications_minimal
-#    - Edit 'applications_balanced' section for pfw_search_applications_balanced
+#    - Edit 'applications_minimal' section for PFW_search_applications_minimal
+#    - Edit 'applications_balanced' section for PFW_search_applications_balanced
 # 2. INVENTOR SEARCHES:
-#    - Edit 'inventor_minimal' section for pfw_search_inventor_minimal
-#    - Edit 'inventor_balanced' section for pfw_search_inventor_balanced
+#    - Edit 'inventor_minimal' section for PFW_search_inventor_minimal
+#    - Edit 'inventor_balanced' section for PFW_search_inventor_balanced
 # 3. Uncomment fields you want by removing the # symbol
 # 4. After editing, restart Claude Desktop to reload the configuration
 
@@ -380,10 +468,13 @@ predefined_sets:
 # - Document fields (documentBag, associatedDocuments) enable content analysis workflow
 
 # IMPORTANT FIELD DISTINCTIONS:
-# - patentNumber: Granted patent number (7-8 digits, e.g., '7123456') - USE WITH ppubs_get_patent_by_number
-# - parentPatentNumber: Parent patent number (use with ppubs_get_patent_by_number)
-# - applicationNumberText: Application number (longer with slashes, e.g., '16/123,456') - DO NOT use with ppubs_get_patent_by_number
+# - patentNumber: Granted patent number (7-8 digits, e.g., '7123456') - pass to PFW_get_patent_or_application_xml
+#   as `identifier`, or query it as patentNumber:7123456
+# - parentPatentNumber: Parent patent number in the same format; for the family structure itself
+#   (parents, children, CON/CIP/DIV relations, foreign priority) use PFW_get_family
+# - applicationNumberText: Application number (longer with slashes, e.g., '16/123,456') - this is what the
+#   document, download, OCR, office-action, family and term-adjustment tools require
 #
 # DOCUMENT FIELDS FOR DOWNLOADS:
-# - documentBag: Include this to get document lists for pfw_get_document/pfw_get_document_content/pfw_get_document_download tools
-# - associatedDocuments: Include this to get XML file metadata for pfw_get_patent_or_application_xml tool
+# - documentBag: Include this to get document lists for PFW_get_document_content_with_ocr/PFW_get_document_download tools
+# - associatedDocuments: Include this to get XML file metadata for PFW_get_patent_or_application_xml tool

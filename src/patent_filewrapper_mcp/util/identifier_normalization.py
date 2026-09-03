@@ -25,11 +25,15 @@ class IdentifierInfo:
     """
     original_input: str
     cleaned_value: str
-    identifier_type: str  # "application", "patent", "publication", "unknown"
+    identifier_type: str  # "application", "patent", "publication", "ambiguous", "unknown"
     search_query: str
     app_number_for_docs: Optional[str]
     confidence: str  # "high", "medium", "low"
     notes: str
+    #: For an AMBIGUOUS 8-digit number: the second lane to try if the first
+    #: (search_query) returns nothing. None for every unambiguous type.
+    alternate_search_query: Optional[str] = None
+    alternate_identifier_type: Optional[str] = None
 
 
 def normalize_identifier(user_input: str) -> IdentifierInfo:
@@ -106,38 +110,37 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
             notes="Patent number format (7 digits or less)"
         )
 
-    # 4. AMBIGUOUS CASE: 8 digits in the danger zone (could be either)
+    # 4. AMBIGUOUS CASE: 8 digits is BOTH a valid patent number and a valid
+    #    application serial, at every value. No arithmetic threshold separates
+    #    them, so none is applied.
     elif cleaned.isdigit() and len(cleaned) == 8:
-        # This is the critical bug case!
-        # Numbers like "11752072" could be either:
-        # - Application number (series 08-17+: 08000000-17999999+)
-        # - Patent number (currently ~11.5M issued max)
-
-        # Heuristic based on USPTO application series:
-        # Series 08-11 (pre-2001): 08000000-11999999
-        # Series 12+ (2001+): 12000000+
-        # Patents: Currently max ~11.5M
-        # Numbers >= 08000000 (8M) are likely applications
-        if int(cleaned) < 8000000:
-            return IdentifierInfo(
-                original_input=user_input,
-                cleaned_value=cleaned,
-                identifier_type="patent",
-                search_query=f"applicationMetaData.patentNumber:{cleaned}",
-                app_number_for_docs=None,
-                confidence="high",
-                notes="8-digit number < 8M - likely patent number (max ~11.5M patents issued)"
-            )
-        else:
-            return IdentifierInfo(
-                original_input=user_input,
-                cleaned_value=cleaned,
-                identifier_type="application",
-                search_query=f"applicationNumberText:{cleaned}",
-                app_number_for_docs=cleaned,
-                confidence="high",
-                notes="8-digit number >= 8M - likely application number (series 08-17+)"
-            )
+        # The old rule typed any 8-digit number >= 8,000,000 as an application
+        # serial. Patent numbers passed 12,000,000 in 2024, so every recent
+        # grant was silently routed to `applicationNumberText:<n>` and came
+        # back as an unrelated application (live-verified 2026-08-30:
+        # "12539322" as a patent number is application 17996652, Nestle; as an
+        # application serial it is 12/539,322, a Canon image sensor). Both
+        # lanes are real, so the API decides, not a heuristic — see
+        # util/identifier_resolution.resolve_identifier_lanes.
+        return IdentifierInfo(
+            original_input=user_input,
+            cleaned_value=cleaned,
+            identifier_type=IdentifierType.AMBIGUOUS,
+            # Patent lane FIRST: an 8-digit value typed by a user is far more
+            # often a patent number, and the application lane is the fallback.
+            search_query=f"applicationMetaData.patentNumber:{cleaned}",
+            app_number_for_docs=None,
+            confidence="medium",
+            notes=(
+                "8-digit identifier is both a valid patent number and a valid "
+                "application serial. Resolved against the API: "
+                f"applicationMetaData.patentNumber:{cleaned} first, then "
+                f"applicationNumberText:{cleaned}. Pass content_type='patent' or "
+                "content_type='application' to force one lane."
+            ),
+            alternate_search_query=f"applicationNumberText:{cleaned}",
+            alternate_identifier_type=IdentifierType.APPLICATION,
+        )
 
     # 6. Long numbers: Likely application numbers
     elif cleaned.isdigit() and len(cleaned) > 8:
@@ -173,7 +176,7 @@ async def resolve_identifier_to_application_number(
 
     Args:
         identifier_info: Result from normalize_identifier()
-        search_function: The pfw_search_applications_minimal function
+        search_function: The PFW_search_applications_minimal function
 
     Returns:
         Tuple of (application_number, status_message)
@@ -238,25 +241,28 @@ def create_identifier_guidance(identifier_info: IdentifierInfo) -> Dict[str, str
 TEST_CASES = [
     # Clear cases
     ("7971071", "patent", "high"),
-    ("16816197", "application", "high"),  # 8-digit number >= 8M (series 16)
     ("11/752,072", "application", "high"),
     ("20080141381", "publication", "high"),
 
-    # Application number cases (series 08-17+)
-    ("11752072", "application", "high"),  # Series 11 application >= 8M
-    ("14104993", "application", "high"),  # Series 14 application >= 8M
-    ("08123456", "application", "high"),  # Series 08 application >= 8M
+    # 8-digit bare numbers are AMBIGUOUS by construction (2026-08-30): each of
+    # these is simultaneously a valid patent number and a valid application
+    # serial, and only the API can say which one the caller meant.
+    ("16816197", "ambiguous", "medium"),
+    ("11752072", "ambiguous", "medium"),
+    ("14104993", "ambiguous", "medium"),
+    ("08123456", "ambiguous", "medium"),
+    ("12539322", "ambiguous", "medium"),  # the reported miss: patent 12,539,322
+    ("07999999", "ambiguous", "medium"),  # the old <8M patent branch
+    ("08000000", "ambiguous", "medium"),  # the old >=8M application branch
 
     # Patent kind codes (suffixes like B2, A1)
     ("US7971071B2", "patent", "high"),  # Granted patent with B2 suffix
     ("US 7,971,071 B2", "patent", "high"),  # With spaces
     ("7971071A1", "patent", "high"),  # Published application A1 suffix
-    ("11752072B1", "application", "high"),  # Application number with suffix (uncommon)
+    ("11752072B1", "ambiguous", "medium"),  # 8 digits after the kind code
 
     # Edge cases
     ("US 7,971,071", "patent", "high"),
-    ("07999999", "patent", "high"),  # Just below 8M threshold - patent
-    ("08000000", "application", "high"),  # At 8M threshold - application
 ]
 
 

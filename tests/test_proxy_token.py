@@ -43,7 +43,6 @@ class TestProxyToken:
 
         # Read main.py source
         from patent_filewrapper_mcp.tools import document_tools as main
-        source = inspect.getsource(main)
 
         # Check _register_download_via_proxy function
         for name, obj in inspect.getmembers(main):

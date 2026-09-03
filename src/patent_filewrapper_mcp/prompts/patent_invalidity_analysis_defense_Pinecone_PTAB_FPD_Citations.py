@@ -200,7 +200,7 @@ semantic_search(
 1. Search for target application with custom minimal fields:
    ```python
    # Use ultra-minimal fields just to verify existence (99% reduction)
-   pfw_search_applications_minimal(
+   PFW_search_applications_minimal(
        query='applicationNumberText:"16123456"',
        fields=['applicationNumberText', 'patentNumber', 'inventionTitle'],
        limit=1
@@ -230,7 +230,7 @@ Avoid context waste by not retrieving data (filing date, examiner, art unit, etc
 1. Get comprehensive application data:
    ```python
    # Use balanced tier for detailed metadata
-   pfw_search_applications_balanced(
+   PFW_search_applications_balanced(
        query='applicationNumberText:"16123456"',
        limit=1
    )
@@ -245,7 +245,7 @@ Avoid context waste by not retrieving data (filing date, examiner, art unit, etc
 3. **CRITICAL - Token Optimization:** Extract document IDs WITHOUT raw XML:
    ```python
    # Get documents list with MINIMAL token usage
-   pfw_get_application_documents(
+   PFW_get_application_documents(
        application_number='16123456',
        include_raw_xml=False  # ⚠️ CRITICAL: Reduces response from 50K+ tokens to <5K tokens
    )
@@ -458,13 +458,13 @@ If continuations/divisionals exist, check their prosecution:
 
 ```python
 # Search for parent application
-pfw_search_applications_balanced(
+PFW_search_applications_balanced(
     query='applicationNumberText:"15987654"',  # Parent app
     limit=1
 )
 
 # Get parent's documents (claim comparison)
-pfw_get_application_documents(
+PFW_get_application_documents(
     application_number='15987654',
     include_raw_xml=False
 )
@@ -625,20 +625,20 @@ if len(vulnerabilities) > 1:
 1. Search for PTAB trials (discovery phase):
    ```python
    # Check for IPR/PGR proceedings on target patent
-   trials = search_trials_minimal(
+   trials = PTAB_search_trials_minimal(
        patent_number='10123456',
        limit=10
    )
 
    # Search by patent owner for portfolio risk assessment
-   trials = search_trials_minimal(
+   trials = PTAB_search_trials_minimal(
        patent_owner_name='Example Corp',
        trial_type='IPR',
        limit=20
    )
 
    # Technology area analysis for precedents
-   trials = search_trials_minimal(
+   trials = PTAB_search_trials_minimal(
        tech_center='2600',
        trial_type='IPR',
        filing_date_from='2022-01-01',
@@ -649,7 +649,7 @@ if len(vulnerabilities) > 1:
 2. Get detailed trial information (analysis phase):
    ```python
    # Comprehensive trial details with all metadata
-   details = search_trials_balanced(
+   details = PTAB_search_trials_balanced(
        trial_number='IPR2023-00123',
        limit=1
    )
@@ -664,20 +664,20 @@ if len(vulnerabilities) > 1:
 3. Retrieve and analyze trial documents:
    ```python
    # List all documents for the trial
-   docs = ptab_get_documents(
+   docs = PTAB_get_documents(
        identifier='IPR2023-00123',
        identifier_type='trial'
    )
 
    # Get browser download links for key documents
-   petition_download = ptab_get_document_download(
+   petition_download = PTAB_get_document_download(
        document_id=docs['documents'][0]['document_id'],
        identifier='IPR2023-00123',
        identifier_type='trial'
    )
 
    # Extract text for LLM analysis (Final Written Decision)
-   fwd_text = ptab_get_document_content(
+   fwd_text = PTAB_get_document_content(
        document_id=fwd_doc_id,
        identifier='IPR2023-00123',
        identifier_type='trial',
@@ -1005,10 +1005,10 @@ Cost-Benefit Analysis:
 1. **Always use include_raw_xml=False** for document listing:
    ```python
    # CORRECT (3-5K tokens):
-   pfw_get_application_documents(application_number='16123456', include_raw_xml=False)
+   PFW_get_application_documents(application_number='16123456', include_raw_xml=False)
 
    # WRONG (50-80K tokens):
-   pfw_get_application_documents(application_number='16123456', include_raw_xml=True)
+   PFW_get_application_documents(application_number='16123456', include_raw_xml=True)
    ```
 
 2. **Only request raw XML when specifically needed:**
@@ -1110,7 +1110,7 @@ I'll conduct a comprehensive patent invalidity analysis for U.S. Patent 10,123,4
 First, let me verify the patent exists with minimal context usage:
 
 ```python
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='patentNumber:"10123456"',
     fields=['applicationNumberText', 'patentNumber', 'inventionTitle'],
     limit=1
@@ -1131,7 +1131,7 @@ pfw_search_applications_minimal(
 Now let me get comprehensive metadata including prosecution history:
 
 ```python
-pfw_search_applications_balanced(
+PFW_search_applications_balanced(
     query='applicationNumberText:"15987654"',
     limit=1
 )
@@ -1147,7 +1147,7 @@ pfw_search_applications_balanced(
 **Token Optimization - Document List Retrieval:**
 
 ```python
-pfw_get_application_documents(
+PFW_get_application_documents(
     application_number='15987654',
     include_raw_xml=False  # CRITICAL: Saves 50K+ tokens
 )
@@ -1373,7 +1373,7 @@ The examiner finds that the combination of references would not have been obviou
 **4C. PTAB Proceedings Check**
 
 ```python
-search_trials_minimal(
+PTAB_search_trials_minimal(
     patent_number='10123456',
     limit=10
 )
@@ -1390,7 +1390,7 @@ search_trials_minimal(
 Now that I understand the legal vulnerabilities, let me extract the exact claim language:
 
 ```python
-pfw_get_patent_or_application_xml(
+PFW_get_patent_or_application_xml(
     identifier='10123456',
     include_fields=['claims'],
     include_raw_xml=False  # CRITICAL: 97% token reduction
@@ -1428,7 +1428,7 @@ pfw_get_patent_or_application_xml(
 Because § 112(b) indefiniteness is a strong vulnerability, I need to check if specification defines the ambiguous terms:
 
 ```python
-pfw_get_patent_or_application_xml(
+PFW_get_patent_or_application_xml(
     identifier='10123456',
     include_fields=['description', 'abstract'],
     include_raw_xml=False  # CRITICAL: 94% token reduction
@@ -1464,7 +1464,7 @@ The biometric information is stored locally on the user device in a secure stora
 Let me check the prior art cited during prosecution:
 
 ```python
-uspto_enriched_citations:search_citations_minimal(
+uspto_enriched_citations:Citations_search_citations_minimal(
     application_number='15987654',
     examiner_cited=True,
     category_code='X',

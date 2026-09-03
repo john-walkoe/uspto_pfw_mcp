@@ -13,7 +13,7 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "fastmcp[apps]>=3.4",
+    "fastmcp[apps]>=4.0.0,<5.0.0",
     "aiosqlite>=0.20",
     "structlog>=24.0",
     "httpx[http2]>=0.25.0",
@@ -51,6 +51,10 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# A test that signals failure with `return False` PASSES. 23 functions were
+# doing exactly that (audit T-4); this makes a reintroduction a hard error
+# now rather than on the routine bump to pytest 9, which promotes it anyway.
+filterwarnings = ["error::pytest.PytestReturnNotNoneWarning"]
 
 [tool.ruff]
 line-length = 120

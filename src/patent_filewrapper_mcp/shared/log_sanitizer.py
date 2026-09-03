@@ -12,7 +12,7 @@ This module provides sanitization patterns for common sensitive data types:
 import logging
 import re
 import traceback
-from typing import Dict, Pattern
+from typing import Dict, Optional, Pattern
 
 
 class LogSanitizer:
@@ -86,14 +86,20 @@ class LogSanitizer:
         'urlsafe_token': '[TOKEN]',
     }
 
-    def __init__(self, enable_all: bool = True):
+    def __init__(self, enable_all: bool = True, mask_ips: bool = True):
         """
         Initialize the log sanitizer.
 
         Args:
             enable_all: If False, only sanitize critical patterns (passwords, tokens)
+            mask_ips: If False, leave client IP addresses intact. Every secret
+                pattern still applies. Used by the security log only, where
+                the whole point of an auth-failure or rate-limit record is to
+                say which address produced it; masking to two octets there
+                destroys the attribution the audit trail exists for.
         """
         self.enable_all = enable_all
+        self.mask_ips = mask_ips
 
     def sanitize_string(self, message: str) -> str:
         """
@@ -126,7 +132,8 @@ class LogSanitizer:
                 if pattern_name not in critical_patterns:
                     # Special handling for IP addresses and emails to preserve some info
                     if pattern_name == 'ip_address':
-                        result = self._mask_ip_address(result, pattern)
+                        if self.mask_ips:
+                            result = self._mask_ip_address(result, pattern)
                     elif pattern_name == 'email_address':
                         result = self._mask_email_address(result, pattern)
                     else:
@@ -257,10 +264,18 @@ class SanitizingFilter(logging.Filter):
     depend on which logger object a module (or a third-party library such
     as httpx/uvicorn) happened to grab. SafeLogger remains the ergonomic
     call-site wrapper; this filter is the guarantee.
+
+    Args:
+        sanitizer: Sanitizer to apply. Defaults to the module-level instance;
+            the security log attaches one built with ``mask_ips=False``.
     """
 
+    def __init__(self, sanitizer: Optional[LogSanitizer] = None, name: str = ""):
+        super().__init__(name)
+        self.sanitizer = sanitizer or _default_sanitizer
+
     def filter(self, record: logging.LogRecord) -> bool:
-        record.msg = _default_sanitizer.sanitize_string(record.getMessage())
+        record.msg = self.sanitizer.sanitize_string(record.getMessage())
         record.args = ()
         # Handlers format exc_info AFTER filters run, so pre-render and
         # sanitize the traceback here (httpx exception reprs embed full
@@ -272,5 +287,5 @@ class SanitizingFilter(logging.Filter):
                 )
             record.exc_info = None
         if record.exc_text:
-            record.exc_text = _default_sanitizer.sanitize_string(record.exc_text)
+            record.exc_text = self.sanitizer.sanitize_string(record.exc_text)
         return True

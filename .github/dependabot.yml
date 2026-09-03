@@ -1,0 +1,23 @@
+# Dependency update surveillance. Nothing watched this repo's dependency set
+# before (audit M-20): PyPDF2, defusedxml, httpx and fastmcp all parse or
+# fetch untrusted input, so a stale pin is the realistic supply-chain risk.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Security updates always; grouped routine bumps to keep the noise down.
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

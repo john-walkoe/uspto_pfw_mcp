@@ -24,20 +24,20 @@ async def art_unit_quality_assessment_FPD_prompt(
 PHASE 1: PFW Analysis
 ```python
 # Grant rate analysis
-granted = await pfw_search_applications_minimal(
+granted = await PFW_search_applications_minimal(
     art_unit='{art_unit}',
     status_code='150',
     fields=['applicationNumberText'],
     limit=100
 )
-all_apps = await pfw_search_applications_minimal(
+all_apps = await PFW_search_applications_minimal(
     art_unit='{art_unit}',
     fields=['applicationNumberText', 'applicationMetaData.applicationStatusDescriptionText'],
     limit=100
 )
 
 # Examiner patterns - use fields parameter for efficiency
-examiners = await pfw_search_applications_minimal(
+examiners = await PFW_search_applications_minimal(
     art_unit='{art_unit}',
     fields=['applicationNumberText', 'applicationMetaData.examinerNameText', 'groupArtUnitNumber'],
     limit=100
@@ -56,4 +56,4 @@ Present quality indicators:
 - Petition frequency and types
 - Risk assessment and recommendations
 
-For complex workflows, use pfw_get_guidance (see quick reference chart for section selection)."""
+For complex workflows, use PFW_get_guidance (see quick reference chart for section selection)."""

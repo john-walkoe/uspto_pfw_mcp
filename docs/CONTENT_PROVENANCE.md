@@ -34,8 +34,8 @@ attached, and is never mutated in the name of injection defense.
 ## What we do instead: structured, provenance-aware interfaces
 
 1. **Data/instruction separation by labeling.** Every tool that returns
-   retrieved file-wrapper text (`pfw_get_document_content_with_ocr`,
-   `get_oa_text`, `get_patent_or_application_xml`) carries a machine-readable
+   retrieved file-wrapper text (`PFW_get_document_content_with_ocr`,
+   `PFW_get_oa_text`, `PFW_get_patent_or_application_xml`) carries a machine-readable
    `provenance_note` stating that the text is quoted data, not instructions,
    and the server-level instructions direct the consuming model to report
    instruction-like language found inside retrieved text rather than act on

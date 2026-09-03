@@ -6,7 +6,18 @@ This document provides a comprehensive set of examples for using the Patent File
 
 For the most part the LLMs will perform these searches and workflows on their own with minimal guidance from the user. These examples are illustrative to give insight on what the LLMs are doing in the background.
 
-**💡 Best Practice Recommendation:** For complex workflows or when you're unsure about the best approach, start by asking the LLM to use the `pfw_get_guidance` tool first. This tool provides context-efficient workflow recommendations and helps the LLM choose the most appropriate tools and strategies for your specific use case.
+**💡 Best Practice Recommendation:** For complex workflows or when you're unsure about the best approach, start by asking the LLM to use the `PFW_get_guidance` tool first. This tool provides context-efficient workflow recommendations and helps the LLM choose the most appropriate tools and strategies for your specific use case.
+
+**⚠ Identifier format.** Application serials in these examples are written in
+the slash-comma form (`11/752,072`) because that form is unambiguous: a slash
+marks a serial and resolution short-circuits to the application lane. A bare
+8-digit number is simultaneously a valid application serial AND a valid granted
+patent number, and resolution tries the patent lane first, so a bare
+`11752072` resolves to PATENT 11,752,072 (application 16816197), not to
+application 11/752,072. If you cannot use the slashed form, pass
+`content_type='application'`. Bare digits inside a Solr `query` /
+`applicationNumberText:` string are correct and deliberate: that is the raw API
+field, not an identifier the resolver sees.
 
 Sample requests that the user can give to the LLM to trigger the Examples are as follows:
 
@@ -25,9 +36,9 @@ Sample requests that the user can give to the LLM to trigger the Examples are as
 - *"Look up Wilbur Walkoe's patent portfolio"*
 
 **Example 3 - Complete Patent Package:**
-- *"Get me the complete patent package for application 11752072"*
+- *"Get me the complete patent package for application 11/752,072"*
 - *"Download all documents for US Patent 7971071"*
-- *"I need the full patent with drawings and claims for this application 11752072"*
+- *"I need the full patent with drawings and claims for this application 11/752,072"*
 
 **Example 4 - Structured XML Content:**
 
@@ -36,10 +47,10 @@ Sample requests that the user can give to the LLM to trigger the Examples are as
 - *"I need you to look at the patent details of 7971071 and summarize it for me"*
 
 **Example 5 - Advanced Document Filtering:**
-- *"Get only the Notice of Allowance for application 11752072"*
+- *"Get only the Notice of Allowance for application 11/752,072"*
 - *"Show me the examiner's rejections for this heavily litigated patent 9049188"*
-- *"For application 11752072 find all the prior art citations the examiner considered"*
-- *"This application 11752072 has 150+ documents - help me find just the key ones"*
+- *"For application 11/752,072 find all the prior art citations the examiner considered"*
+- *"This application 11/752,072 has 150+ documents - help me find just the key ones"*
 
 **Example 6 - Document Extraction and Downloads:**
 - *"For US Patent 7971071 extract the text from the Notice of Allowance document"*
@@ -57,7 +68,7 @@ Sample requests that the user can give to the LLM to trigger the Examples are as
 
 - *"What types of rejections did examiner Smith issue most often?"*
 - *"Search for §101 rejections in art unit 2128 filed after 2022"*
-- *"Get the full text of the office action for application 11752072"*
+- *"Get the full text of the office action for application 11/752,072"*
 - *"What does the office action say about the §103 rejection for this application?"*
 
 
@@ -82,7 +93,7 @@ The search tools now include attorney-friendly convenience parameters, allowing 
 
 #### Available Convenience Parameters
 
-All search tools (`pfw_search_applications_custom_*` and `pfw_search_inventor_custom_*`) support these parameters:
+All application search tools (`PFW_search_applications`, `PFW_search_applications_minimal`, `PFW_search_applications_balanced`) and the inventor tools (`PFW_search_inventor`, `PFW_search_inventor_minimal`, `PFW_search_inventor_balanced`) support these parameters:
 
 | Parameter | Description | Example |
 |-----------|-------------|---------|
@@ -99,14 +110,14 @@ All search tools (`pfw_search_applications_custom_*` and `pfw_search_inventor_cu
 #### Search by Art Unit and Status
 ```python
 # Find all granted patents in Art Unit 2128
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit='2128',
     status_code='150',  # '150' means granted
     limit=50
 )
 
 # Find pending applications in Art Unit 3600
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit='3600',
     status_code='30',  # '30' means pending
     limit=100
@@ -116,7 +127,7 @@ pfw_search_applications_minimal(
 #### Search by Applicant (Assignee)
 ```python
 # Find all patent applications filed by "Apple Inc." in 2024
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     applicant_name='The Target Company Inc.',
     filing_date_start='2024-01-01',
     filing_date_end='2024-12-31',
@@ -124,7 +135,7 @@ pfw_search_applications_minimal(
 )
 
 # Find all granted patents for a company
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     applicant_name='The Target Company Inc.',
     status_code='150',
     limit=50
@@ -134,13 +145,13 @@ pfw_search_applications_minimal(
 #### Search by Examiner
 ```python
 # Find all patents examined by a specific examiner
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     examiner_name='SMITH',
     limit=50
 )
 
 # Find granted patents by specific examiner in date range
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     examiner_name='SMITH, JOHN',
     status_code='150',
     grant_date_start='2023-01-01',
@@ -152,7 +163,7 @@ pfw_search_applications_minimal(
 #### Hybrid Search (Keywords + Convenience Parameters)
 ```python
 # Find granted patents related to 'artificial intelligence' in Art Unit 2128
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='artificial intelligence',
     art_unit='2128',
     status_code='150',
@@ -160,7 +171,7 @@ pfw_search_applications_minimal(
 )
 
 # Find machine learning patents from specific company in date range
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='machine learning neural network',
     applicant_name='The Target Company Inc.',
     filing_date_start='2023-01-01',
@@ -172,14 +183,14 @@ pfw_search_applications_minimal(
 #### Inventor Search with Filters
 ```python
 # Find patents by inventor 'Smith' in Art Unit 3600
-pfw_search_inventor_minimal(
+PFW_search_inventor_minimal(
     name='Smith',
     art_unit='3600',
     limit=50
 )
 
 # Find granted patents by inventor in specific date range
-pfw_search_inventor_minimal(
+PFW_search_inventor_minimal(
     name='John Smith',
     status_code='150',
     grant_date_start='2020-01-01',
@@ -191,7 +202,7 @@ pfw_search_inventor_minimal(
 #### Art Unit + Examiner Combination
 ```python
 # Analyze specific examiner's work in their art unit
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit='2128',
     examiner_name='SMITH',
     status_code='150',
@@ -199,7 +210,7 @@ pfw_search_applications_minimal(
 )
 
 # Compare examiner behavior in different time periods
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit='2128',
     examiner_name='SMITH',
     grant_date_start='2023-01-01',
@@ -214,7 +225,7 @@ pfw_search_applications_minimal(
 
 ```python
 # Standard minimal search (15 fields, 95% reduction)
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit='2128',
     examiner_name='SMITH',
     limit=50
@@ -225,7 +236,7 @@ pfw_search_applications_minimal(
 #          grantDate, customerNumber, applicationStatusCode
 
 # Ultra-minimal search (2 fields, 99% reduction)
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit='2128',
     examiner_name='SMITH',
     fields=['applicationNumberText', 'examinerNameText'],
@@ -235,7 +246,7 @@ pfw_search_applications_minimal(
 # Use case: Extract app numbers for citation workflow (PFW → Citations integration)
 
 # Citation workflow optimization (3 fields only)
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     examiner_name='SMITH, JANE',
     filing_date_start='2015-01-01',
     fields=['applicationNumberText', 'examinerNameText', 'filingDate'],
@@ -245,7 +256,7 @@ pfw_search_applications_minimal(
 # Token savings: 99% reduction vs 15-field preset (5KB vs 25KB for 30 results)
 
 # Single-record lookup (5 fields)
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='patentNumber:7971071',
     fields=['applicationNumberText', 'inventionTitle', 'patentNumber', 'filingDate', 'grantDate'],
     limit=1
@@ -254,7 +265,7 @@ pfw_search_applications_minimal(
 # Perfect for: Finding app number from patent number, date validation, title checks
 
 # Inventor discovery (balanced with custom fields)
-pfw_search_inventor_balanced(
+PFW_search_inventor_balanced(
     name='John Smith',
     art_unit='2128',
     fields=['applicationNumberText', 'inventionTitle', 'patentNumber', 'inventorBag'],
@@ -273,7 +284,7 @@ Ultra-minimal (2 fields):
 Preset minimal (15 fields):
   ~500 chars/result × 50 = ~25KB total (95% reduction)
 
-Preset balanced (18 fields):
+Preset balanced (24 fields as shipped):
   ~2,000 chars/result × 50 = ~100KB total (85% reduction)
 
 Full with documentBag (NEVER):
@@ -283,7 +294,7 @@ Full with documentBag (NEVER):
 **When to Use Custom Fields:**
 - **Citation workflows**: PFW → Citations integration (extract app numbers only)
 - **Single-record lookups**: Patent number → app number conversion
-- **High-volume extraction**: 100+ results where only 2-3 fields needed
+- **High-volume extraction**: a full page of 100 results where only 2-3 fields are needed
 - **Cross-MCP integration**: Extract minimal fields for PTAB/FPD cross-reference
 - **Date validation**: Quick filing/grant date checks before citation analysis
 
@@ -299,7 +310,7 @@ Full with documentBag (NEVER):
 #### Ultra-Fast Discovery Search
 ```python
 # High-volume discovery search for AI patents
-result = await pfw_search_applications_minimal(
+result = await PFW_search_applications_minimal(
     query="artificial intelligence machine learning",
     limit=50
 )
@@ -313,7 +324,7 @@ for i, app in enumerate(result['applications'][:5]):
 #### Find Patents by Inventor
 ```python
 # Search for all patents by Wilbur Walkoe using the comprehensive strategy
-result = await pfw_search_inventor_balanced(
+result = await PFW_search_inventor_balanced(
     name="Wilbur Walkoe",
     strategy="comprehensive",
     limit=25
@@ -335,7 +346,7 @@ for app in result['applications']:
 ### Example 3: Get Complete Patent Package
 ```python
 # Get all components of a granted patent in one call
-patent_package = await pfw_get_granted_patent_documents_download(app_number="11752072")
+patent_package = await PFW_get_granted_patent_documents_download(app_number="11/752,072")
 
 print(f"Complete patent package: {patent_package['total_pages']} total pages")
 print(f"Abstract: {patent_package['abstract']['pageCount']} pages")
@@ -352,7 +363,7 @@ print(f"Claims: {patent_package['claims']['pageCount']} pages")
 ```python
 # RECOMMENDED: Get structured patent data with include_raw_xml=False
 # Removes ~50K token raw XML overhead (91% reduction: ~55K → ~5K tokens!)
-xml_content = await pfw_get_patent_or_application_xml(
+xml_content = await PFW_get_patent_or_application_xml(
     identifier="7971071",
     include_raw_xml=False  # RECOMMENDED - removes raw XML overhead
 )
@@ -371,7 +382,7 @@ print(f"Claims: {len(xml_content['structured_content']['claims'])} total claims"
 #### Ultra-Efficient: Selective Field Extraction (95-99% Token Reduction)
 ```python
 # Get ONLY claims for claim analysis (95% reduction: ~55K → ~1.5K tokens)
-claims_only = await pfw_get_patent_or_application_xml(
+claims_only = await PFW_get_patent_or_application_xml(
     identifier="7971071",
     include_fields=['claims'],
     include_raw_xml=False
@@ -379,29 +390,29 @@ claims_only = await pfw_get_patent_or_application_xml(
 print(f"Claims: {len(claims_only['structured_content']['claims'])} total")
 
 # Get ONLY citations for prior art analysis (98% reduction: ~55K → 569 tokens)
-citations_only = await pfw_get_patent_or_application_xml(
+citations_only = await PFW_get_patent_or_application_xml(
     identifier="7971071",
     include_fields=['citations'],
     include_raw_xml=False
 )
 
 # Get ONLY inventors for portfolio analysis (99% reduction: ~55K → 428 tokens)
-inventors_only = await pfw_get_patent_or_application_xml(
+inventors_only = await PFW_get_patent_or_application_xml(
     identifier="7971071",
     include_fields=['inventors'],
     include_raw_xml=False
 )
 
 # Get abstract + claims + description for attorney report (~5K tokens with include_raw_xml=False)
-attorney_package = await pfw_get_patent_or_application_xml(
+attorney_package = await PFW_get_patent_or_application_xml(
     identifier="7971071",
     include_fields=['abstract', 'claims', 'description'],
     include_raw_xml=False  # Default fields, shown for clarity
 )
 
 # Get inventors + applicants for entity analysis (~1K tokens)
-# NOTE: More efficient to get this from pfw_search_applications_balanced if already in context!
-entity_info = await pfw_get_patent_or_application_xml(
+# NOTE: More efficient to get this from PFW_search_applications_balanced if already in context!
+entity_info = await PFW_get_patent_or_application_xml(
     identifier="7971071",
     include_fields=['inventors', 'applicants'],
     include_raw_xml=False
@@ -425,14 +436,14 @@ entity_info = await pfw_get_patent_or_application_xml(
 **Best Practices:**
 1. **ALWAYS use `include_raw_xml=False`** unless debugging XML parsing issues
 2. **Use `include_fields` for specialized workflows** (claims-only, citations-only)
-3. **Get metadata from search tools when possible** - If you already ran `pfw_search_applications_balanced`, you likely have inventor/applicant data in context. Don't re-fetch via XML!
+3. **Get metadata from search tools when possible** - If you already ran `PFW_search_applications_balanced`, you likely have inventor/applicant data in context. Don't re-fetch via XML!
 4. **Default is optimized** - Without parameters, you get abstract + claims + description (~5K tokens with `include_raw_xml=False`)
 
 ---
 
 ### 🎯 Example 5: Advanced Document Filtering (Litigation Research)
 
-The `pfw_get_application_documents` function supports powerful filtering to handle applications with 200+ documents (common in litigation cases). Achieve up to **98.6% context reduction** for heavily-litigated applications.
+The `PFW_get_application_documents` function supports powerful filtering to handle applications with 200+ documents (common in litigation cases). Achieve up to **98.6% context reduction** for heavily-litigated applications.
 
 #### Filter by Document Type
 
@@ -449,29 +460,29 @@ The `pfw_get_application_documents` function supports powerful filtering to hand
 
 ```python
 # Get only Notice of Allowance documents (examiner's reasoning)
-pfw_get_application_documents(
-    app_number="11752072",
+PFW_get_application_documents(
+    app_number="11/752,072",
     document_code="NOA",
     limit=20
 )
 
 # Get the examiner's office action rejections
-pfw_get_application_documents(
-    app_number="11752072",
+PFW_get_application_documents(
+    app_number="11/752,072",
     document_code="CTFR",
     limit=10
 )
 
 # Get the prior art citations considered by the examiner
-pfw_get_application_documents(
-    app_number="11752072",
+PFW_get_application_documents(
+    app_number="11/752,072",
     document_code="892",
     limit=10
 )
 
 # Get the Index of Claims (claim amendments tracking)
-pfw_get_application_documents(
-    app_number="11752072",
+PFW_get_application_documents(
+    app_number="11/752,072",
     document_code="FWCLM",
     limit=20
 )
@@ -486,15 +497,15 @@ pfw_get_application_documents(
 
 ```python
 # Get all documents submitted BY THE APPLICANT to the USPTO
-pfw_get_application_documents(
-    app_number="11752072",
+PFW_get_application_documents(
+    app_number="11/752,072",
     direction_category="INCOMING",
     limit=50
 )
 
 # Get all documents sent FROM THE USPTO to the applicant
-pfw_get_application_documents(
-    app_number="11752072",
+PFW_get_application_documents(
+    app_number="11/752,072",
     direction_category="OUTGOING",
     limit=50
 )
@@ -503,47 +514,50 @@ pfw_get_application_documents(
 #### Combined Filtering for Precision
 ```python
 # Get examiner's internal claim analysis only
-pfw_get_application_documents(
-    app_number='11752072',
+PFW_get_application_documents(
+    app_number='11/752,072',
     document_code='FWCLM',
     direction_category='INTERNAL',
     limit=10
 )
 
 # Get only applicant-filed claims
-pfw_get_application_documents(
-    app_number='11752072',
+PFW_get_application_documents(
+    app_number='11/752,072',
     document_code='CLM',
     direction_category='INCOMING',
     limit=20
 )
 
 # Get all examiner rejections
-pfw_get_application_documents(
-    app_number='11752072',
+PFW_get_application_documents(
+    app_number='11/752,072',
     document_code='CTFR',  # or 'CTNF' for non-final
     direction_category='OUTGOING',
     limit=10
 )
 ```
 
-#### Validated Context Reduction Results (Compiled October 2025)
+#### Validated Context Reduction Results (re-verified live 2026-09-03)
 
 **Tested Applications:**
 
-- **Application 11752072**: 151 total documents (John and Wilbur Walkoe US-7971071-B2 Patent - heavily prosecuted)
-- **Application 14171705**: 72 total documents (IPR litigation example)
+- **Application 11/752,072**: 151 total documents (John and Wilbur Walkoe US-7971071-B2 Patent - heavily prosecuted)
+- **Application 14/171,705**: 73 total documents (IPR litigation example; the count grows as new papers are filed)
 
 | Application | Total Docs | Filter Applied | Result | Reduction | Use Case |
 |-------------|------------|----------------|---------|-----------|----------|
-| **11752072 - Walkoe** | **151 docs** | `document_code='NOA'` | **1 doc** | **99.3%** | Get Notice of Allowance reasoning |
-| **11752072 - Walkoe** | **151 docs** | `document_code='FWCLM'` | **6 docs** | **96.0%** | Track Index of Claims across prosecution |
-| **11752072 - Walkoe** | **151 docs** | `direction_category='INCOMING'` | **59 docs** | **60.9%** | Analyze all applicant submissions |
-| **11752072 - Walkoe** | **151 docs** | `document_code='FWCLM'` + `direction_category='INTERNAL'` | **6 docs** | **96.0%** | Get examiner's internal claim analysis |
-| **14171705 - IPR litigation example** | **72 docs** | `document_code='NOA'` | **1 doc** | **98.6%** | Get Notice of Allowance reasoning |
-| **14171705 - IPR litigation example** | **72 docs** | `document_code='FWCLM'` | **2 docs** | **97.2%** | Track Index of Claims across prosecution |
-| **14171705 - IPR litigation example** | **72 docs** | `direction_category='INCOMING'` | **30 docs** | **58.3%** | Analyze all applicant submissions |
-| **14171705 - IPR litigation example** | **72 docs** | `document_code='FWCLM'` + `direction_category='INTERNAL'` | **2 docs** | **97.2%** | Get examiner's internal claim analysis |
+| **11/752,072 - Walkoe** | **151 docs** | `document_code='NOA'` | **1 doc** | **99.3%** | Get Notice of Allowance reasoning |
+| **11/752,072 - Walkoe** | **151 docs** | `document_code='FWCLM'` | **6 docs** | **96.0%** | Track Index of Claims across prosecution |
+| **11/752,072 - Walkoe** | **151 docs** | `direction_category='INCOMING'` | **59 docs** | **60.9%** | Analyze all applicant submissions |
+| **11/752,072 - Walkoe** | **151 docs** | `document_code='FWCLM'` + `direction_category='INTERNAL'` | **6 docs** | **96.0%** | Get examiner's internal claim analysis |
+| **14/171,705 - IPR litigation example** | **73 docs** | `document_code='NOA'` | **1 doc** | **98.6%** | Get Notice of Allowance reasoning |
+| **14/171,705 - IPR litigation example** | **73 docs** | `document_code='FWCLM'` | **2 docs** | **97.3%** | Track Index of Claims across prosecution |
+| **14/171,705 - IPR litigation example** | **73 docs** | `direction_category='INCOMING'` | **32 docs** | **56.2%** | Analyze all applicant submissions |
+| **14/171,705 - IPR litigation example** | **73 docs** | `document_code='FWCLM'` + `direction_category='INTERNAL'` | **2 docs** | **97.3%** | Get examiner's internal claim analysis |
+
+> Document counts are a live figure: a filed paper adds to the bag. Treat these
+> as the shape of the reduction, not a fixed baseline.
 
 #### Key Filtering Strategies
 
@@ -587,31 +601,31 @@ For heavily-prosecuted applications (150+ documents):
 
 ```python
 # 1. Initial Discovery (Minimal tier)
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='applicationNumberText:11752072',
     limit=10
 )
 
 # 2. Target Key Events (Document filtering)
 # Get allowance reasoning
-pfw_get_application_documents(
-    app_number='11752072',
+PFW_get_application_documents(
+    app_number='11/752,072',
     document_code='NOA',
     limit=5
 )
 
 # 3. Extract Critical Content (Document access)
-# Auto-optimized extraction: PyPDF2 → Mistral OCR → Docling fallback
-pfw_get_document_content_with_ocr(
-    app_number='11752072',
+# Tiered extraction: free-text variants → PyPDF2 native text layer → OCR
+PFW_get_document_content_with_ocr(
+    app_number='11/752,072',
     document_identifier='GN23NLY2PPOPPY5',
     auto_optimize=True  # Default
 )
 
 # 4. Cross-Reference with PTAB (Multi-MCP workflow)
-# Find related PTAB proceedings
-ptab_search_proceedings_minimal(
-    application_number='11752072',
+# PTAB indexes proceedings by GRANTED PATENT number, not application serial
+PTAB_search_trials_minimal(
+    patent_number='7971071',
     limit=10
 )
 ```
@@ -622,76 +636,80 @@ ptab_search_proceedings_minimal(
 ```python
 # Priority: NOA → Office Actions → Examiner Citations → Claims
 # 1. Get Notice of Allowance
-pfw_get_application_documents(app_number="11752072", document_code="NOA")
+PFW_get_application_documents(app_number="11/752,072", document_code="NOA")
 
 # 2. Get Office Actions (examiner's rejections)
-pfw_get_application_documents(app_number="11752072", document_code="CTFR", direction_category="OUTGOING")
+PFW_get_application_documents(app_number="11/752,072", document_code="CTFR", direction_category="OUTGOING")
 
 # 3. Get Examiner Citations (prior art)
-pfw_get_application_documents(app_number="11752072", document_code="892")
+PFW_get_application_documents(app_number="11/752,072", document_code="892")
 
 # 4. Get Final Claims
-pfw_get_application_documents(app_number="11752072", document_code="CLM")
+PFW_get_application_documents(app_number="11/752,072", document_code="CLM")
 ```
 
 **For Due Diligence:**
 ```python
 # Priority: Abstract → Claims → Citations → NOA
 # 1. Get Abstract (quick overview)
-pfw_get_application_documents(app_number="11752072", document_code="ABST")
+PFW_get_application_documents(app_number="11/752,072", document_code="ABST")
 
 # 2. Get Claims (scope assessment)
-pfw_get_application_documents(app_number="11752072", document_code="CLM")
+PFW_get_application_documents(app_number="11/752,072", document_code="CLM")
 
 # 3. Get Citations (prior art density)
-pfw_get_application_documents(app_number="11752072", document_code="892")
+PFW_get_application_documents(app_number="11/752,072", document_code="892")
 
 # 4. Get NOA (prosecution difficulty)
-pfw_get_application_documents(app_number="11752072", document_code="NOA")
+PFW_get_application_documents(app_number="11/752,072", document_code="NOA")
 ```
 
 **For Prior Art Research:**
 ```python
 # Priority: XML → Examiner Citations → Claims → Specification
-# 1. Use XML first (free!)
-pfw_get_patent_or_application_xml("11752072")
+# 1. Use XML first - structured, already-digital, no scanning step
+PFW_get_patent_or_application_xml("11/752,072")
 
 # 2. Get Examiner Citations
-pfw_get_application_documents(app_number="11752072", document_code="892")
+PFW_get_application_documents(app_number="11/752,072", document_code="892")
 
 # 3. Get Applicant Citations
-pfw_get_application_documents(app_number="11752072", document_code="1449")
+PFW_get_application_documents(app_number="11/752,072", document_code="1449")
 
 # 4. Get Specification only if needed
-pfw_get_application_documents(app_number="11752072", document_code="SPEC")
+PFW_get_application_documents(app_number="11/752,072", document_code="SPEC")
 ```
 
 ---
 
 ### Example 6: Document Extraction and Downloads
 
-#### Intelligent Extraction with Cost Optimization
+#### Intelligent Extraction with Tier Optimization
 
-The tool uses a 3-tier extraction chain:
-1. **PyPDF2** (free) — digital text-based PDFs
-2. **Mistral OCR** (~$0.001/page, preferred) — scanned USPTO documents; requires `MISTRAL_API_KEY`
-3. **Docling** (free) — same scanned docs at no cost; requires `DOCLING_SERVE_URL`
+The tool walks four capability tiers, stopping at the first that yields usable text:
+0. **USPTO free-text variants** (instant, no scanning) - the `.docx`, `xmlarchive`, or as-uploaded PDF the USPTO API serves alongside the PDF render
+1. **PyPDF2 native text layer** (instant) - text-based PDFs; an all-empty text layer is reported as a failure, not a success
+2. **Mistral OCR** - scanned USPTO documents; requires `MISTRAL_API_KEY` (optional)
+3. **Docling OCR** - the same scanned documents, self-hosted; requires `DOCLING_SERVE_URL` (optional)
+
+Tiers 2 and 3 are the OCR step, reached only when a page has no usable native
+text layer. Configure either backend, both, or neither; with neither, the tool
+reports what it could not extract instead of failing silently.
 
 ```python
 # Get the document ID for the Notice of Allowance first
-docs = await pfw_get_application_documents(app_number="11752072", document_code="NOA")
+docs = await PFW_get_application_documents(app_number="11/752,072", document_code="NOA")
 noa_doc_id = docs['documentBag'][0]['documentIdentifier']
 
 # Extract text — auto-selects best available method
-noa_content = await pfw_get_document_content_with_ocr(
-    app_number="11752072",
+noa_content = await PFW_get_document_content_with_ocr(
+    app_number="11/752,072",
     document_identifier=noa_doc_id,
-    auto_optimize=True  # Tries PyPDF2 → Mistral → Docling automatically
+    auto_optimize=True  # Walks the tiers automatically
 )
 
 print(f"Extraction method: {noa_content['extraction_method']}")
 # Possible values: "PyPDF2", "Mistral OCR", "Docling OCR", "failed"
-print(f"Processing cost: ${noa_content['processing_cost_usd']}")
 print(f"Content length: {len(noa_content['extracted_content'])} characters")
 ```
 
@@ -699,17 +717,17 @@ print(f"Content length: {len(noa_content['extracted_content'])} characters")
 
 **⚠️ CRITICAL: Proxy Server Startup Requirement**
 
-Before providing download links to users, you **MUST** call `pfw_get_document_download` or `pfw_get_granted_patent_documents_download` for at least one document to start the proxy server (~0.5 second startup time). Otherwise, users will get `ERR_CONNECTION_REFUSED` when clicking links.
+Before providing download links to users, you **MUST** call `PFW_get_document_download` or `PFW_get_granted_patent_documents_download` for at least one document to start the proxy server (~0.5 second startup time). Otherwise, users will get `ERR_CONNECTION_REFUSED` when clicking links.
 
 ```python
 # CORRECT WORKFLOW: Start proxy first
 # 1. Get document metadata
-docs = await pfw_get_application_documents(app_number="11752072", document_code="NOA")
+docs = await PFW_get_application_documents(app_number="11/752,072", document_code="NOA")
 noa_doc_id = docs['documents'][0]['documentIdentifier']
 
-# 2. Call pfw_get_document_download to START the proxy server
-download_link = await pfw_get_document_download(
-    app_number="11752072",
+# 2. Call PFW_get_document_download to START the proxy server
+download_link = await PFW_get_document_download(
+    app_number="11/752,072",
     document_identifier=noa_doc_id
 )
 
@@ -731,9 +749,9 @@ This MCP is designed to integrate with three other USPTO MCPs for comprehensive 
 | MCP Server | Purpose | GitHub Repository |
 |------------|---------|-------------------|
 | **USPTO Patent File Wrapper (PFW)** | Prosecution history & documents | [uspto_pfw_mcp](https://github.com/john-walkoe/uspto_pfw_mcp.git) |
-| **USPTO Patent Trial and Appeal Board (PTAB)** | Patent Trial and Appeal Board proceedings | [uspto_ptab_mcp](https://github.com/john-walkoe/uspto_pfw_mcp.git) |
+| **USPTO Patent Trial and Appeal Board (PTAB)** | Patent Trial and Appeal Board proceedings | [uspto_ptab_mcp](https://github.com/john-walkoe/uspto_ptab_mcp.git) |
 | **USPTO Final Petition Decisions (FPD)** | Final Petition Decisions | [uspto_fpd_mcp](https://github.com/john-walkoe/uspto_fpd_mcp.git) |
-| **USPTO Enriched Citations** | AI-powered examiner citation analysis (Post-2017 applications) | [uspto_enriched_citations_mcp](https://github.com/john-walkoe/uspto_enriched_citations_mcp.git) |
+| **USPTO Enriched Citations** | AI-powered examiner citation analysis (Post-2017 applications) | [uspto_enriched_citation_mcp](https://github.com/john-walkoe/uspto_enriched_citation_mcp.git) |
 | **Pinecone Assistant MCP** | Patent law knowledge base (MPEP, examination guidance) - context retrieval with assistant_chat for AI synthesis | [pinecone_assistant_mcp](https://github.com/john-walkoe/pinecone_assistant_mcp.git) |
 | **Pinecone RAG MCP** | Patent law knowledge base with custom embeddings (MPEP, examination guidance) | [pinecone_rag_mcp](https://github.com/john-walkoe/pinecone_rag_mcp.git) |
 
@@ -745,7 +763,7 @@ This MCP is designed to integrate with three other USPTO MCPs for comprehensive 
 
 ```python
 # 1. PFW Discovery: Find applications in art unit 2128
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit="2128",
     limit=100
 )
@@ -753,7 +771,7 @@ pfw_search_applications_minimal(
 # 2. Present top 10 results to user for selection
 
 # 3. FPD Search: Find petition decisions for the same art unit
-fpd_search_petitions_by_art_unit(
+FPD_Search_petitions_by_art_unit(
     art_unit="2128",
     limit=50
 )
@@ -777,27 +795,35 @@ fpd_search_petitions_by_art_unit(
 
 ```python
 # 1. PTAB Search: Find the IPR proceeding
-ptab_search_proceedings_balanced(
+PTAB_search_trials_balanced(
     patent_number='9049188'
 )
-# Result provides: applicationNumberText: "11752072"
+# → IPR2025-00562, Apple Inc. v. Proxense, LLC (status: Trial Instituted)
+# PTAB trial metadata does NOT carry applicationNumberText. Map the patent
+# number to its application serial with PFW instead:
+PFW_search_applications_minimal(
+    query='patentNumber:9049188',
+    fields=['applicationNumberText', 'inventionTitle'],
+    limit=1,
+)
+# → applicationNumberText "14171705" (application 14/171,705)
 
 # 2. PFW Cross-Reference: Get detailed prosecution history
-pfw_search_applications_balanced(
-    query='applicationNumberText:11752072',
+PFW_search_applications_balanced(
+    query='applicationNumberText:14171705',
     limit=1
 )
 
 # 3. PTAB Document Analysis: Get IPR documents
-ptab_get_proceeding_documents(
-    proceeding_number='IPR2025-00562'
+PTAB_get_documents(
+    identifier='IPR2025-00562'
 )
 # Focus on: IPR Petition, Institution Decision, Final Written Decision
 
-# 4. PFW Document Analysis: Get prosecution documents
-pfw_get_application_documents(app_number='11752072', document_code='NOA')
-pfw_get_application_documents(app_number='11752072', document_code='CTFR', direction_category='OUTGOING')
-pfw_get_application_documents(app_number='11752072', document_code='892')
+# 4. PFW Document Analysis: Get prosecution documents for the challenged patent
+PFW_get_application_documents(app_number='14/171,705', document_code='NOA')
+PFW_get_application_documents(app_number='14/171,705', document_code='CTFR', direction_category='OUTGOING')
+PFW_get_application_documents(app_number='14/171,705', document_code='892')
 
 # 5. Comparative Analysis:
 # - Compare IPR prior art with examiner's 892 citations
@@ -806,7 +832,7 @@ pfw_get_application_documents(app_number='11752072', document_code='892')
 ```
 
 **Cross-Reference Fields:**
-- `applicationNumberText` - Primary key linking PTAB to PFW
+- `patentNumber` - Primary key linking PTAB to PFW (PTAB trial metadata indexes by granted patent, not application serial; map it with `PFW_search_applications_minimal(query='patentNumber:<n>')`)
 - `groupArtUnitNumber` - Art unit context
 - `examinerNameText` - Examiner quality correlation
 - `firstApplicantName` → PTAB respondentPatentOwnerName
@@ -820,26 +846,26 @@ pfw_get_application_documents(app_number='11752072', document_code='892')
 
 ```python
 # 1. Portfolio Discovery (PFW): Get all company applications
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     applicant_name='The Target Company Inc.',
-    limit=200
+    limit=100,   # 100 is MAX_SEARCH_LIMIT; a higher value is CLAMPED and reported in limit_clamped
 )
 
 # 2. Present portfolio overview to user, get high-value selections
 
 # 3. Petition History Check (FPD): For key applications
-fpd_search_petitions_by_application(
-    application_number='17896175'
+FPD_Search_petitions_by_application(
+    application_number='17/896,175'
 )
 
 # 4. Detailed Prosecution Analysis (PFW): For selected applications
-pfw_search_applications_balanced(
+PFW_search_applications_balanced(
     query='applicationNumberText:17896175',
     limit=1
 )
 
 # 5. Post-Grant Challenge Check (PTAB): For all granted patents
-ptab_search_proceedings_minimal(
+PTAB_search_trials_minimal(
     patent_number='11788453'
 )
 
@@ -877,7 +903,7 @@ ptab_search_proceedings_minimal(
 
 ```python
 # 1. Find examiner's granted patents in specific art unit
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     art_unit='2128',
     examiner_name='SMITH',
     status_code='150',  # granted
@@ -887,10 +913,10 @@ pfw_search_applications_minimal(
 # 2. Present results to user, get selections
 
 # 3. Check petition history for examiner's applications
-# For each application: fpd_search_petitions_by_application(app_number)
+# For each application: FPD_Search_petitions_by_application(app_number)
 
 # 4. Check PTAB challenge rate for examiner's patents
-# For each patent: ptab_search_proceedings_minimal(patent_number)
+# For each patent: PTAB_search_trials_minimal(patent_number)
 
 # 5. Analyze:
 # - Allowance rate vs art unit average
@@ -907,7 +933,7 @@ pfw_search_applications_minimal(
 
 ```python
 # 1. Discovery: Find AI patents in specific art units
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='artificial intelligence neural network',
     art_unit='2128',
     status_code='150',
@@ -920,7 +946,7 @@ pfw_search_applications_minimal(
 # 3. Timeline analysis: Group by filingDate trends
 
 # 4. For key patents, check PTAB vulnerability
-ptab_search_proceedings_minimal(patent_number='...')
+PTAB_search_trials_minimal(patent_number='...')
 
 # 5. Get successful prosecution examples
 # Filter to: granted + minimal rejections + no PTAB challenges
@@ -933,7 +959,7 @@ assistant_context(query='AI-assisted inventions', top_k=3, snippet_size=1024, te
 semantic_search(query='AI-assisted inventions', top_k=3)
 
 # 7. Download exemplar claims for drafting guidance
-pfw_get_patent_or_application_xml(identifier='...')
+PFW_get_patent_or_application_xml(identifier='...')
 ```
 
 ---
@@ -944,7 +970,7 @@ pfw_get_patent_or_application_xml(identifier='...')
 
 ```python
 # Q1 2024 filings
-q1_apps = pfw_search_applications_minimal(
+q1_apps = PFW_search_applications_minimal(
     applicant_name='The Target Company Inc.',
     filing_date_start='2024-01-01',
     filing_date_end='2024-03-31',
@@ -952,7 +978,7 @@ q1_apps = pfw_search_applications_minimal(
 )
 
 # Q2 2024 filings
-q2_apps = pfw_search_applications_minimal(
+q2_apps = PFW_search_applications_minimal(
     applicant_name='The Target Company Inc.',
     filing_date_start='2024-04-01',
     filing_date_end='2024-06-30',
@@ -970,11 +996,11 @@ q2_apps = pfw_search_applications_minimal(
 
 #### Workflow 7: Pinecone-Enhanced Prior Art Research (Optional)
 
-**Goal:** Use Pinecone Assistant MCP or Pinecone RAG MCP (if available) to research MPEP guidance before extracting expensive documents. Choose Assistant for AI-powered synthesis with citations, or RAG for custom embeddings with semantic search.
+**Goal:** Use Pinecone Assistant MCP or Pinecone RAG MCP (if available) to research MPEP guidance before pulling full prosecution documents into context. Choose Assistant for AI-powered synthesis with citations, or RAG for custom embeddings with semantic search.
 
 ```python
 # 1. Discovery: Find similar granted patents
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='quantum computing error correction',
     status_code='150',
     limit=50
@@ -1000,20 +1026,20 @@ strategic_semantic_search(
 
 # 3. Filter candidates based on Pinecone research guidance
 
-# 4. Get XML content (free) for detailed claim analysis
-pfw_get_patent_or_application_xml(identifier='...')
+# 4. Get structured XML content for detailed claim analysis
+PFW_get_patent_or_application_xml(identifier='...')
 
 # 5. Extract examiner citations for prior art landscape
-pfw_get_application_documents(app_number='...', document_code='892')
+PFW_get_application_documents(app_number='...', document_code='892')
 
-# 6. Extract content only for most relevant citations
-pfw_get_document_content_with_ocr(app_number='...', document_identifier='...')
+# 6. Extract content only for the most relevant citations
+PFW_get_document_content_with_ocr(app_number='...', document_identifier='...')
 
-# Cost Optimization:
-# - Pinecone research: $0 (RAG MCP with Ollama or Assistant MCP context tools)
-# - XML content: $0
-# - Selective document extraction: ~$0.01-0.05 total
-# vs extracting all documents: ~$0.50+
+# Why this order:
+# - Steps 1-2 narrow the question before any document is pulled
+# - XML and office-action text are already-digital: no scanning step at all
+# - Only step 6 can reach an OCR tier, and only for a scanned page with no
+#   usable native text layer
 ```
 
 ---
@@ -1022,132 +1048,164 @@ pfw_get_document_content_with_ocr(app_number='...', document_identifier='...')
 
 PFW MCP provides two tools that tap directly into USPTO's Office Action APIs — separate from the prosecution document download chain.
 
-#### `pfw_get_oa_rejections` — Rejection Type Indicators (OA Rejections API v2)
+Both tools are scoped to ONE application. They take `application_number`, not a
+Solr `criteria` string: there is no cross-application search on this surface. To
+study an examiner's or art unit's rejection patterns, discover the applications
+first with `PFW_search_applications_minimal(art_unit=..., examiner_name=...)`,
+then call the OA tools per application.
 
-Use this to quickly identify what kinds of rejections an application received, or to study an examiner's or art unit's rejection patterns.
+#### `PFW_get_oa_rejections` — Rejection Type Indicators (OA Rejections API v2)
+
+Use this to quickly identify what kinds of rejections an application received.
+It is the cheap triage step: small, structured, no document text.
 
 ```python
-# Find §101 rejections by art unit (no app number needed)
-pfw_get_oa_rejections(
-    criteria='groupArtUnitNumber:2128 AND rej101Indicator:true',
-    rows=10
+# Rejection triage for one application
+PFW_get_oa_rejections(
+    application_number='18/823,722',
+    rows=5,        # 1-100; the response reports rows_requested / rows_applied
 )
+# → summary: has_102=True, has_103=True, has_112=True, office_actions_count=14
+# → rejections[]: one row PER REJECTION GROUP (submission_date, doc_code,
+#   art_unit, has_101/102/103/112, alice/mayo/bilski/myriad, cite_103_max,
+#   allowed_claims, claims). Several rows can share one office action.
 
-# Find all rejections for a specific application
-pfw_get_oa_rejections(
-    criteria='applicationNumberText:11752072',
-    rows=5
-)
-
-# Profile an examiner's rejection type mix
-pfw_get_oa_rejections(
-    criteria='examinerNameText:"SMITH, JOHN" AND rej103Indicator:true',
-    rows=25
+# Force the application-serial lane for a bare 8-digit number
+PFW_get_oa_rejections(
+    application_number='18823722',
+    content_type='application',
 )
 ```
 
-**Key rejection indicator fields:**
-- `rej101Indicator` — §101 subject matter eligibility
-- `rej102Indicator` — §102 anticipation (prior art)
-- `rej103Indicator` — §103 obviousness
-- `rej112Indicator` — §112 written description / enablement
+**Key summary and row fields:**
+- `has_101` / `has_102` / `has_103` / `has_112` - statutory basis of the rejection
+- `alice` / `mayo` / `bilski` / `myriad` - eligibility-framework indicators
+- `office_actions_count` - the true office-action count (rows are per rejection group)
 
-#### `pfw_get_oa_text` — Full Office Action Text (OA Actions API v1)
+**Coverage:** office actions mailed Oct 1, 2017 through roughly 30 days before
+today. An empty result on an older application is a coverage gap, not an
+application without rejections - `PFW_get_oa_text` reaches considerably
+further back.
+
+#### `PFW_get_oa_text` — Full Office Action Text (OA Actions API v1)
 
 Use this to retrieve the actual body text of an office action, or just a specific rejection section.
 
 ```python
-# Get full OA body text for an application
-pfw_get_oa_text(
-    criteria='applicationNumberText:11752072',
-    rows=1
+# Most recent office action of any type
+PFW_get_oa_text(application_number='11/752,072')
+
+# Every non-final rejection in the file wrapper (up to 10)
+PFW_get_oa_text(
+    application_number='11/752,072',
+    action_type='CTNF',
+    latest_only=False,
+)
+# → num_found=3 (CTNFs mailed 2010-10-13, 2009-01-29 and 2008-09-08)
+
+# Just the §103 portion of the latest final rejection
+PFW_get_oa_text(
+    application_number='11/752,072',
+    action_type='CTFR',
+    section='103',
 )
 
-# Search for OAs discussing a specific topic and get §103 section only
-pfw_get_oa_text(
-    criteria='applicationNumberText:11752072',
-    section='103',  # Returns only the §103 portion
-    rows=1
+# Page through a long office action
+PFW_get_oa_text(
+    application_number='11/752,072',
+    action_type='CTNF',
+    char_offset=2000,      # feed _window.next_offset back here
+    max_chars=20000,
 )
 ```
 
-**Available `section` values:** `'101'`, `'102'`, `'103'`, `'112'`, or omit for full body text.
+**`action_type` values the dataset actually serves:** `CTNF`, `CTFR`, `NOA`,
+`CTRS`, `CTEQ`, `CTAV`, `NRES`, `CTMS`, `EXIN`, `ABN`. Anything else is
+rejected with the served set in the error, rather than returning an empty
+result that reads as "no such action".
+
+**Available `section` values:** `'101'`, `'102'`, `'103'`, `'112'`, or `'all'`
+(the default) for full body text. USPTO populates the section sub-documents
+sparsely; when the requested section is empty the tool falls back to the full
+body and says so via `section_requested` / `section_returned` / `section_note`.
 
 #### Combined OA + Document Workflow
 
 ```python
-# 1. Check rejection indicators first (fast, no PDF download)
-pfw_get_oa_rejections(
-    criteria='applicationNumberText:11752072',
-    rows=5
-)
-# → reveals: rej103Indicator=true, rej112Indicator=false
+# 1. Triage: which office actions carry which rejections (small, structured)
+PFW_get_oa_rejections(application_number='18/823,722', rows=5)
+# → reveals: has_103=True, has_112=True
 
-# 2. Get the §103 section text directly (no OCR needed)
-pfw_get_oa_text(
-    criteria='applicationNumberText:11752072',
+# 2. Read the §103 argument directly - one call, no PDF, no OCR
+PFW_get_oa_text(
+    application_number='18/823,722',
+    action_type='CTFR',
     section='103',
-    rows=1
 )
 
 # 3. If you need the original formatted PDF for the client:
-pfw_get_application_documents(app_number='11752072', document_code='CTNF')
+PFW_get_application_documents(app_number='11/752,072', document_code='CTNF')
 # → get documentIdentifier, then:
-pfw_get_document_download(app_number='11752072', document_identifier='...')
+PFW_get_document_download(app_number='11/752,072', document_identifier='...')
 ```
 
 **When to use OA APIs vs document extraction:**
 | Use Case | Tool |
 |----------|------|
-| Rejection type summary (§101/§102/§103/§112?) | `pfw_get_oa_rejections` |
-| Reading rejection argument text | `pfw_get_oa_text` |
-| Getting original formatted PDF | `pfw_get_document_download` |
-| Full prosecution document in LLM context | `pfw_get_document_content_with_ocr` |
+| Rejection type summary (§101/§102/§103/§112?) | `PFW_get_oa_rejections` |
+| Reading rejection argument text | `PFW_get_oa_text` |
+| Getting original formatted PDF | `PFW_get_document_download` |
+| Full prosecution document in LLM context | `PFW_get_document_content_with_ocr` |
 
 ---
 
 ## Known Patents for Testing
 
 These patents can be used for testing inventor searches for "Wilbur Walkoe":
-- US-7971071-B2 (inventors: Wilbur J. Walkoe, John Walkoe)  - (Application 11752072)
+- US-7971071-B2 (inventors: Wilbur J. Walkoe, John Walkoe)  - (Application 11/752,072)
 - US-20080141381-A1
 - US-7187686-B1
 - US20070036169-A1
 
 For testing cross-MCP integration:
-- Patent 9049188 (Application 14171705) - Has IPR proceeding IPR2025-00562
-- Application 18823722 - For citation analysis testing (examiner: MEKHLIN, ELI S, Art Unit 1759)
+- Patent 9049188 (Application 14/171,705) - Has IPR proceeding IPR2025-00562
+- Application 18/823,722 - For citation analysis testing (examiner: MEKHLIN, ELI S, Art Unit 1759)
 
 ---
 
 ## Full Tool Reference
 
 ### Search Tools
-*   `pfw_search_applications` - applications search
-*   `pfw_search_applications_minimal` - Ultra-fast discovery (recommended)
-*   `pfw_search_applications_balanced` - Detailed analysis with additional cross-reference fields
-*   `pfw_search_inventor` - inventor search
-*   `pfw_search_inventor_minimal` - Ultra-fast inventor discovery (recommended)
-*   `pfw_search_inventor_balanced` - Detailed inventor analysis
+*   `PFW_search_applications` - applications search
+*   `PFW_search_applications_minimal` - Ultra-fast discovery (recommended)
+*   `PFW_search_applications_balanced` - Detailed analysis with additional cross-reference fields
+*   `PFW_search_inventor` - inventor search
+*   `PFW_search_inventor_minimal` - Ultra-fast inventor discovery (recommended)
+*   `PFW_search_inventor_balanced` - Detailed inventor analysis
 
 ### Data Retrieval & Document Processing Tools
-*   `pfw_get_patent_or_application_xml` - Structured XML content (free)
-*   `pfw_get_granted_patent_documents_download` - Complete patent package in one call
-*   `pfw_get_application_documents` - Prosecution document metadata with filtering
-*   `pfw_get_document_content_with_ocr` - 3-tier text extraction: PyPDF2 → Mistral OCR → Docling
-*   `pfw_get_document_download` - Secure browser downloads
-*   `pfw_get_oa_rejections` - USPTO OA Rejections API v2 (rejection type indicators)
-*   `pfw_get_oa_text` - USPTO OA Actions API v1 (full OA body text + section excerpts)
-*   `pfw_get_guidance` - Context-efficient selective guidance (see quick reference chart)
+*   `PFW_get_patent_or_application_xml` - Structured XML content (claims, abstract, description, citations)
+*   `PFW_get_granted_patent_documents_download` - Complete patent package in one call
+*   `PFW_get_application_documents` - Prosecution document metadata with filtering
+*   `PFW_get_document_content_with_ocr` - 4-tier text extraction: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR
+*   `PFW_get_document_download` - Secure browser downloads
+*   `PFW_get_oa_rejections` - USPTO OA Rejections API v2 (rejection type indicators)
+*   `PFW_get_oa_text` - USPTO OA Actions API v1 (full OA body text + section excerpts)
+*   `PFW_get_family` - Normalized continuity graph (parents, children, CON/CIP/DIV) plus foreign priority
+*   `PFW_get_term_adjustment` - Patent Term Adjustment days and event history
+*   `PFW_get_guidance` - Context-efficient selective guidance (see quick reference chart)
+
+### Admin Tool (OAuth deployments only)
+*   `pfw_manage_users` - Registered-user management; registered only when `PFW_ENABLE_USER_MANAGEMENT=true` and gated on the `pfw:admin` scope
 
 ### Performance Notes
 
-**Validated October 2025:**
+**Document counts re-verified live 2026-09-03:**
 - **Filter application**: Server-side (instant)
 - **Typical response time**: 200-500ms per filtered request
 - **Token efficiency**: 95-99% reduction vs. unfiltered
-- **Cost optimization**: Free PyPDF2 → Mistral OCR ($0.001/page) → Docling (free, self-hosted)
-- **Applications tested**: 11752072 (151 docs), 14171705 (72 docs)
+- **Extraction tiers**: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR (self-hosted)
+- **Applications tested**: 11/752,072 (151 docs), 14/171,705 (73 docs)
 - **Filter accuracy**: 100% (server-side validation)
 
 ### Key Features
@@ -1155,5 +1213,5 @@ For testing cross-MCP integration:
 - **Convenience Parameters**: No query syntax needed
 - **Context Reduction**: 95-99% token savings in discovery
 - **Cross-MCP Integration**: Seamless linking with PTAB, FPD, Citations, and Pinecone (Assistant or RAG)
-- **Cost Optimization**: Free XML/PyPDF2, paid Mistral OCR only when needed
+- **Capability-Ordered Extraction**: Native text layer first; OCR only for a scanned page that has none
 - **Professional Workflows**: Litigation, due diligence, prior art, prosecution

@@ -11,14 +11,23 @@ as last resort.
 
 
 import hashlib
+import os
 import secrets
 import json
+import threading
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from ..util.database import create_secure_connection
 from ..shared.safe_logger import get_safe_logger
 
 logger = get_safe_logger(__name__)
+
+# A persistent link is a TOKENLESS bearer capability: anyone holding the hash
+# can fetch the document with no credential. It reaches chat transcripts,
+# support tickets and screenshots, so it is bounded on two axes rather than one
+# (audit M-2). Both are env-tunable for operators who need the old behavior.
+_DEFAULT_CACHE_DURATION_DAYS = int(os.getenv("PFW_LINK_TTL_DAYS", "1"))
+_DEFAULT_MAX_USES = int(os.getenv("PFW_LINK_MAX_USES", "25"))
 
 
 class SecureLinkCache:
@@ -28,20 +37,30 @@ class SecureLinkCache:
     Features:
     - Encrypted storage of application numbers and document IDs
     - Opaque URLs that don't reveal business data
-    - Configurable link expiration (default 7 days)
+    - Configurable link expiration (default 1 day, PFW_LINK_TTL_DAYS)
+    - Per-link use ceiling (default 25, PFW_LINK_MAX_USES)
+    - Explicit revocation via revoke_link()
     - Automatic cleanup of expired links
     - Windows DPAPI integration for encryption keys
     """
 
-    def __init__(self, cache_duration_days: int = 7, db_path: Optional[str] = None):
+    def __init__(self, cache_duration_days: Optional[int] = None,
+                 db_path: Optional[str] = None, max_uses: Optional[int] = None):
         """
         Initialize secure link cache
 
         Args:
-            cache_duration_days: How long links remain valid (default: 7 days)
+            cache_duration_days: How long links remain valid (default:
+                PFW_LINK_TTL_DAYS, itself defaulting to 1 day)
             db_path: Path to SQLite database (default: proxy_link_cache.db in project root)
+            max_uses: How many times one link may be resolved before it is
+                dropped (default: PFW_LINK_MAX_USES, itself defaulting to 25).
+                0 or below disables the ceiling.
         """
+        if cache_duration_days is None:
+            cache_duration_days = _DEFAULT_CACHE_DURATION_DAYS
         self.cache_duration = timedelta(days=cache_duration_days)
+        self.max_uses = _DEFAULT_MAX_USES if max_uses is None else max_uses
 
         if db_path:
             self.db_path = db_path
@@ -184,6 +203,16 @@ class SecureLinkCache:
 
             encrypted_token, created_at, access_count, expires_at = result
 
+            # Use ceiling: without one, a leaked hash is an unlimited-use
+            # credential for its whole TTL with no revocation path (audit M-2).
+            if self.max_uses > 0 and access_count >= self.max_uses:
+                logger.warning(
+                    f"Persistent link {link_hash[:8]}... exhausted its use "
+                    f"ceiling ({access_count}/{self.max_uses}); removing"
+                )
+                self._remove_link(link_hash)
+                return None
+
             try:
                 # Decrypt token to get original data
                 decrypted_data = self.cipher.decrypt(encrypted_token.encode('utf-8')).decode('utf-8')
@@ -238,6 +267,34 @@ class SecureLinkCache:
             logger.info(f"Removed corrupted link {link_hash[:8]}...")
         except Exception as e:
             logger.warning(f"Failed to remove link {link_hash[:8]}...: {e}")
+
+    def revoke_link(self, link_hash: str) -> bool:
+        """Revoke a persistent link immediately.
+
+        Before this, a hash that reached a chat transcript or a screenshot had
+        no response available other than waiting out the TTL (audit M-2).
+
+        Returns:
+            True if a link was removed, False if the hash was already unknown.
+        """
+        try:
+            conn = create_secure_connection(self.db_path)
+            try:
+                cursor = conn.execute(
+                    "DELETE FROM download_links WHERE link_hash = ?", (link_hash,)
+                )
+                removed = cursor.rowcount > 0
+                conn.commit()
+            finally:
+                conn.close()
+            if removed:
+                logger.info(f"Revoked persistent link {link_hash[:8]}...")
+            return removed
+        except Exception as e:
+            logger.error(
+                f"Failed to revoke link {link_hash[:8]}...: {type(e).__name__}"
+            )
+            return False
 
     def cleanup_expired_links(self) -> int:
         """
@@ -307,13 +364,19 @@ class SecureLinkCache:
                 'active_links': active_links,
                 'expired_links': total_links - active_links,
                 'total_accesses': total_accesses,
+                # Truncated to 8 chars like every other site in this file: the
+                # full link_hash IS the credential and /document/persistent/
+                # is tokenless, so returning it here converted a scoped,
+                # revocable server credential into a public bearer URL
+                # (audit M-1). 'database_path' is gone for the same reason
+                # a path disclosure is worth nothing to a legitimate caller.
                 'most_accessed': {
-                    'hash': most_accessed[0] if most_accessed else None,
-                    'count': most_accessed[1] if most_accessed else 0,
-                    'created': most_accessed[2] if most_accessed else None
+                    'hash_prefix': f"{most_accessed[0][:8]}...",
+                    'count': most_accessed[1],
+                    'created': most_accessed[2]
                 } if most_accessed else None,
                 'cache_duration_days': self.cache_duration.days,
-                'database_path': self.db_path
+                'max_uses': self.max_uses
             }
 
         except Exception as e:
@@ -321,12 +384,18 @@ class SecureLinkCache:
             return {'error': str(e)}
 
 
-# Global cache instance
+# Global cache instance. Double-checked locking because the FastMCP tools and
+# the download proxy run on different event loops in different threads and both
+# reach this getter; an unguarded lazy init put two objects over one SQLite
+# file (audit design-pattern F-1).
 _link_cache = None
+_link_cache_lock = threading.Lock()
 
 def get_link_cache() -> SecureLinkCache:
     """Get global secure link cache instance"""
     global _link_cache
     if _link_cache is None:
-        _link_cache = SecureLinkCache()
+        with _link_cache_lock:
+            if _link_cache is None:
+                _link_cache = SecureLinkCache()
     return _link_cache

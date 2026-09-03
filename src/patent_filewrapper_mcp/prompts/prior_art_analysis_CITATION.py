@@ -30,7 +30,7 @@ async def prior_art_analysis_CITATION_prompt(
 ```python
 # Resolve identifier with filing date check
 if patent_number:
-    results = await pfw_search_applications_minimal(
+    results = await PFW_search_applications_minimal(
         query=patent_number,
         fields=['applicationNumberText', 'filingDate', 'examinerNameText',
                 'groupArtUnitNumber', 'patentNumber'],
@@ -61,7 +61,7 @@ print(f"**Citations Data:** {{'Available' if citations_available else 'Not Avail
 ```python
 if citations_available:
     # Get citation data from Citations MCP
-    citations = await citations_search_citations_minimal(
+    citations = await Citations_search_citations_minimal(
         application_number=app_number,
         limit=50
     )
@@ -93,14 +93,14 @@ if citations_available:
 
 ```python
 # Get examiner citation documents (892)
-examiner_cites = await pfw_get_application_documents(
+examiner_cites = await PFW_get_application_documents(
     app_number=app_number,
     document_code='892',
     limit=1
 )
 
 # Get allowance reasoning (NOA)
-noa = await pfw_get_application_documents(
+noa = await PFW_get_application_documents(
     app_number=app_number,
     document_code='NOA',
     limit=1
@@ -109,7 +109,7 @@ noa = await pfw_get_application_documents(
 # Extract and cross-reference with Citations MCP
 if examiner_cites.get('documentBag'):
     cite_doc = examiner_cites['documentBag'][0]
-    cite_content = await pfw_get_document_content_with_ocr(
+    cite_content = await PFW_get_document_content_with_ocr(
         app_number=app_number,
         document_identifier=cite_doc['documentIdentifier'],
         max_pages=10
@@ -222,7 +222,7 @@ if citations_available:
 - **Citations MCP Limitation:** Only covers office actions dated Oct 1, 2017 or later
 - **Pre-2017 Applications:** Use traditional 892 analysis only (no structured citation data)
 - **Fallback Strategy:** For pre-2017 apps, extract 892 document and manually analyze citations
-- **Cost:** 892 document extraction is FREE (PyPDF2), OCR fallback if needed (~$0.001-0.003/page)
+- **Extraction:** 892 documents extract via PyPDF2, with OCR fallback if needed for scanned copies
 
 **Related Workflows:**
 - Examiner behavior analysis: `examiner_behavior_intelligence_CITATION`

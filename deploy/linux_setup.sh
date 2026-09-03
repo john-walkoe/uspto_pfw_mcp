@@ -401,9 +401,9 @@ echo "  uv run patent-filewrapper-mcp --help"
 
 echo ""
 log_info "Test with Claude Code:"
-echo "  Ask Claude: 'Use search_applications_minimal to find patents'"
+echo "  Ask Claude: 'Use PFW_search_applications_minimal to find patents'"
 echo "  Ask Claude: 'Use PFW_get_guidance to learn about PFW MCP features'"
-echo "  Ask Claude: 'Use get_application_documents to list documents for an application'"
+echo "  Ask Claude: 'Use PFW_get_application_documents to list documents for an application'"
 
 echo ""
 log_info "Verify MCP is running:"
