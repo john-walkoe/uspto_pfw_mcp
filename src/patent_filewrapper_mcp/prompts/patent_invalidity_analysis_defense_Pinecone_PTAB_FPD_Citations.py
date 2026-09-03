@@ -681,7 +681,7 @@ if len(vulnerabilities) > 1:
        document_id=fwd_doc_id,
        identifier='IPR2023-00123',
        identifier_type='trial',
-       use_ocr='auto'  # PyPDF2 first, Mistral OCR fallback
+       use_ocr='auto'  # pypdf first, Mistral OCR fallback
    )
    ```
 

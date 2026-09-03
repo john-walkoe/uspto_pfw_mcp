@@ -28,7 +28,7 @@ that removes or rewrites token sequences from an office action, claim set, or
 specification would corrupt the exact language attorneys are retrieving —
 examiner reasoning, claim wording, applicant arguments. Document text is
 therefore served verbatim (or as faithful OCR of image-filed documents via
-PyPDF2, Mistral OCR, or Docling — extraction, not rewriting), with provenance
+pypdf, Mistral OCR, or Docling — extraction, not rewriting), with provenance
 attached, and is never mutated in the name of injection defense.
 
 ## What we do instead: structured, provenance-aware interfaces
@@ -50,7 +50,7 @@ attached, and is never mutated in the name of injection defense.
    into logs or transcripts. The annotation is absent entirely when content is
    clean, and the text itself is always returned untouched.
 3. **No generative step in the retrieval path.** The server performs search,
-   field projection, and text extraction (PyPDF2 parsing, Mistral OCR, Docling
+   field projection, and text extraction (pypdf parsing, Mistral OCR, Docling
    OCR — faithful transcription of image-filed documents). No language model
    summarizes, rewrites, or ranks retrieved content inside this server;
    interpretation happens in the consuming assistant, where the labeling above

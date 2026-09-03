@@ -55,13 +55,13 @@ def client(monkeypatch):
 
 @pytest.fixture
 def fake_pypdf(monkeypatch):
-    import PyPDF2
+    import pypdf
 
-    monkeypatch.setattr(PyPDF2, "PdfReader", _FakeReader)
+    monkeypatch.setattr(pypdf, "PdfReader", _FakeReader)
     return _FakeReader
 
 
-# --- branch 1: PyPDF2 (already offset; pinned so it stays that way) --------
+# --- branch 1: pypdf (already offset; pinned so it stays that way) ---------
 
 @pytest.mark.asyncio
 async def test_pypdf_branch_numbers_a_window_from_the_document(client, fake_pypdf):

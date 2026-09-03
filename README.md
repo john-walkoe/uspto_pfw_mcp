@@ -106,7 +106,7 @@ The PowerShell script will:
   - **🆕 Centralized Document Hub** - PFW proxy now serves as unified download infrastructure for all USPTO MCPs (accepts FPD document registrations)
 - **📝 Attorney-Focused Prompt Templates** - 10+ sophisticated workflow templates for legal research, litigation, and due diligence (opt-in server-side: set `PFW_ENABLE_PROMPTS=true` to register them; off by default)
 
-- **✨ Intelligent Document Extraction** - 4-tier hybrid extraction: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR (self-hosted, set `DOCLING_SERVE_URL`). Both OCR backends are optional
+- **✨ Intelligent Document Extraction** - 4-tier hybrid extraction: USPTO free-text variants → pypdf native text layer → Mistral OCR → Docling OCR (self-hosted, set `DOCLING_SERVE_URL`). Both OCR backends are optional
 - **🌐 Secure Browser Downloads** - Click proxy URLs to download PDFs directly while keeping API keys secure
 - **👁️ Advanced OCR Capabilities** - Extract text for LLM use from scanned PDFs, formulas, diagrams, and complex layouts via Mistral OCR or Docling (EasyOCR engine)
 - **📁 Document Bag Integration** - Full prosecution document access (Abstract, Claims, NOA, etc.) alongside XML content analysis of patents/applications
@@ -318,7 +318,7 @@ Environment variables: `USPTO_MAX_RESPONSE_CHARS`, `USPTO_MAX_CONTENT_CHARS`,
 | `PFW_get_patent_or_application_xml` (Get patent or application xml) | Get structured XML content for patents/applications for LLM use with **91-99% token reduction** via `include_raw_xml=False` (recommended) and optional `include_fields` for selective extraction | USPTO_API_KEY                                      |
 | `PFW_get_granted_patent_documents_download` (Get granted patent documents download) | Get complete granted patent package (Abstract, Drawings, Specification, Claims) in one call as secure browser-accessible download URLs | USPTO_API_KEY                                      |
 | `PFW_get_application_documents` (Get application documents)  | Get prosecution documents' doc_id from documentBag with advanced filtering (document_code, direction_category) | USPTO_API_KEY                                      |
-| `PFW_get_document_content_with_ocr` (PFW get document content with ocr) | 4-tier hybrid text extraction: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR | USPTO_API_KEY (+ MISTRAL_API_KEY or DOCLING_SERVE_URL for scanned docs) |
+| `PFW_get_document_content_with_ocr` (PFW get document content with ocr) | 4-tier hybrid text extraction: USPTO free-text variants → pypdf native text layer → Mistral OCR → Docling OCR | USPTO_API_KEY (+ MISTRAL_API_KEY or DOCLING_SERVE_URL for scanned docs) |
 | `PFW_get_document_download` (PFW get document download)      | Secure browser-accessible download URLs                      | USPTO_API_KEY                                      |
 | `PFW_get_oa_rejections` (PFW get OA rejections)              | Search USPTO OA Rejections API v2 — rejection type indicators (§101/§102/§103/§112) by application/examiner/art unit | USPTO_API_KEY                                      |
 | `PFW_get_oa_text` (PFW get OA text)                          | Search USPTO OA Actions API v1 — full office action body text and section-specific excerpts | USPTO_API_KEY                                      |
@@ -357,7 +357,7 @@ Environment variables: `USPTO_MAX_RESPONSE_CHARS`, `USPTO_MAX_CONTENT_CHARS`,
   - **Replaces documentBag in search** - Prevents 100x token explosion in discovery workflows
 - **✨ Intelligent Extraction Tier (`PFW_get_document_content_with_ocr`)**: - auto-optimized extraction
   - **Tier 0 — Free text variants** (instant, no OCR): the `.docx`, `xmlarchive`, or as-uploaded PDF the USPTO API serves alongside the PDF render (USPTO-authored papers and e-filed claims/remarks/IDS); each variant is checked against the requested application number
-  - **Tier 1 — PyPDF2** (instant): Works on text-based PDFs; an all-empty text layer is reported as a failure, not a success
+  - **Tier 1 — pypdf** (instant): Works on text-based PDFs; an all-empty text layer is reported as a failure, not a success
   - **Tier 2 - Mistral OCR**: Handles scanned USPTO documents; requires `MISTRAL_API_KEY` (optional)
   - **Tier 3 - Docling OCR**: Self-hosted EasyOCR via `DOCLING_SERVE_URL`; handles the same scanned documents as Mistral, and can be configured instead of Mistral rather than only after it
   - **Tier escalation** - An OCR tier runs only when the native text layer is missing or unusable; a tier with no credential or endpoint configured is skipped
@@ -598,7 +598,7 @@ uspto_pfw_mcp/
 │       │   ├── tool_reflections.py # Migration notices (guidance moved to PFW_get_guidance)
 │       │   └── log_config.py      # 🆕 Logging configuration with file-based rotation
 │       ├── api/
-│       │   ├── enhanced_client.py  # 4-tier extraction (free-text variants → PyPDF2 → Mistral → Docling)
+│       │   ├── enhanced_client.py  # 4-tier extraction (free-text variants → pypdf → Mistral → Docling)
 │       │   ├── docling_client.py   # docling-serve REST client (self-hosted OCR via DOCLING_SERVE_URL)
 │       │   ├── oa_rejections_client.py  # USPTO OA Rejections API v2
 │       │   ├── oa_text_client.py   # USPTO OA Actions API v1

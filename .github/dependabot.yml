@@ -1,5 +1,5 @@
 # Dependency update surveillance. Nothing watched this repo's dependency set
-# before (audit M-20): PyPDF2, defusedxml, httpx and fastmcp all parse or
+# before (audit M-20): pypdf, defusedxml, httpx and fastmcp all parse or
 # fetch untrusted input, so a stale pin is the realistic supply-chain risk.
 version: 2
 updates:

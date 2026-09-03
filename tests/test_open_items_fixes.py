@@ -677,14 +677,14 @@ async def test_the_page_window_reaches_the_extraction_layer(document_tools, monk
 
 
 def test_slicing_a_pdf_to_a_page_window():
-    pytest.importorskip("PyPDF2")
+    pytest.importorskip("pypdf")
     import io
 
-    import PyPDF2
+    import pypdf
 
     from patent_filewrapper_mcp.api.enhanced_client import slice_pdf_pages
 
-    writer = PyPDF2.PdfWriter()
+    writer = pypdf.PdfWriter()
     for _ in range(10):
         writer.add_blank_page(width=200, height=200)
     buffer = io.BytesIO()
@@ -693,7 +693,7 @@ def test_slicing_a_pdf_to_a_page_window():
 
     sliced, first, last, total = slice_pdf_pages(pdf, 5, 8)
     assert (first, last, total) == (5, 8, 10)
-    assert len(PyPDF2.PdfReader(io.BytesIO(sliced)).pages) == 4
+    assert len(pypdf.PdfReader(io.BytesIO(sliced)).pages) == 4
 
     # A window covering the whole document is a no-op, byte-identical.
     same, first, last, total = slice_pdf_pages(pdf, 1, 10)

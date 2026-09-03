@@ -215,6 +215,8 @@ PFW_get_document_content_with_ocr
 ```
 **Expect:** `success = true`, `extracted_content` contains abstract text about securing a digital device and digital rights verification. `extraction_method` is one of: `PyPDF2`, `Mistral OCR`, or `Docling OCR` (whichever is available). `page_count = 1`. Progress notifications visible in Claude Desktop during call.
 
+**Note on `PyPDF2` as an expected value (2026-09-03):** the underlying library is now `pypdf` (`PyPDF2` 3.0.1 is the terminal release of a renamed, end-of-life project, PYSEC-2026-1835). The served `extraction_method` string stays `PyPDF2` — it is the tier's wire identifier, and the PTAB MCP kept its own served value for the same reason. Only the library name in prose changed.
+
 **Note:** ABST (1 page) chosen over NOA (7 pages) to save context during testing. For OCR fallback testing specifically, use the NOA (`GN23NLY2PPOPPY5`) or a CTNF (`GF7AGXYVPPOPPY5`, 15 pages).
 
 ---

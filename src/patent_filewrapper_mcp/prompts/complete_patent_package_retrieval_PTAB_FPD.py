@@ -474,7 +474,7 @@ if search_strategy == "fuzzy_search" and results['count'] > 1:
 
 **Extraction Hierarchy:**
 1. XML extraction (fastest, structured) - try first for patents/applications
-2. PyPDF2 extraction (fast) - works for 80%+ of documents
+2. pypdf extraction (fast) - works for 80%+ of documents
 3. Mistral OCR - only for scanned/poor quality docs
 
 ---

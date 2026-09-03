@@ -3,10 +3,10 @@
 PFW_get_document_content_with_ocr used to read only the rasterized IFW PDF
 render, so desktop users paid Mistral OCR for text the ODP API already serves
 for free via the downloadOptionBag's .docx / xmlarchive / as-uploaded PDF
-variants — and PyPDF2 on the raster render reported SUCCESS with every page
+variants — and pypdf on the raster render reported SUCCESS with every page
 "[no text recovered]". These tests pin: the variant preference order, the
 application-number check on every variant (one live xmlarchive fetch returned
-another control number's CLM), and the all-empty PyPDF2 result being a failure.
+another control number's CLM), and the all-empty pypdf result being a failure.
 
 Hermetic: fixture bytes only, no network, no USPTO key beyond a placeholder.
 """
@@ -35,7 +35,7 @@ _CUSTOM_NS = (
 )
 _USPTO_NS = 'xmlns:uscom="urn:us:gov:doc:uspto:common" xmlns:uspat="urn:us:gov:doc:uspto:patent"'
 
-#: Realistic page text for the fake PyPDF2 reader (long enough for
+#: Realistic page text for the fake pypdf reader (long enough for
 #: is_good_extraction's alphabetic-ratio heuristic — see test_bounds_bug_fixes).
 _PAGE_BODY = (
     "The claims stand rejected under thirty five United States Code section "
@@ -336,7 +336,7 @@ def test_xmlarchive_without_any_evidence_is_unverified_not_rejected():
 
 
 # ---------------------------------------------------------------------------
-# PyPDF2: an all-empty text layer is a FAILURE
+# pypdf: an all-empty text layer is a FAILURE
 # ---------------------------------------------------------------------------
 
 class _FakePage:
@@ -356,9 +356,9 @@ class _FakeReader:
 
 @pytest.fixture
 def fake_pypdf(monkeypatch):
-    import PyPDF2
+    import pypdf
 
-    monkeypatch.setattr(PyPDF2, "PdfReader", _FakeReader)
+    monkeypatch.setattr(pypdf, "PdfReader", _FakeReader)
     return _FakeReader
 
 
@@ -389,6 +389,7 @@ async def test_pypdf_mostly_empty_pages_fall_through(client, fake_pypdf):
 async def test_pypdf_real_text_still_succeeds(client, fake_pypdf):
     fake_pypdf.pages_to_serve = [_FakePage(_PAGE_BODY % i) for i in range(1, 4)] + [_FakePage("")]
     update = await client._try_pypdf2_tier(b"%PDF-", "DOC1")
+    # Served value: "PyPDF2" is the tier's wire identifier and is deliberately unchanged by the pypdf migration.
     assert update["extraction_method"] == "PyPDF2"
     assert update["auto_optimization"] == "PyPDF2 successful - no OCR needed"
     assert "=== PAGE 4 ===\n" + PYPDF_EMPTY_PAGE_PLACEHOLDER in update["extracted_content"]

@@ -82,7 +82,7 @@ class PFWReflection(BaseReflection):
 
 ### 3. Document Access Patterns
 - **Proxy Downloads** → Browser-accessible PDFs
-- **Content Extraction** → Text analysis (PyPDF2 + OCR; never use it on an OA `PFW_get_oa_text` can already serve)
+- **Content Extraction** → Text analysis (pypdf + OCR; never use it on an OA `PFW_get_oa_text` can already serve)
 - **Persistent Links** → 7-day encrypted access
 
 ### 4. Context Reduction Techniques

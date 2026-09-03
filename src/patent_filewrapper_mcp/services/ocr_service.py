@@ -258,7 +258,7 @@ class OCRService:
                 so Mistral's own page index restarts at 0 and the headers would
                 read `=== PAGE 1 ===` for document page 51 while `page_window`
                 said 51-53. The offset makes `=== PAGE N ===` the true document
-                page on this branch, as it already is on the PyPDF2 branch
+                page on this branch, as it already is on the pypdf branch
                 (api/enhanced_client.py::extract_with_pypdf2).
 
         Returns:

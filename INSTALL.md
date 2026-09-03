@@ -580,7 +580,7 @@ The n8n integration enables powerful automation workflows combining USPTO patent
 - `DOCLING_SERVE_URL`: Base URL of a self-hosted `docling-serve` instance, used as the OCR tier after Mistral - and as the only OCR tier when `MISTRAL_API_KEY` is unset (Default: none - Docling tier skipped). Example: `http://localhost:5001`, or `https://your-docling-host.example.com` for a remote instance
 - `DOCLING_TIMEOUT`: Docling read timeout in seconds (Default: "300" - EasyOCR runs roughly 10-30s per page on CPU; raise it, e.g. `DOCLING_TIMEOUT=600`, for very large documents)
 - `DOCLING_MAX_PAGES`: Skip Docling for documents longer than this page count, which prevents MCP tool-call timeouts (Default: "25")
-- `PYPDF_MAX_PAGES`: Per-document page cap for the native PyPDF2 text-layer tier (Default: "200")
+- `PYPDF_MAX_PAGES`: Per-document page cap for the native pypdf text-layer tier (Default: "200")
 - `MISTRAL_OCR_DAILY_PAGE_BUDGET`: Cumulative daily page ceiling for the Mistral OCR tier; 0 or below disables it (Default: "2000")
 - `MISTRAL_OCR_SECONDS_PER_PAGE`: Per-page OCR timeout allowance; the effective timeout is `max(MISTRAL_OCR_TIMEOUT, this * pages)` (Default: "6")
 - `PFW_MAX_DOCUMENT_BYTES`: Ceiling on a single document buffered for text extraction; over this the tool asks for a page window instead (Default: "100000000")
@@ -747,7 +747,7 @@ Both variables accept comma-separated values for multiple origins (e.g. `https:/
 
 > **Note:** The Mistral API key is optional. Extraction always tries the
 > capability tiers in order: the USPTO's own free-text variants, then the PDF's
-> native text layer via PyPDF2, then OCR. OCR is only reached for a scanned
+> native text layer via pypdf, then OCR. OCR is only reached for a scanned
 > page with no usable text layer, and it needs a backend: either
 > `MISTRAL_API_KEY`, or a self-hosted Docling backend such as `docling-serve`
 > pointed at by `DOCLING_SERVE_URL`. Configure either, both, or neither -

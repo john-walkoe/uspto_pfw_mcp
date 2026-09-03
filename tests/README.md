@@ -24,7 +24,7 @@ The server provides these tools for patent research:
 
 ### Document Tools
 - **`PFW_get_application_documents`** - Get prosecution documents (documentBag) — always loaded
-- **`PFW_get_document_content_with_ocr`** - Extract text through four capability tiers: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR
+- **`PFW_get_document_content_with_ocr`** - Extract text through four capability tiers: USPTO free-text variants → pypdf native text layer → Mistral OCR → Docling OCR
 - **`PFW_get_document_download`** - Secure browser-accessible download URLs
 - **`PFW_get_patent_or_application_xml`** - Clean XML content for patents/applications with 91-99% token reduction
 - **`PFW_get_granted_patent_documents_download`** - All granted patent components (abstract, claims, drawings, spec)
@@ -156,7 +156,7 @@ export DOCLING_SERVE_URL=http://localhost:5001  # optional, for Docling OCR
 - `MISTRAL_API_KEY` - enables the Mistral OCR tier for scanned USPTO documents. Optional.
 - `DOCLING_SERVE_URL` - enables the self-hosted Docling OCR tier. Requires a running [docling-serve](https://github.com/docling-project/docling-serve) instance. Optional.
 
-Both are OCR backends for the same tier of the waterfall, and neither is required: without either, extraction still runs the USPTO free-text and PyPDF2 native-text-layer tiers and returns an actionable message when a scanned page cannot be read. With both configured, Mistral runs first and Docling is the next tier; with only Docling configured, Docling is the OCR tier.
+Both are OCR backends for the same tier of the waterfall, and neither is required: without either, extraction still runs the USPTO free-text and pypdf native-text-layer tiers and returns an actionable message when a scanned page cannot be read. With both configured, Mistral runs first and Docling is the next tier; with only Docling configured, Docling is the OCR tier.
 
 ### Option 3: Testing Without Real API Key
 

@@ -279,7 +279,7 @@ _CONTENT_WINDOW_NOTE = (
 )
 
 #: Canonical marker sub-key -> this repo's pre-existing top-level key. The OCR
-#: page cap (services/ocr_service.py) and the PyPDF2 page cap already set
+#: page cap (services/ocr_service.py) and the pypdf page cap already set
 #: `truncated` / `truncation_note`; aligning the window on the same keys keeps
 #: one vocabulary for "you are not holding all of it".
 _CONTENT_WINDOW_ALIASES = {"applied": "truncated", "note": "truncation_note"}
@@ -406,13 +406,13 @@ def register(mcp) -> None:
         page_to: Optional[int] = None,
         ctx: Context = None
     ) -> Dict[str, Any]:
-        """Extract full text from USPTO prosecution documents with intelligent hybrid extraction (text variants first, then PyPDF2, then OCR).
+        """Extract full text from USPTO prosecution documents with intelligent hybrid extraction (text variants first, then pypdf, then OCR).
     Read, extract, text, contents, full document, OCR, quote from a filing, amendment, remarks, IDS, declaration, or specification.
     PREREQUISITE: First use PFW_get_application_documents to get document_identifier from documentBag.
     Auto-optimizes extraction, in order: the text variants the USPTO API serves alongside the PDF
     render (.docx -> xmlarchive -> as-uploaded PDF text layer; USPTO-authored papers such as office
     actions, reexam orders and NIRCs, and e-filed claims/remarks/IDS almost always have one), then
-    PyPDF2 on the PDF render, then OCR only for true scans.
+    pypdf on the PDF render, then OCR only for true scans.
     MISTRAL_API_KEY is optional - without it, the other tiers are still available.
     Returns: extracted_content, extraction_method ("docx variant", "xmlarchive (USPTO OCR)",
     "xmlarchive (USPTO XML)", "as-uploaded pdf text layer", "PyPDF2", "Mistral OCR ...", "Docling OCR"),
@@ -750,7 +750,7 @@ def register(mcp) -> None:
                     "workflow": [
                         "For office action TEXT, prefer PFW_get_oa_rejections (triage) then PFW_get_oa_text (full text, no OCR)",
                         "Use document_identifier with PFW_get_document_download for browser downloads",
-                        "Use document_identifier with PFW_get_document_content_with_ocr for text extraction (auto PyPDF2/OCR) of non-OA documents",
+                        "Use document_identifier with PFW_get_document_content_with_ocr for text extraction (auto pypdf/OCR) of non-OA documents",
                         "Filter with document_code (NOA, CTFR, CTNF, 892) for key documents"
                     ],
                     "filtering": {

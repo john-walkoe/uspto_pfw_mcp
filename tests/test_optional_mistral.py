@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Missing MISTRAL_API_KEY degrades gracefully rather than failing.
 
-A user with only USPTO_API_KEY who asks for content from a document PyPDF2
+A user with only USPTO_API_KEY who asks for content from a document pypdf
 cannot read should get actionable guidance, not an authentication error.
 
 Calls the live USPTO ODP API. Previously this signalled failure with

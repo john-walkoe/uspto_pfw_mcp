@@ -25,7 +25,7 @@ from ..shared.uspto_shared_rate_limiter import get_shared_limiter
 from ..shared.uspto_hosts import USPTO_KEY_EVENT_HOOKS
 
 try:
-    import PyPDF2  # noqa: F401 — availability probe; used lazily in extract_with_pypdf2
+    import pypdf  # noqa: F401 — availability probe; used lazily in extract_with_pypdf2
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
@@ -34,14 +34,14 @@ from .docling_client import DoclingClient
 
 logger = get_safe_logger(__name__)
 
-#: What the free PyPDF2 tier writes under a page header when the page has no
+#: What the free pypdf tier writes under a page header when the page has no
 #: text layer. A rasterized IFW render yields one of these per page.
 PYPDF_EMPTY_PAGE_PLACEHOLDER = "[no text recovered from this page]"
 _PAGE_HEADER_RE = re.compile(r"^=== PAGE \d+ ===[ \t]*$")
 
 
 def _pypdf_body_text(text: str) -> str:
-    """The PyPDF2 output minus its ``=== PAGE N ===`` scaffolding and
+    """The pypdf output minus its ``=== PAGE N ===`` scaffolding and
     empty-page placeholders — i.e. what the text layer actually yielded.
 
     ``is_good_extraction`` must judge THIS, not the full string: a rasterized
@@ -56,7 +56,7 @@ def _pypdf_body_text(text: str) -> str:
     )
 
 
-#: Per-document page cap for the FREE PyPDF2 extraction tier. Named to match
+#: Per-document page cap for the FREE pypdf extraction tier. Named to match
 #: the paid tier's MISTRAL_OCR_MAX_PAGES (services/ocr_service.py) and the
 #: identically-named knob in the PTAB MCP. Before this cap the tier walked
 #: every page of the document, so a 900-page file wrapper produced a payload
@@ -90,7 +90,7 @@ def max_document_bytes() -> int:
         return _DEFAULT_MAX_DOCUMENT_BYTES
 
 
-#: The gate between the FREE PyPDF2 tier and the PAID Mistral OCR tier. Four
+#: The gate between the FREE pypdf tier and the PAID Mistral OCR tier. Four
 #: bare literals used to sit inline in is_good_extraction with only comments to
 #: explain them (audit R-5): a threshold slightly too strict silently moves
 #: traffic to a metered tier, and a reader could not tell which check fired
@@ -288,9 +288,9 @@ def _resolve_page_count(pdf_option: Dict[str, Any], pdf_content: bytes):
         try:
             import io
 
-            import PyPDF2
+            import pypdf
 
-            return len(PyPDF2.PdfReader(io.BytesIO(pdf_content)).pages), "pdf"
+            return len(pypdf.PdfReader(io.BytesIO(pdf_content)).pages), "pdf"
         except Exception as e:  # pragma: no cover - malformed PDF
             logger.debug(f"Could not recover page count from PDF bytes: {type(e).__name__}: {e}")
     return None, "unknown"
@@ -310,13 +310,13 @@ def slice_pdf_pages(pdf_content: bytes, page_from: int, page_to: Optional[int]):
     covers the whole document, and raises ValueError when the window is empty.
     """
     if not PDF_AVAILABLE:
-        raise ValueError("PyPDF2 is not available, so page ranges cannot be applied")
+        raise ValueError("pypdf is not available, so page ranges cannot be applied")
 
     import io
 
-    import PyPDF2
+    import pypdf
 
-    reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
+    reader = pypdf.PdfReader(io.BytesIO(pdf_content))
     total = len(reader.pages)
     first = max(1, int(page_from))
     last = total if page_to is None else min(int(page_to), total)
@@ -329,7 +329,7 @@ def slice_pdf_pages(pdf_content: bytes, page_from: int, page_to: Optional[int]):
     if first == 1 and last == total:
         return pdf_content, None, None, total
 
-    writer = PyPDF2.PdfWriter()
+    writer = pypdf.PdfWriter()
     for index in range(first - 1, last):
         writer.add_page(reader.pages[index])
     buffer = io.BytesIO()
@@ -1521,7 +1521,7 @@ class EnhancedPatentClient:
 
     def is_good_extraction(self, text: str) -> bool:
         """
-        Determine if PyPDF2 extraction is usable.
+        Determine if pypdf extraction is usable.
 
         Criteria for "good" extraction:
         - Not empty or whitespace-only
@@ -1538,7 +1538,7 @@ class EnhancedPatentClient:
         self, pdf_content: bytes, status: Optional[Dict[str, Any]] = None,
         page_offset: int = 0,
     ) -> str:
-        """Extract text using PyPDF2, capped at PYPDF_MAX_PAGES.
+        """Extract text using pypdf, capped at PYPDF_MAX_PAGES.
 
         Two things changed here (both were silent before):
 
@@ -1557,13 +1557,13 @@ class EnhancedPatentClient:
         a ``truncation_note``.
         """
         if not PDF_AVAILABLE:
-            raise ValueError("PyPDF2 not available")
+            raise ValueError("pypdf not available")
 
-        import PyPDF2
+        import pypdf
         import io
 
         status = status if status is not None else {}
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
+        pdf_reader = pypdf.PdfReader(io.BytesIO(pdf_content))
         total_pages = len(pdf_reader.pages)
         cap = pypdf_max_pages()
         truncated = total_pages > cap
@@ -1588,7 +1588,7 @@ class EnhancedPatentClient:
         if truncated:
             status["pages_truncated"] = total_pages - cap
             status["truncation_note"] = (
-                f"Document has {total_pages} pages; the free PyPDF2 tier extracted "
+                f"Document has {total_pages} pages; the native text-layer (pypdf) tier extracted "
                 f"the first {cap} (PYPDF_MAX_PAGES limit). The text is incomplete."
             )
 
@@ -1664,7 +1664,7 @@ class EnhancedPatentClient:
     async def _download_pdf_for_extraction(
         self, base: Dict[str, Any], pdf_option: Optional[Dict[str, Any]], progress_cb=None
     ) -> Any:
-        """Download the PDF the PyPDF2 / OCR tiers work on. Returns the bytes,
+        """Download the PDF the pypdf / OCR tiers work on. Returns the bytes,
         or an error dict shaped like a tool response (``base`` supplies the
         document identity fields and any ``free_text_variants`` record)."""
         if not pdf_option:
@@ -1790,28 +1790,28 @@ class EnhancedPatentClient:
         self, pdf_content: bytes, document_identifier: str, progress_cb=None,
         extraction_method: str = "PyPDF2", page_offset: int = 0,
     ):
-        """Tier 1 (auto-optimize only): free PyPDF2 text extraction of the IFW
+        """Tier 1 (auto-optimize only): free pypdf text extraction of the IFW
         render — or, with ``extraction_method=METHOD_UPLOADED_PDF``, of an
         as-uploaded PDF variant's native text layer.
         Returns a result-update dict, or None to fall through."""
         if progress_cb:
-            await progress_cb(25, 100, "Trying text extraction (PyPDF2)...")
+            await progress_cb(25, 100, "Trying text extraction (pypdf)...")
         try:
             if not PDF_AVAILABLE:
-                logger.warning("PyPDF2 not available - falling back to Mistral OCR")
+                logger.warning("pypdf not available - falling back to Mistral OCR")
                 return None
             status: Dict[str, Any] = {}
             pypdf2_text = await self.extract_with_pypdf2(pdf_content, status, page_offset)
             if status.get("pages_with_text") == 0:
                 # Every page came back empty: a rasterized render. This used
                 # to pass is_good_extraction on the placeholders alone.
-                logger.info(f"PyPDF2 recovered no text from any page of {document_identifier} - falling back")
+                logger.info(f"pypdf recovered no text from any page of {document_identifier} - falling back")
                 return None
             reject_reason = extraction_reject_reason(_pypdf_body_text(pypdf2_text))
             if reject_reason:
                 # Name the failing check: this escalation is what costs money.
                 logger.info(
-                    f"PyPDF2 extraction poor for {document_identifier} "
+                    f"pypdf extraction poor for {document_identifier} "
                     f"({reject_reason}) - falling back to Mistral OCR"
                 )
                 return None
@@ -1834,7 +1834,7 @@ class EnhancedPatentClient:
                 ))
             return update
         except Exception as e:
-            logger.warning(f"PyPDF2 extraction failed for {document_identifier}: {e} - falling back to Mistral OCR")
+            logger.warning(f"pypdf extraction failed for {document_identifier}: {e} - falling back to Mistral OCR")
             return None
 
     async def _try_mistral_tier(
@@ -1891,7 +1891,7 @@ class EnhancedPatentClient:
 
         No `page_offset` parameter: docling-serve returns one flat text
         document with no `=== PAGE N ===` markers at all, so there are no page
-        headers on this branch to offset (the PyPDF2 and Mistral branches both
+        headers on this branch to offset (the pypdf and Mistral branches both
         emit them and both carry the offset). A page window still applies —
         the bytes are sliced before they get here — it just cannot be snapped
         to page boundaries afterwards.
@@ -1932,7 +1932,7 @@ class EnhancedPatentClient:
         app_number: str, document_identifier: str, auto_optimize: bool, progress_cb=None,
         page_offset: int = 0, window_total_pages: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Tiers 1-3 over the downloaded PDF: PyPDF2 (auto-optimize only)
+        """Tiers 1-3 over the downloaded PDF: pypdf (auto-optimize only)
         -> Mistral OCR -> Docling OCR, then the terminal "all failed"
         envelope. Split out of extract_document_content_hybrid when Tier 0
         (the free-text variants) pushed that method past the complexity cap."""
@@ -2008,7 +2008,7 @@ class EnhancedPatentClient:
             ),
             "llm_guidance": {
                 "explain_to_user": "Many USPTO Patent File Wrapper documents are scanned images rather than text-based PDFs. "
-                                  "PyPDF2 cannot read scanned images. Mistral OCR and Docling handle true scans.",
+                                  "pypdf cannot read scanned images. Mistral OCR and Docling handle true scans.",
                 "recommended_solution": _extraction_failure_advice(
                     bool(self.mistral_api_key), docling_client, page_budget
                 ),
@@ -2032,14 +2032,14 @@ class EnhancedPatentClient:
         a single ~200-line function at manual complexity ~18-20):
         - auto_optimize=True (default): free-text variants from the
           downloadOptionBag (.docx -> xmlarchive -> as-uploaded PDF text
-          layer; no PDF render download, no OCR) -> PyPDF2 on the IFW render
+          layer; no PDF render download, no OCR) -> pypdf on the IFW render
           -> Mistral OCR -> Docling OCR (self-hosted)
         - auto_optimize=False: Mistral OCR only
 
         Args:
             app_number: Application number (e.g., '11752072')
             document_identifier: Document ID from documentBag
-            auto_optimize: Try the free tiers first, fall back to OCR (default: True)
+            auto_optimize: Try the native text tiers first, fall back to OCR (default: True)
             page_from: First page to extract, 1-based inclusive (default 1)
             page_to: Last page to extract, 1-based inclusive (default: end of document)
 

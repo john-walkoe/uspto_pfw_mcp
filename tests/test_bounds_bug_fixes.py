@@ -234,7 +234,7 @@ def test_markers_do_not_pollute_fields_included():
 
 
 # ---------------------------------------------------------------------------
-# (f) The free PyPDF2 tier: page cap + page headers
+# (f) The free pypdf tier: page cap + page headers
 # ---------------------------------------------------------------------------
 
 #: Realistic page text. It has to be long enough for is_good_extraction's
@@ -264,9 +264,9 @@ class _FakeReader:
 
 @pytest.fixture
 def fake_pypdf(monkeypatch):
-    import PyPDF2
+    import pypdf
 
-    monkeypatch.setattr(PyPDF2, "PdfReader", _FakeReader)
+    monkeypatch.setattr(pypdf, "PdfReader", _FakeReader)
     return _FakeReader
 
 
@@ -318,6 +318,7 @@ async def test_pypdf_tier_surfaces_the_cap_as_a_page_bounds_marker(client, fake_
 
     update = await client._try_pypdf2_tier(b"%PDF-", "DOC1")
 
+    # Served value: "PyPDF2" is the tier's wire identifier and is deliberately unchanged by the pypdf migration.
     assert update["extraction_method"] == "PyPDF2"
     assert update["page_count"] == 30
     assert update["page_count_source"] == "pypdf"

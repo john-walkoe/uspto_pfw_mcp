@@ -91,7 +91,7 @@ def _get_tools_section() -> str:
 - **PFW_search_inventor_balanced** — Comprehensive inventor analysis
 
 ### Document & Content Tools (4) — Deferred, loaded on demand
-- **PFW_get_document_content_with_ocr** — text extraction: downloadOptionBag text variants (.docx → xmlarchive → as-uploaded PDF text layer) → PyPDF2 → OCR → Docling. Use for prosecution docs.
+- **PFW_get_document_content_with_ocr** — text extraction: downloadOptionBag text variants (.docx → xmlarchive → as-uploaded PDF text layer) → pypdf → OCR → Docling. Use for prosecution docs.
 - **PFW_get_document_download** — Secure proxy download URL for browser access. Pass to attorney for formatted PDF.
 - **PFW_get_patent_or_application_xml** — Structured XML content (claims, abstract, etc.) with 91-99% token reduction via include_raw_xml=False
 - **PFW_get_granted_patent_documents_download** — All granted patent components (abstract, claims, drawings, spec) as download links
@@ -349,12 +349,12 @@ deadline, a form paragraph or a signature block matters, pull the PDF with
 
 ### Document Extraction Hierarchy
 1. **XML Content**: Try first for patents/applications - fastest, structured
-2. **PyPDF2**: Fast text extraction, works for 80%+ of patent documents
+2. **pypdf**: Fast text extraction, works for 80%+ of patent documents
 3. **OCR**: Only for scanned/poor quality documents - slower but handles true scans
 
 ### Smart Extraction Management
 - Always try XML first for patents
-- Use PyPDF2 before OCR
+- Use pypdf before OCR
 - Reserve OCR for critical scanned documents
 - Batch document extraction when possible"""
 
@@ -912,7 +912,7 @@ def _get_cost_section() -> str:
    - Structured data with claims, description, citations
    - Fastest access, highest fidelity
 
-3. **PyPDF2 Extraction**: Automatic first tier in document tools
+3. **pypdf Extraction**: Automatic first tier in document tools
    - Works for 80%+ of patent documents
    - Fast text extraction from text-based PDFs
    - No OCR round-trip needed
@@ -1376,7 +1376,7 @@ def _get_limits_section() -> str:
 | Guard enabled | {config["enabled"]} | `{config["env"]["enabled"]}` |
 | Structured response budget | {config["max_response_chars"]:,} chars | `{config["env"]["max_response_chars"]}` |
 | Document content budget | {config["max_content_chars"]:,} chars | `{config["env"]["max_content_chars"]}` |
-| Native text-layer (PyPDF2) page cap per document | {pypdf_max_pages()} pages | `PYPDF_MAX_PAGES` |
+| Native text-layer (pypdf) page cap per document | {pypdf_max_pages()} pages | `PYPDF_MAX_PAGES` |
 | OCR page cap per document | {ocr_max_pages} pages | `MISTRAL_OCR_MAX_PAGES` |
 | Search limit ceiling | {EnhancedPatentClient.MAX_SEARCH_LIMIT} | (this server's own ceiling; an over-ceiling `limit` is clamped and reported in `limit_clamped`) |
 
@@ -1437,7 +1437,7 @@ text is longer than one window.
 All four counters are CHARACTER offsets in both units, so `next_offset` feeds
 straight back into `char_offset`. `unit` reports only whether the window edges
 snapped to `=== PAGE N ===` markers (`page`) or are raw character slices
-(`char`). Both extraction tiers (PyPDF2 and OCR) emit those
+(`char`). Both extraction tiers (pypdf and OCR) emit those
 headers, so page-unit windows work on either.
 
 **New parameters:**

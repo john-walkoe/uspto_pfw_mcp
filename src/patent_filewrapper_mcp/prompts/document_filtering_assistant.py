@@ -322,7 +322,7 @@ for doc_code in priority_order:
 ```python
 # For documents requiring text analysis
 for doc in litigation_package:
-    # Extract text content with auto PyPDF2/OCR fallback
+    # Extract text content with auto pypdf/OCR fallback
     content = await PFW_get_document_content_with_ocr(
         app_number=app_number,
         document_identifier=doc['document_id'],
@@ -333,7 +333,7 @@ for doc in litigation_package:
     print(f"Extracted {{len(content['text'])}} characters from {{doc['type']}}")
 ```
 
-**Extraction Note:** PyPDF2 handles text-based PDFs (80%+ success rate); Mistral OCR is the fallback for scanned documents
+**Extraction Note:** pypdf handles text-based PDFs (80%+ success rate); Mistral OCR is the fallback for scanned documents
 
 ---
 

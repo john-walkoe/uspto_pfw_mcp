@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The free-vs-paid extraction gate.
 
-`is_good_extraction` decides whether a document escalates from the free PyPDF2
+`is_good_extraction` decides whether a document escalates from the free pypdf
 tier to the metered Mistral OCR tier, so a wrong answer here costs money.
 
 Two defects made this file worthless before (audit T-4, readability R-5): it

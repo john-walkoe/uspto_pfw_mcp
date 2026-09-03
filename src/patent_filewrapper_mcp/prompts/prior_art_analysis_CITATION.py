@@ -222,7 +222,7 @@ if citations_available:
 - **Citations MCP Limitation:** Only covers office actions dated Oct 1, 2017 or later
 - **Pre-2017 Applications:** Use traditional 892 analysis only (no structured citation data)
 - **Fallback Strategy:** For pre-2017 apps, extract 892 document and manually analyze citations
-- **Extraction:** 892 documents extract via PyPDF2, with OCR fallback if needed for scanned copies
+- **Extraction:** 892 documents extract via pypdf, with OCR fallback if needed for scanned copies
 
 **Related Workflows:**
 - Examiner behavior analysis: `examiner_behavior_intelligence_CITATION`

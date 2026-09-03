@@ -615,7 +615,7 @@ PFW_get_application_documents(
 )
 
 # 3. Extract Critical Content (Document access)
-# Tiered extraction: free-text variants → PyPDF2 native text layer → OCR
+# Tiered extraction: free-text variants → pypdf native text layer → OCR
 PFW_get_document_content_with_ocr(
     app_number='11/752,072',
     document_identifier='GN23NLY2PPOPPY5',
@@ -688,7 +688,7 @@ PFW_get_application_documents(app_number="11/752,072", document_code="SPEC")
 
 The tool walks four capability tiers, stopping at the first that yields usable text:
 0. **USPTO free-text variants** (instant, no scanning) - the `.docx`, `xmlarchive`, or as-uploaded PDF the USPTO API serves alongside the PDF render
-1. **PyPDF2 native text layer** (instant) - text-based PDFs; an all-empty text layer is reported as a failure, not a success
+1. **pypdf native text layer** (instant) - text-based PDFs; an all-empty text layer is reported as a failure, not a success
 2. **Mistral OCR** - scanned USPTO documents; requires `MISTRAL_API_KEY` (optional)
 3. **Docling OCR** - the same scanned documents, self-hosted; requires `DOCLING_SERVE_URL` (optional)
 
@@ -1187,7 +1187,7 @@ For testing cross-MCP integration:
 *   `PFW_get_patent_or_application_xml` - Structured XML content (claims, abstract, description, citations)
 *   `PFW_get_granted_patent_documents_download` - Complete patent package in one call
 *   `PFW_get_application_documents` - Prosecution document metadata with filtering
-*   `PFW_get_document_content_with_ocr` - 4-tier text extraction: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR
+*   `PFW_get_document_content_with_ocr` - 4-tier text extraction: USPTO free-text variants → pypdf native text layer → Mistral OCR → Docling OCR
 *   `PFW_get_document_download` - Secure browser downloads
 *   `PFW_get_oa_rejections` - USPTO OA Rejections API v2 (rejection type indicators)
 *   `PFW_get_oa_text` - USPTO OA Actions API v1 (full OA body text + section excerpts)
@@ -1204,7 +1204,7 @@ For testing cross-MCP integration:
 - **Filter application**: Server-side (instant)
 - **Typical response time**: 200-500ms per filtered request
 - **Token efficiency**: 95-99% reduction vs. unfiltered
-- **Extraction tiers**: USPTO free-text variants → PyPDF2 native text layer → Mistral OCR → Docling OCR (self-hosted)
+- **Extraction tiers**: USPTO free-text variants → pypdf native text layer → Mistral OCR → Docling OCR (self-hosted)
 - **Applications tested**: 11/752,072 (151 docs), 14/171,705 (73 docs)
 - **Filter accuracy**: 100% (server-side validation)
 

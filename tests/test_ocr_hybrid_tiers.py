@@ -70,7 +70,7 @@ async def test_docling_tier_poor_text_returns_none(client, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_all_tiers_failed_terminal_result(client, monkeypatch):
-    """No PyPDF2 text, no Mistral key, no Docling — the terminal branch must
+    """No pypdf text, no Mistral key, no Docling — the terminal branch must
     say so and carry actionable guidance (previously untested, F43)."""
 
     async def fake_resolve(app_number, document_identifier, request_id):
