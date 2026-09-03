@@ -48,8 +48,8 @@ jobs:
           # skip fired (the destructive key-management test) is not a failure.
           for f in tests/test_*.py; do
             echo "== $f"
-            uv run pytest -q "$f"; rc=$?
-            [ "$rc" -eq 0 ] || [ "$rc" -eq 5 ] || exit 1
+            uv run pytest -q "$f" && rc=0 || rc=$?
+            [ "$rc" -eq 5 ] || [ "$rc" -eq 0 ] || exit 1
           done
 
   audit:
