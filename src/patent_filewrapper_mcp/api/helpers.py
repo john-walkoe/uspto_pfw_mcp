@@ -12,6 +12,44 @@ from ..models.search_params import MAX_SEARCH_LIMIT as _MAX_SEARCH_LIMIT
 
 logger = get_safe_logger(__name__)
 
+
+#: Separator this server's guidance and prompts have always used to mean "any
+#: of these document codes".
+DOCUMENT_CODE_SEPARATOR = "|"
+
+
+def parse_document_codes(document_code) -> set:
+    """Normalize a `document_code` filter into the SET of codes it means.
+
+    Accepts a single code ('NOA'), a list (['CTFR', 'CTNF']) or the pipe-joined
+    string this repo's guidance and prompts have taught since the beginning
+    ('CTFR|CTNF', 'IDS|1449', 'ABST|CLM|SPEC|DRW', 'CLM|FWCLM'). The filter was
+    a single case-insensitive exact match against the whole string, so every
+    pipe-joined example matched nothing and came back as a legitimate-looking
+    empty bag, the same shape as "this application has no such document"
+    (skill QA ledger, 2026-09-03).
+
+    Each element is still matched EXACTLY, case-insensitively. No wildcard is
+    applied and none is implied: 'A...' is the literal USPTO amendment code it
+    looks like, not a pattern for "every code starting with A".
+
+    Returns an empty set for None / '' / whitespace, i.e. "do not filter".
+    """
+    if document_code is None:
+        return set()
+    if isinstance(document_code, (list, tuple, set)):
+        raw = [str(item) for item in document_code]
+    else:
+        raw = str(document_code).split(DOCUMENT_CODE_SEPARATOR)
+    codes = set()
+    for item in raw:
+        for part in str(item).split(DOCUMENT_CODE_SEPARATOR):
+            cleaned = part.strip().upper()
+            if cleaned:
+                codes.add(cleaned)
+    return codes
+
+
 def validate_app_number(app_number: str) -> str:
     """
     Validate and normalize application number

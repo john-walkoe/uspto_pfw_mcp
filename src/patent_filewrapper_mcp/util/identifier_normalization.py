@@ -36,6 +36,23 @@ class IdentifierInfo:
     alternate_identifier_type: Optional[str] = None
 
 
+def _is_publication_digits(value: str) -> bool:
+    """Publication-number shape: 8-11 digits beginning with the year's '2'."""
+    return value.isdigit() and value.startswith('2') and len(value) in (8, 9, 10, 11)
+
+
+def _is_slashed_publication(value: str) -> bool:
+    """A slashed value whose digits are an 11-digit publication number.
+
+    USPTO prints a pre-grant publication as "US 2024/0000001 A1", slash and
+    all, and the slash branch below claimed it as an application serial. The
+    two forms do not collide: a slashed application serial is 8 digits
+    (11/752,072, 90/016,347, 60/803,080), a slashed publication number is 11.
+    The slash rule for serials is untouched.
+    """
+    return value.isdigit() and value.startswith('2') and len(value) == 11
+
+
 def normalize_identifier(user_input: str) -> IdentifierInfo:
     """
     Smart identifier normalization for USPTO API
@@ -70,9 +87,13 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
 
     # Pattern matching for different identifier types
 
-    # 1. Pre-2001 application format with slash: "11/752,072" or "11/752072"
-    if '/' in cleaned:
-        # This is definitely an application number
+    # 1. Slash-form application serial: "11/752,072" or "11/752072". The slash
+    #    is how USPTO prints a serial in EVERY era, not a pre-2001 marker: it
+    #    is on the filing receipt of a 2022 filing as much as a 1998 one. The
+    #    note used to say "Pre-2001 application format" for any slashed serial,
+    #    so a caller reading it literally would misdate the format rule
+    #    (measured 2026-09-03 on 17/996,652, filed 2022).
+    if '/' in cleaned and not _is_slashed_publication(cleaned.replace("/", "").replace(",", "")):
         # Format: XX/XXX,XXX or XX/XXXXXX
         # API wants numbers WITHOUT slashes, so clean them out
         cleaned_no_slash = cleaned.replace("/", "").replace(",", "")
@@ -83,11 +104,13 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
             search_query=f'applicationNumberText:{cleaned_no_slash}',  # NO quotes, NO slashes
             app_number_for_docs=cleaned_no_slash,
             confidence="high",
-            notes="Pre-2001 application format with slash - unambiguous (slashes removed for API)"
+            notes="Slash-form serial, unambiguous - read as an application number "
+                  "on the slash alone, in any filing era (slashes removed for API)"
         )
 
     # 2. Publication number format: Usually 8-11 digits starting with 2
-    elif cleaned.startswith('2') and len(cleaned) in [8, 9, 10, 11]:
+    elif _is_publication_digits(cleaned.replace("/", "").replace(",", "")):
+        cleaned = cleaned.replace("/", "").replace(",", "")
         return IdentifierInfo(
             original_input=user_input,
             cleaned_value=cleaned,

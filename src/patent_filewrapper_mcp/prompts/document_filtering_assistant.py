@@ -144,7 +144,7 @@ noa_docs = await PFW_get_application_documents(
 # Priority 2: Office Actions (rejection analysis)
 office_actions = await PFW_get_application_documents(
     app_number=app_number,
-    document_code='CTFR|CTNF',  # Final and Non-Final rejections
+    document_code=['CTFR', 'CTNF'],  # Final and Non-Final rejections
     limit=5
 )
 
@@ -165,7 +165,7 @@ claims = await PFW_get_application_documents(
 # Priority 5: Amendments (prosecution strategy)
 amendments = await PFW_get_application_documents(
     app_number=app_number,
-    document_code='A...',  # All amendment types
+    document_code=['A...', 'A.NE', 'A.PE'],  # 'A...' is the literal amendment code, not a wildcard
     limit=5
 )
 
@@ -196,14 +196,14 @@ for doc_response in [noa_docs, office_actions, examiner_cites, claims, amendment
 # Priority 1: Abstract and Claims (patent scope)
 basic_docs = await PFW_get_application_documents(
     app_number=app_number,
-    document_code='ABST|CLM',
+    document_code=['ABST', 'CLM'],
     limit=10
 )
 
 # Priority 2: Citations (prior art landscape)
 citations = await PFW_get_application_documents(
     app_number=app_number,
-    document_code='892|1449',  # Examiner and applicant citations
+    document_code=['892', '1449'],  # Examiner and applicant citations
     limit=3
 )
 
@@ -239,7 +239,7 @@ examiner_cites = await PFW_get_application_documents(
 # Priority 3: Applicant Citations (IDS, 1449)
 applicant_cites = await PFW_get_application_documents(
     app_number=app_number,
-    document_code='1449|IDS',
+    document_code=['1449', 'IDS'],
     limit=2
 )
 

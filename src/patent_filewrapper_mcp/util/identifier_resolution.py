@@ -45,6 +45,24 @@ def application_lane_query(value: str) -> str:
     return f"applicationNumberText:{value}"
 
 
+#: The search index crosswalks an 11-digit pre-grant publication number to its
+#: application through `applicationMetaData.earliestPublicationNumber`, but the
+#: resolver never queried it: a publication number resolved to
+#: `application_number=None` and every tool answered "Could not resolve" (skill
+#: QA ledger, 2026-09-03). USPTO prints the field both bare ("20080141381") and
+#: in the WIPO ST.16 form with a country prefix and a kind code
+#: ("US20080141381A1"), so both shapes are tried, in that order, and whichever
+#: matched is reported in `identifier_lanes_tried`.
+PUBLICATION_LANE_FIELD = "applicationMetaData.earliestPublicationNumber"
+
+
+def publication_lane_queries(digits: str) -> List[str]:
+    return [
+        f"{PUBLICATION_LANE_FIELD}:{digits}",
+        f"{PUBLICATION_LANE_FIELD}:US{digits}*",
+    ]
+
+
 def format_patent_number(digits: str) -> str:
     """'11752072' -> '11,752,072' (display form for ambiguity notes)."""
     return f"{int(digits):,}"
@@ -128,6 +146,38 @@ async def _resolve_forced_lane(client, cleaned, identifier, content_type, lanes)
     return None
 
 
+async def _resolve_publication(client, cleaned, identifier, lanes) -> ResolvedIdentifier:
+    """Crosswalk a pre-grant publication number to its application.
+
+    The search index carries the mapping on
+    `applicationMetaData.earliestPublicationNumber`; before this the resolver
+    simply declared the format "not an application serial" and returned nothing
+    to resolve, so PFW_get_patent_or_application_xml could not be given a
+    publication number at all.
+    """
+    for query in publication_lane_queries(cleaned):
+        hit = await _lane_hit(client, query)
+        if not hit:
+            lanes.append(f"{query} -> no match")
+            continue
+        app_number, patent_number = _hit_fields(hit)
+        lanes.append(f"{query} -> matched application {app_number}")
+        return ResolvedIdentifier(
+            identifier, cleaned, IdentifierType.PUBLICATION, app_number,
+            patent_number, False, lanes,
+            f"Publication number {cleaned} resolved to application {app_number} "
+            f"through {PUBLICATION_LANE_FIELD}. Pre-grant publication XML "
+            "(APPXML) is what this identifier names; pass the granted patent "
+            "number, or content_type='patent', for the issued claims.",
+        )
+    return ResolvedIdentifier(
+        identifier, cleaned, "unresolved", None, None, False, lanes,
+        f"{cleaned} reads as a pre-grant publication number, but no application "
+        f"in the search index carries it on {PUBLICATION_LANE_FIELD}. Check the "
+        "number, or search for the application directly.",
+    )
+
+
 async def resolve_identifier_lanes(
     client,
     identifier: str,
@@ -167,10 +217,7 @@ async def resolve_identifier_lanes(
         )
 
     if info.identifier_type == IdentifierType.PUBLICATION:
-        lanes.append(f"{info.search_query} -> publication-number format, not an application serial")
-        return ResolvedIdentifier(
-            identifier, cleaned, IdentifierType.PUBLICATION, None, None, False, lanes, info.notes,
-        )
+        return await _resolve_publication(client, cleaned, identifier, lanes)
 
     if info.identifier_type == IdentifierType.PATENT:
         query = patent_lane_query(cleaned)

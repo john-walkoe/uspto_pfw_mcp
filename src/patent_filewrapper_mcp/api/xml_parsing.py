@@ -19,11 +19,17 @@ DESCRIPTION_PARAGRAPH_LIMIT = 5
 #: Same story for citations: a bare `citations[:10]` with no total.
 CITATION_LIMIT = 10
 
-#: Marker keys the extractors add alongside their content. Excluded from
-#: `fields_included` so field discoverability keeps listing content fields only.
+#: Marker keys the extractors add alongside their content, plus the companion
+#: keys that belong to a content field rather than being one of their own
+#: (`description_paragraphs` is the `description` field, per paragraph).
+#: Excluded from `fields_included` so field discoverability keeps listing the
+#: names `include_fields` actually accepts.
 MARKER_KEYS = (
+    "description_paragraphs",
     "description_paragraphs_returned",
     "description_paragraphs_total",
+    "description_paragraph_from",
+    "description_paragraph_to",
     "description_note",
     "citations_returned",
     "citations_total",
@@ -74,7 +80,9 @@ _DEPENDENCY_RE = re.compile("|".join(_DEPENDENCY_PATTERNS), re.IGNORECASE)
 
 def parse_xml_for_llm(
     xml_content: str,
-    include_fields: Optional[List[str]] = None
+    include_fields: Optional[List[str]] = None,
+    description_paragraph_from: int = 1,
+    description_paragraph_to: Optional[int] = None,
 ) -> dict:
     """
     Parse USPTO XML into LLM-friendly structured format.
@@ -87,6 +95,11 @@ def parse_xml_for_llm(
                       Default: ["abstract", "claims", "description"]
                       Available: "abstract", "claims", "description", "inventors",
                                 "applicants", "classifications", "citations", "publication_info"
+        description_paragraph_from: 1-based first description paragraph to return
+                      (default 1). The window that follows is at most
+                      DESCRIPTION_PARAGRAPH_LIMIT paragraphs unless
+                      description_paragraph_to widens it.
+        description_paragraph_to: 1-based last description paragraph, inclusive.
 
     Note: Metadata fields (inventors, applicants, classifications) are also available
     via search_balanced. For citation analysis, use uspto_enriched_citation_mcp for
@@ -115,18 +128,9 @@ def parse_xml_for_llm(
             structured.update(_claims_block(root))
 
         if "description" in include_fields:
-            text, returned, total = _extract_description_with_counts(root)
-            structured["description"] = text
-            structured["description_paragraphs_returned"] = returned
-            structured["description_paragraphs_total"] = total
-            if total > returned:
-                structured["description_note"] = (
-                    f"Summary only: the first {returned} of {total} description "
-                    "paragraphs. For the full specification use "
-                    "PFW_get_application_documents(document_code='SPEC') plus "
-                    "PFW_get_document_content_with_ocr, or read raw_xml "
-                    "(include_raw_xml=True)."
-                )
+            structured.update(_description_block(
+                root, description_paragraph_from, description_paragraph_to
+            ))
 
         if "inventors" in include_fields:
             structured["inventors"] = _extract_inventors(root)
@@ -307,6 +311,83 @@ def _extract_description(root) -> str:
     return _extract_description_with_counts(root)[0]
 
 
+def _paragraph_window(total: int, paragraph_from, paragraph_to) -> Tuple[int, int]:
+    """(start_index, end_index) as 0-based Python slice bounds.
+
+    `paragraph_from`/`paragraph_to` are 1-based and inclusive, the way the
+    paragraph `num` attributes on the XML read. An absent `paragraph_to` keeps
+    the historical DESCRIPTION_PARAGRAPH_LIMIT window.
+    """
+    try:
+        start = max(1, int(paragraph_from or 1)) - 1
+    except (TypeError, ValueError):
+        start = 0
+    if paragraph_to is None:
+        return start, start + DESCRIPTION_PARAGRAPH_LIMIT
+    try:
+        end = int(paragraph_to)
+    except (TypeError, ValueError):
+        return start, start + DESCRIPTION_PARAGRAPH_LIMIT
+    return start, max(start, end)
+
+
+def _paragraph_record(element, position: int) -> dict:
+    """One description paragraph with the attributes a pinpoint needs.
+
+    The extractor used to join the paragraph texts and throw the element away,
+    so the `id` and `num` attributes USPTO puts on every <p>, the only stable
+    pinpoints in a specification, were reachable only through raw_xml
+    (skill QA ledger, 2026-09-03). `position` is this paragraph's 1-based
+    ordinal in the description, which is what the window parameters count.
+    """
+    return {
+        "position": position,
+        "id": element.get("id"),
+        "num": element.get("num"),
+        "text": ' '.join(element.itertext()).strip(),
+    }
+
+
+def _description_block(root, paragraph_from=1, paragraph_to=None) -> dict:
+    """The `description` field plus its paragraph records and window markers."""
+    desc_elem = root.find('.//description')
+    if desc_elem is None:
+        return {
+            "description": "Description not found",
+            "description_paragraphs": [],
+            "description_paragraphs_returned": 0,
+            "description_paragraphs_total": 0,
+        }
+    all_paragraphs = desc_elem.findall('.//p')
+    total = len(all_paragraphs)
+    start, end = _paragraph_window(total, paragraph_from, paragraph_to)
+    records = [
+        _paragraph_record(element, start + offset + 1)
+        for offset, element in enumerate(all_paragraphs[start:end])
+    ]
+    block = {
+        "description": '\n\n'.join(record["text"] for record in records),
+        "description_paragraphs": records,
+        "description_paragraphs_returned": len(records),
+        "description_paragraphs_total": total,
+        "description_paragraph_from": (records[0]["position"] if records else start + 1),
+        "description_paragraph_to": (records[-1]["position"] if records else start),
+    }
+    if len(records) < total:
+        block["description_note"] = (
+            f"Window only: paragraphs {block['description_paragraph_from']}-"
+            f"{block['description_paragraph_to']} of {total}. Move the window with "
+            "PFW_get_patent_or_application_xml(description_paragraph_from=..., "
+            "description_paragraph_to=...). Each entry in description_paragraphs "
+            "carries the paragraph's own id and num attributes for pinpoint "
+            "citation; either may be null when the XML omits it. For the full "
+            "specification use PFW_get_application_documents(document_code='SPEC') "
+            "plus PFW_get_document_content_with_ocr, or read raw_xml "
+            "(include_raw_xml=True)."
+        )
+    return block
+
+
 def _extract_description_with_counts(root) -> Tuple[str, int, int]:
     """Return (summary_text, paragraphs_returned, paragraphs_total).
 
@@ -314,13 +395,12 @@ def _extract_description_with_counts(root) -> Tuple[str, int, int]:
     counters exist so the caller can see how much of the specification that
     actually is.
     """
-    desc_elem = root.find('.//description')
-    if desc_elem is None:
-        return "Description not found", 0, 0
-    all_paragraphs = desc_elem.findall('.//p')
-    paragraphs = all_paragraphs[:DESCRIPTION_PARAGRAPH_LIMIT]
-    text = '\n\n'.join([' '.join(p.itertext()).strip() for p in paragraphs])
-    return text, len(paragraphs), len(all_paragraphs)
+    block = _description_block(root)
+    return (
+        block["description"],
+        block["description_paragraphs_returned"],
+        block["description_paragraphs_total"],
+    )
 
 def _extract_inventors(root) -> list:
     """Extract inventor information"""

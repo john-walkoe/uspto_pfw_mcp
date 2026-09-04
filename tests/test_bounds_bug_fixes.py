@@ -26,7 +26,11 @@ from patent_filewrapper_mcp.models.search_params import (
     ParameterValidationError,
     SearchParameters,
 )
-from patent_filewrapper_mcp.shared.response_bounds import BOUNDS_KEY, WINDOW_KEY
+from patent_filewrapper_mcp.shared.response_bounds import (
+    BOUNDS_KEY,
+    WINDOW_KEY,
+    measure_chars,
+)
 
 
 @pytest.fixture
@@ -199,7 +203,7 @@ def test_description_cap_is_marked_with_returned_and_total():
 
     assert structured["description_paragraphs_returned"] == DESCRIPTION_PARAGRAPH_LIMIT
     assert structured["description_paragraphs_total"] == 40
-    assert "first 5 of 40" in structured["description_note"]
+    assert "paragraphs 1-5 of 40" in structured["description_note"]
     # The default size is UNCHANGED — only the marker is new.
     assert structured["description"].count("Paragraph") == DESCRIPTION_PARAGRAPH_LIMIT
 
@@ -590,11 +594,17 @@ async def test_oa_text_splits_the_budget_across_office_actions(oa_tools, monkeyp
 
     result = await tools["PFW_get_oa_text"]("15992176", latest_only=False, max_chars=50_000)
 
-    assert result["per_document_char_budget"] == 10_000
+    # The even split (50,000 // 5 = 10,000) is only the STARTING point: the
+    # envelope also carries the coverage census and per-entry metadata, and
+    # JSON escaping inflates the text, so the split is tightened until the
+    # whole payload fits the budget (2026-09-03 fix).
+    per_doc = result["per_document_char_budget"]
+    assert per_doc <= 10_000
+    assert measure_chars(result) <= 50_000
     assert result["rows_applied"] == mod.OA_TEXT_ROWS_ALL
     for entry in result["office_actions"]:
         assert entry["text_total_chars"] == 30_000
-        assert entry["text_returned_chars"] == 10_000
+        assert entry["text_returned_chars"] == per_doc
         assert entry[WINDOW_KEY]["has_more"] is True
 
 
@@ -769,7 +779,9 @@ async def test_xml_tool_passes_the_flag_through(document_tools, monkeypatch):
 
     class _FakeXmlClient:
         async def get_patent_or_application_xml(self, identifier, content_type,
-                                                include_fields, include_raw_xml):
+                                                include_fields, include_raw_xml,
+                                                description_paragraph_from=1,
+                                                description_paragraph_to=None):
             captured["include_raw_xml"] = include_raw_xml
             return {"success": True, "identifier_used": identifier,
                     "application_number": identifier, "xml_type": "PTGRXML",

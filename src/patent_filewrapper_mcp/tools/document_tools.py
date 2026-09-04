@@ -2,7 +2,7 @@
 package (audit F2 split from main.py)."""
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastmcp import Context
 from fastmcp.apps import AppConfig
@@ -376,9 +376,27 @@ def _upgrade_component_links(result: Dict[str, Any], app_number: str, proxy_port
         logger.debug(f"Could not generate persistent links for granted package: {link_err}")
 
 
-def _validate_content_window(char_offset, max_chars, page_from, page_to):
+#: `max_pages` is a parameter this tool has never had. It was reached for
+#: anyway (skill QA ledger, 2026-09-03), and an unknown keyword failed with a
+#: schema error that named nothing useful. It is accepted here for the sole
+#: purpose of answering with the parameters that DO exist.
+_MAX_PAGES_ERROR = (
+    "max_pages is not a parameter of PFW_get_document_content_with_ocr. To "
+    "bound what comes back, use char_offset= and max_chars= (a CHARACTER "
+    "window over the extracted text, with a `_window.next_offset` cursor), or "
+    "page_from= and page_to= (a 1-based inclusive PAGE range, applied to the "
+    "PDF before extraction so an extraction tier's own page cap applies to the "
+    "window rather than to the whole document). The per-tier page caps "
+    "themselves are server settings (PYPDF_MAX_PAGES, MISTRAL_OCR_MAX_PAGES), "
+    "not call parameters."
+)
+
+
+def _validate_content_window(char_offset, max_chars, page_from, page_to, max_pages=None):
     """Validate the char-window and page-window parameters of
     PFW_get_document_content_with_ocr. Returns an error response or None."""
+    if max_pages is not None:
+        return format_error_response(_MAX_PAGES_ERROR, 400)
     if char_offset < 0:
         return format_error_response("char_offset must be non-negative", 400)
     if max_chars is not None and max_chars < 1:
@@ -404,6 +422,7 @@ def register(mcp) -> None:
         max_chars: Optional[int] = None,
         page_from: int = 1,
         page_to: Optional[int] = None,
+        max_pages: Optional[int] = None,
         ctx: Context = None
     ) -> Dict[str, Any]:
         """Extract full text from USPTO prosecution documents with intelligent hybrid extraction (text variants first, then pypdf, then OCR).
@@ -440,6 +459,9 @@ def register(mcp) -> None:
     A page range does NOT apply to the text-variant tier (.docx / xmlarchive have
     no page structure) — `page_window.applied` is then False and says so.
 
+    There is no `max_pages` parameter: bound the response with max_chars (characters)
+    or page_from / page_to (pages). Passing max_pages returns a 400 naming those four.
+
     ⚠️ TEXT VARIANTS OMIT FORM PAGES. The text variants carry the BODY text only: the
     .docx variant of an order or office action omits USPTO form pages the PDF carries
     (observed 2026-08-30 — a reexam order's PTOL-471G page, carrying the response
@@ -454,7 +476,9 @@ def register(mcp) -> None:
     2. PFW_get_document_content_with_ocr(app_number='17/896,175', document_identifier='ABC123XYZ')
     3. If _window.has_more: re-call with char_offset=_window.next_offset
     For document selection and extraction strategies, use PFW_get_guidance (see quick reference chart for section selection)."""
-        window_error = _validate_content_window(char_offset, max_chars, page_from, page_to)
+        window_error = _validate_content_window(
+            char_offset, max_chars, page_from, page_to, max_pages
+        )
         if window_error:
             return window_error
         try:
@@ -627,7 +651,7 @@ def register(mcp) -> None:
     async def pfw_get_application_documents(
         app_number: str,
         limit: int = 50,
-        document_code: Optional[str] = None,
+        document_code: Optional[Union[str, List[str]]] = None,
         direction_category: Optional[str] = None,
         content_type: str = "auto"
     ) -> Dict[str, Any]:
@@ -640,7 +664,13 @@ def register(mcp) -> None:
 
     📋 FILTERING PARAMETERS:
 
-    **document_code** - Filter by specific document type (case-insensitive):
+    **document_code** - Filter by document type. Each code is matched EXACTLY and
+    case-insensitively; there is no wildcard, so 'A...' is the literal USPTO
+    amendment code, not a pattern. Pass ONE code, a LIST of codes, or a
+    pipe-joined string; a list or pipe string is an OR over the codes:
+        document_code='CTFR'                 # one code
+        document_code=['CTFR', 'CTNF']       # either (preferred form)
+        document_code='CTFR|CTNF'            # same thing, pipe-joined
       Key Examiner Actions:
         - NOA: Notice of Allowance, CTNF: Non-Final Rejection, CTFR: Final Rejection, 892: Examiner Citations
       Key Applicant Responses:
@@ -660,6 +690,9 @@ def register(mcp) -> None:
 
     # Office action rejections
     PFW_get_application_documents(app_number='14/171,705', document_code='CTFR', limit=20)
+
+    # Both rejection types in one call (OR over the codes)
+    PFW_get_application_documents(app_number='14/171,705', document_code=['CTFR', 'CTNF'])
 
     # All applicant responses
     PFW_get_application_documents(app_number='14/171,705', direction_category='INCOMING', limit=100)
@@ -685,12 +718,17 @@ def register(mcp) -> None:
     8-digit serial can be captured by an unrelated granted patent. To FORCE the application
     lane, pass the slash-comma serial format (e.g. '11/752,072') or content_type='application'
     ('auto' is the default, 'patent' forces the patent lane). Every response reports
-    identifier_resolved_as, identifier_note and identifier_lanes_tried, so check those before
-    trusting the documents.
+    identifier_resolved_as, identifier_note, identifier_lanes_tried and, when the input
+    could have gone either way, identifier_ambiguous: true, the same block
+    PFW_get_patent_or_application_xml returns, on the success path, the upstream-error
+    path and the exception path alike. Check those before trusting the documents.
 
     Oversized responses are automatically slimmed (and truncated if still too large) with a `documents_note` explaining what was dropped and how to narrow.
 
     For cross-MCP workflows, use PFW_get_guidance (see quick reference chart)."""
+        # Bound before the try so the failure path can still report WHICH
+        # identifier was looked up, the question a failed document read raises.
+        resolution = None
         try:
             api_client = _client()
 
@@ -757,7 +795,13 @@ def register(mcp) -> None:
                         "noa": "document_code='NOA' - Allowance reasoning (PFW_get_oa_text(action_type='NOA') answers in one call, with no PDF and less context)",
                         "rejections": "document_code='CTFR'/'CTNF' - Office actions (PFW_get_oa_text is the primary path)",
                         "prior_art": "document_code='892' - Examiner citations, '1449' - Applicant citations",
-                        "amendments": "document_code='CLM' - Claim evolution"
+                        "amendments": "document_code='CLM' - Claim evolution",
+                        "several_codes": (
+                            "document_code takes a LIST (['CTFR', 'CTNF']) or a pipe-joined "
+                            "string ('CTFR|CTNF') and OR-s the codes. Each code is matched "
+                            "exactly and case-insensitively; there is no wildcard, so 'A...' "
+                            "is the literal amendment code."
+                        )
                     },
                     "cross_mcp": {
                         "ptab": "PTAB applicationNumberText/patentNumber → PFW minimal → PFW_get_oa_text(action_type='NOA') → compare examiner vs PTAB reasoning",
@@ -772,6 +816,7 @@ def register(mcp) -> None:
         except Exception as e:
             return {
                 "success": False,
+                **(resolution.response_fields() if resolution is not None else {}),
                 "application_number": app_number,
                 "error": str(e),
                 "documentBag": [],
@@ -785,7 +830,9 @@ def register(mcp) -> None:
         identifier: str,
         content_type: str = "auto",
         include_fields: Optional[List[str]] = None,
-        include_raw_xml: bool = False
+        include_raw_xml: bool = False,
+        description_paragraph_from: int = 1,
+        description_paragraph_to: Optional[int] = None
     ) -> Dict[str, Any]:
         """Get structured XML content for patents or applications (filed after January 1, 2001).
     Claims, claim text, abstract, description, specification, what does claim 1 say, read the patent, cited references.
@@ -805,6 +852,13 @@ def register(mcp) -> None:
       - any other value is rejected with a 400 (it does NOT fall back to 'auto')
     Example: identifier='12539322' resolves to PATENT 12,539,322 (application 17996652).
     Pass content_type='application' to reach application 12/539,322 instead.
+
+    **PUBLICATION NUMBERS.** An 11-digit pre-grant publication number ('20080141381',
+    or the ST.16 form 'US20080141381A1') is accepted: it is crosswalked to its
+    application through applicationMetaData.earliestPublicationNumber and comes back
+    with identifier_resolved_as='publication'. That identifier names the PRE-GRANT
+    publication, so the XML served is APPXML; pass the granted patent number, or
+    content_type='patent', when the ISSUED claims are what you need.
 
     **CLAIM TYPE.** Each claim carries `type_derived` (authoritative — derived from the
     claim text and the XML's <claim-ref> links) and `type_reported` (the old keyword
@@ -836,6 +890,15 @@ def register(mcp) -> None:
     - description: First 5 paragraphs of detailed description/specification, with
       description_paragraphs_returned / description_paragraphs_total so you can see
       how much of the specification that is
+
+    **DESCRIPTION PARAGRAPHS AND PINPOINTS.** Alongside the joined `description` text,
+    `description_paragraphs` carries one entry per paragraph with the `id` and `num`
+    attributes USPTO puts on the XML `<p>` element (the stable pinpoints a claim chart
+    cites; either may be null when the XML omits it), plus `position`, the paragraph's
+    1-based ordinal. Move the window with description_paragraph_from /
+    description_paragraph_to (1-based, inclusive); the response echoes what it served in
+    description_paragraph_from / description_paragraph_to. These pinpoints previously
+    required include_raw_xml=True.
 
     **RAW XML (include_raw_xml=True):**
     Adds the complete source XML (~50K tokens):
@@ -909,7 +972,10 @@ def register(mcp) -> None:
 
             api_client = _client()
 
-            result = await api_client.get_patent_or_application_xml(identifier, content_type, include_fields, include_raw_xml)
+            result = await api_client.get_patent_or_application_xml(
+                identifier, content_type, include_fields, include_raw_xml,
+                description_paragraph_from, description_paragraph_to,
+            )
 
             # Add patent_number to response so the MCP App widget can show it.
             # For PTGRXML: if the user passed a patent number (identifier != derived app_number),

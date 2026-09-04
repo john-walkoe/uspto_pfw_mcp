@@ -390,7 +390,7 @@ except:
     # Use PFW_get_application_documents with SPEC/CLM/DRW codes
     basic_package = await PFW_get_application_documents(
         app_number=app_number,
-        document_code='SPEC|CLM|DRW|ABST',
+        document_code=['SPEC', 'CLM', 'DRW', 'ABST'],
         limit=10
     )
 ```

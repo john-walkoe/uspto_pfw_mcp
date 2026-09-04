@@ -196,7 +196,7 @@ for app in sample_apps:
     # Check for amendments
     amend_docs = await PFW_get_application_documents(
         app_number=app_number,
-        document_code='A...',  # All amendment types
+        document_code=['A...', 'A.NE', 'A.PE'],  # 'A...' is the literal amendment code, not a wildcard
         limit=10
     )
     if amend_docs.get('documentBag'):

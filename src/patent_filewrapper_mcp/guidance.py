@@ -106,7 +106,7 @@ def _get_tools_section() -> str:
 
 **Coverage floors differ per tool — do not lump them together.** Oct 1, 2017 is the PFW_get_oa_rejections floor (and the Citations MCP floor). PFW_get_oa_text reaches back roughly a decade further.
 
-**PFW_get_oa_text practicalities.** `latest_only` defaults True (single most recent matching OA); set False for up to 10. `action_type` takes the document code — CTNF, CTFR, NOA, CTRS. `section=` accepts only 101/102/103/112, and USPTO populates those sub-documents sparsely: 101/102/112 are frequently empty even when 103 is present, and when the requested section is empty the tool transparently falls back to the FULL body, so a section= request can return far more text than expected. Check `section_returned` and `text_length_chars`. Full bodies observed in practice range from ~3K chars (NOA) to ~69K chars (a heavy CTNF). No coverage is not an error: `success=True`, `num_found=0`, empty text — branch on num_found.
+**PFW_get_oa_text practicalities.** `latest_only` defaults True (single most recent matching OA); set False for up to 10. "Most recent" is the latest `submission_date` among the matches: the server sorts newest-first before selecting, and reports `order` / `order_note` / `candidates_considered`, so on a file with two CTFRs the later one comes back; with `latest_only=False` the returned `office_actions` are newest-first too. `action_type` takes the document code — CTNF, CTFR, NOA, CTRS. `section=` accepts only 101/102/103/112, and USPTO populates those sub-documents sparsely: 101/102/112 are frequently empty even when 103 is present, and when the requested section is empty the tool transparently falls back to the FULL body, so a section= request can return far more text than expected. Check `section_returned` and `text_length_chars`. Full bodies observed in practice range from ~3K chars (NOA) to ~69K chars (a heavy CTNF). No coverage is not an error: `success=True`, `num_found=0`, empty text — branch on num_found.
 
 ### Admin Tool (optional, not counted above)
 - **pfw_manage_users** — Registered-user management. Only registered when PFW_ENABLE_USER_MANAGEMENT=true (OAuth deployments); requires the pfw:admin scope. Absent in STDIO.
@@ -272,6 +272,14 @@ PATENT 12,539,322, application 17996652, not to application 12/539,322).
   `PFW_get_oa_rejections`, `PFW_get_oa_text`, `PFW_get_patent_or_application_xml`.
   Values are `'auto'` (default, patent lane first), `'patent'` and `'application'`.
 
+**Pre-grant publication numbers resolve too** (2026-09-03). An 11-digit publication
+number (`20080141381`, or the print forms `US20080141381A1` and `US 2008/0141381 A1`)
+is crosswalked to its application through
+`applicationMetaData.earliestPublicationNumber` and comes back with
+`identifier_resolved_as: 'publication'`. It names the PRE-GRANT publication, so
+`PFW_get_patent_or_application_xml` serves APPXML for it; pass the granted patent number,
+or `content_type='patent'`, when the ISSUED claims are what you need.
+
 **Every resolving response self-reports.** Read `identifier_resolved_as`
 ('patent' | 'application' | 'publication'), `identifier_lanes_tried` (the queries that
 ran and what each matched) and `identifier_note` (plain-language explanation), plus
@@ -430,7 +438,10 @@ is the authority, not this list.
 ### 🔵 Applicant Responses (FROM APPLICANT)
 
 **Amendments and responses:**
-- **A...** - Amendment/Request for Reconsideration-After Non-Final Rejection
+- **A...** - Amendment/Request for Reconsideration-After Non-Final Rejection.
+  The dots are part of the code itself. `document_code` has no wildcard, so
+  this matches that one code and nothing else; to reach the other amendment
+  codes pass them: `document_code=['A...', 'A.NE', 'A.PE']`
 - **A.NE** - Response After Final Action
 - **A.PE** - Preliminary Amendment
 - **A.NA** - Amendment after Notice of Allowance (Rule 312)
@@ -528,7 +539,7 @@ cannot serve, or when an actual PDF is wanted.
 PFW_get_application_documents(app_number, document_code='892')
 
 # Office action PDFs (for download; for the TEXT use PFW_get_oa_text)
-PFW_get_application_documents(app_number, document_code='CTFR|CTNF')
+PFW_get_application_documents(app_number, document_code=['CTFR', 'CTNF'])
 
 # Allowance document PDF (for the TEXT use PFW_get_oa_text(action_type='NOA'))
 PFW_get_application_documents(app_number, document_code='NOA')
@@ -537,13 +548,13 @@ PFW_get_application_documents(app_number, document_code='NOA')
 **Get applicant's responses:**
 ```python
 # All amendments
-PFW_get_application_documents(app_number, document_code='A...')  # Wildcard matches all A. codes
+PFW_get_application_documents(app_number, document_code=['A...', 'A.NE', 'A.PE'])  # 'A...' is the literal amendment code, not a wildcard
 
 # The actual argument, not the filing receipt: REM, not N417
 PFW_get_application_documents(app_number, document_code='REM')
 
 # IDS submissions (for Citations MCP integration)
-PFW_get_application_documents(app_number, document_code='IDS|1449')
+PFW_get_application_documents(app_number, document_code=['IDS', '1449'])
 
 # RCE filings
 PFW_get_application_documents(app_number, document_code='RCEX')
@@ -552,10 +563,10 @@ PFW_get_application_documents(app_number, document_code='RCEX')
 **Get patent components:**
 ```python
 # Core patent documents
-PFW_get_application_documents(app_number, document_code='ABST|CLM|SPEC|DRW')
+PFW_get_application_documents(app_number, document_code=['ABST', 'CLM', 'SPEC', 'DRW'])
 
 # Claims evolution
-PFW_get_application_documents(app_number, document_code='CLM|FWCLM')
+PFW_get_application_documents(app_number, document_code=['CLM', 'FWCLM'])
 ```
 
 ---
@@ -1447,7 +1458,11 @@ headers, so page-unit windows work on either.
 - `PFW_get_oa_text(char_offset=0, max_chars=None)` - same cursor. With
   `latest_only=False` the budget is SPLIT across the office actions returned
   (`per_document_char_budget`), and every entry carries
-  `text_total_chars` / `text_returned_chars` plus its own `_window`.
+  `text_total_chars` / `text_returned_chars` plus its own `_window`. The split
+  is then tightened until the WHOLE serialized envelope fits the budget, so
+  several long actions cannot add up past it; when anything was cut the
+  envelope carries `_bounds` with `reason: "window"` and character counts in
+  `items_returned` / `items_total`.
 
 ### Paging searches
 

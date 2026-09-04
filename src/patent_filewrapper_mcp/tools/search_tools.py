@@ -500,6 +500,18 @@ def register(mcp) -> None:
     PFW_search_inventor(name='John Smith', status_code='150', fields=['applicationNumberText', 'patentNumber'], limit=20)
     ```
 
+    NO CENSUS, AND NO PAGING PAST THE LIMIT. This tool fans one inventor name out
+    into several name-variant queries and de-duplicates the hits, so there is no
+    single upstream result set to page through: it takes no `offset`,
+    `paging.total` is null (a total is never guessed), and
+    `total_unique_applications` counts what THIS response holds. Read the result
+    as a SAMPLE of the inventor's portfolio, never as "this inventor has N
+    applications". Reaching a real census needs a change on USPTO's side; until
+    then, narrow instead of paging (art_unit=, status_code=, filing_date_start=/
+    filing_date_end=, applicant_name=), or take a known application number to
+    PFW_search_applications, which DOES page with `offset=` and reports a true
+    `paging.total`.
+
     For advanced inventor analysis and cross-MCP workflows, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
             # Input validation
@@ -644,8 +656,20 @@ def register(mcp) -> None:
 
     LIMIT: 1-100 per call. A larger `limit` (the ultra-minimal examples above ask
     for 150) is CLAMPED to 100 and the response says so in `limit_clamped`
-    {`requested`, `applied`, `note`}; it is not rejected. Page past 100 by feeding
-    `paging.next_offset` back as `offset=`.
+    {`requested`, `applied`, `note`}; it is not rejected.
+
+    NO CENSUS, AND NO PAGING PAST THE LIMIT. This tool fans one inventor name out
+    into several name-variant queries and de-duplicates the hits, so there is no
+    single upstream result set to page through: it takes no `offset`,
+    `paging.total` is null (a total is never guessed), and
+    `total_unique_applications` counts what THIS response holds. Read the result
+    as a SAMPLE of the inventor's portfolio, never as "this inventor has N
+    applications", and never subtract two such numbers. Reaching a real census
+    needs a change on USPTO's side; until then, narrow instead of paging
+    (art_unit=, status_code=, filing_date_start=/filing_date_end=,
+    applicant_name=), or take a known application number to
+    PFW_search_applications_minimal, which DOES page with `offset=` and reports a
+    true `paging.total`.
 
     **Progressive Disclosure Workflow:**
     1. Use THIS TOOL for discovery with convenience params (20-50 results or Ultra-Minimal Mode 50-200 results)
@@ -891,8 +915,20 @@ def register(mcp) -> None:
 
     LIMIT: 1-100 per call. A larger `limit` (the ultra-minimal examples above ask
     for 150) is CLAMPED to 100 and the response says so in `limit_clamped`
-    {`requested`, `applied`, `note`}; it is not rejected. Page past 100 by feeding
-    `paging.next_offset` back as `offset=`.
+    {`requested`, `applied`, `note`}; it is not rejected.
+
+    NO CENSUS, AND NO PAGING PAST THE LIMIT. This tool fans one inventor name out
+    into several name-variant queries and de-duplicates the hits, so there is no
+    single upstream result set to page through: it takes no `offset`,
+    `paging.total` is null (a total is never guessed), and
+    `total_unique_applications` counts what THIS response holds. Read the result
+    as a SAMPLE of the inventor's portfolio, never as "this inventor has N
+    applications", and never subtract two such numbers. Reaching a real census
+    needs a change on USPTO's side; until then, narrow instead of paging
+    (art_unit=, status_code=, filing_date_start=/filing_date_end=,
+    applicant_name=), or take a known application number to
+    PFW_search_applications_minimal, which DOES page with `offset=` and reports a
+    true `paging.total`.
 
     **Progressive Disclosure Workflow:**
     1. Use THIS TOOL for inventor discovery with convenience params (20-50 results or Ultra-Minimal Mode 50-200 results)
@@ -992,6 +1028,18 @@ def register(mcp) -> None:
 
     Returns 24 key fields including all minimal fields plus applicantBag, assignmentBag, and application
     status description for detailed portfolio analysis.
+
+    NO CENSUS, AND NO PAGING PAST THE LIMIT. This tool fans one inventor name out
+    into several name-variant queries and de-duplicates the hits, so there is no
+    single upstream result set to page through: it takes no `offset`,
+    `paging.total` is null (a total is never guessed), and
+    `total_unique_applications` counts what THIS response holds. Read the result
+    as a SAMPLE of the inventor's portfolio, never as "this inventor has N
+    applications". Reaching a real census needs a change on USPTO's side; until
+    then, narrow instead of paging (art_unit=, status_code=, filing_date_start=/
+    filing_date_end=, applicant_name=), or take a known application number to
+    PFW_search_applications_balanced, which DOES page with `offset=` and reports a
+    true `paging.total`.
 
     **NEW: Custom Fields Override - same as minimal tier**
     - `fields`: Optional list of specific fields to return.

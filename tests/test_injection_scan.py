@@ -188,7 +188,8 @@ class _StubXMLClient:
         self._claims_text = claims_text
 
     async def get_patent_or_application_xml(
-        self, identifier, content_type, include_fields, include_raw_xml
+        self, identifier, content_type, include_fields, include_raw_xml,
+        description_paragraph_from=1, description_paragraph_to=None,
     ):
         return {
             "success": True,

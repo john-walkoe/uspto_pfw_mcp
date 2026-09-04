@@ -66,6 +66,15 @@ Reference application (OA APIs): **15/992,176** (post-2017, confirmed in OA reje
 > `PFW_get_document_download` take a literal application number alongside a
 > `document_identifier` from a prior listing call and do not lane-resolve —
 > also deliberate.
+>
+> **Updated 2026-09-03:** the note on a slashed serial no longer reads "Pre-2001
+> application format". The slash is how USPTO prints a serial in every era, and
+> the note said otherwise even for a 2022 filing (17/996,652). It now reads
+> "Slash-form serial, unambiguous". A pre-grant PUBLICATION number
+> (`20080141381`, or the print forms `US20080141381A1` / `US 2008/0141381 A1`)
+> also resolves now, through `applicationMetaData.earliestPublicationNumber`,
+> with `identifier_resolved_as = publication`; it used to come back as
+> "Could not resolve" on every tool.
 
 ---
 
@@ -143,6 +152,8 @@ PFW_search_inventor_minimal
 ```
 **Expect:** At least 2 results including app 11752072 (patent 7971071) - the API returns `applicationNumberText` as bare digits. Inventor "Walkoe" matched via comprehensive strategy.
 
+**Read as a sample, not a census.** The inventor tiers fan one name out into several name-variant queries and de-duplicate, so there is no single upstream result set to page: they take no `offset`, `paging.total` is null, and `total_unique_applications` counts only what the response holds. A real census needs a change on USPTO's side and is NOT expected here; each inventor tool's description states the limit as of 2026-09-03. Narrow with `art_unit` / `status_code` / `filing_date_start` instead of trying to page.
+
 ---
 
 ### Test 5: Convenience Parameter Search (Examiner Name)
@@ -203,6 +214,19 @@ PFW_get_application_documents
 
 ---
 
+### Test 8b: Document Listing, Several Codes in One Call (new 2026-09-03)
+
+```
+PFW_get_application_documents
+{
+  "app_number": "11/752,072",
+  "document_code": ["CTFR", "CTNF"]
+}
+```
+**Expect:** the union of both codes (application 11/752,072 holds 2 CTFRs and 3 CTNFs), `summary.filtering.filters_applied = ["document_code='CTFR|CTNF'"]`. The pipe-joined string `"CTFR|CTNF"` is accepted and behaves identically. Before this change the filter compared the whole string as one code, so every pipe-joined example the guidance and prompts taught returned an EMPTY bag that looked exactly like "this application has no such document". Each code is still an exact, case-insensitive match: `document_code='A...'` returns only the `A...` documents and never `A.NE`, because there is no wildcard.
+
+---
+
 ## Section 3: Content & Downloads — 4 Tests
 
 ### Test 9: OCR Document Content Extraction (ABST — 1 page)
@@ -216,6 +240,8 @@ PFW_get_document_content_with_ocr
 }
 ```
 **Expect:** `success = true`, `extracted_content` contains abstract text about securing a digital device and digital rights verification. `extraction_method` is one of: `PyPDF2`, `Mistral OCR`, or `Docling OCR` (whichever is available). `page_count = 1`. Progress notifications visible in Claude Desktop during call.
+
+**New 2026-09-03:** adding `"max_pages": 10` to this call returns a 400 naming the four parameters that DO bound the response (`char_offset`, `max_chars`, `page_from`, `page_to`) instead of a schema error naming nothing. `max_pages` has never been a parameter of this tool; it is accepted only so the error can say so.
 
 **Note on `PyPDF2` as an expected value (2026-09-03):** the underlying library is now `pypdf` (`PyPDF2` 3.0.1 is the terminal release of a renamed, end-of-life project, PYSEC-2026-1835). The served `extraction_method` string stays `PyPDF2` — it is the tier's wire identifier, and the PTAB MCP kept its own served value for the same reason. Only the library name in prose changed.
 
@@ -250,6 +276,33 @@ PFW_get_patent_or_application_xml
 
 ---
 
+### Test 11b: XML Content, Description Pinpoints and Window (new 2026-09-03)
+
+```
+PFW_get_patent_or_application_xml
+{
+  "identifier": "7971071",
+  "include_fields": ["description"],
+  "description_paragraph_from": 6,
+  "description_paragraph_to": 8
+}
+```
+**Expect:** `structured_content.description_paragraphs` with one entry per paragraph carrying `position`, `id` and `num`: the XML `<p>` attributes a claim chart cites, which previously reached a caller only through `include_raw_xml=True`. Either attribute may be null when the XML omits it. `description_paragraph_from = 6`, `description_paragraph_to = 8`, `description_paragraphs_returned = 3`, `description_paragraphs_total` the whole specification's count, and `description` the three paragraphs joined. Omitting the window parameters returns the historical first-5-paragraph summary unchanged; `fields_metadata.fields_included` still lists `description` alone.
+
+---
+
+### Test 11c: XML Content, Publication Number (new 2026-09-03)
+
+```
+PFW_get_patent_or_application_xml
+{
+  "identifier": "20080141381"
+}
+```
+**Expect:** `identifier_resolved_as = publication`, resolution through `applicationMetaData.earliestPublicationNumber` reported in `identifier_lanes_tried`, `application_number = 11752072`, and `xml_type = APPXML` (a publication number names the PRE-GRANT publication; pass the patent number or `content_type='patent'` for issued claims). The ST.16 print forms `US20080141381A1` and `US 2008/0141381 A1` resolve identically. Before this change every tool answered "Could not resolve" for a publication number.
+
+---
+
 ### Test 12: Complete Granted Patent Package
 
 ```
@@ -276,6 +329,10 @@ PFW_get_oa_rejections
 }
 ```
 **Expect:** `success = true`, `num_found > 0` (confirmed: 19 records), `summary.has_101 = true`, `summary.has_112 = true`, `summary.has_103 = false`. Art unit 2100 / 1765. `data_note` confirms coverage from Oct 1, 2017. This is a post-2017 application with §101 and §112 rejections.
+
+**Changed 2026-09-03, two keys in `summary`:**
+- `rejection_rows_total` (rows the dataset holds) now sits next to `office_actions_in_returned_rows` (distinct `submission_date` + `doc_code` pairs among the rows this response carries, a floor while `has_more` is true). `office_actions_count` is retained for one release as a documented alias of `rejection_rows_total`; it was named as if it counted office actions and always held the row count. Measured on application 15/603,285: `num_found` 10, all one CTNF mailed 2018-01-10, which `PFW_get_oa_text` confirms with `num_found` 1.
+- `has_103` now requires USPTO's `hasRej103` flag AND at least one §103 citation. The raw flag alone fires on nonstatutory (obviousness-type) double-patenting boilerplate: on application 15/603,285 it was true with `cite_103_max: 0` and no §103 rejection anywhere in the action's text. `has_103_indicator_raw` reports the unqualified flag, per row and in the summary, and `summary.has_103_note` explains a disagreement.
 
 ---
 
@@ -304,6 +361,8 @@ PFW_get_oa_text
 }
 ```
 **Expect:** `success = true`, `doc_code = CTNF`, `submission_date = 2010-10-13`, `art_unit = 2432`. `text` contains full office action body including §103 rejections citing Qawami and Rohrbach references. `text_length_chars` in the thousands. **No PDF download or OCR required** — text returned directly from USPTO ODP text API.
+
+**Changed 2026-09-03:** `latest_only=True` now returns the action with the LATEST `submission_date` among the matches, not the dataset's first row. The dataset answers in ascending date order, so the old behavior handed back the OLDEST action of a type (measured on application 16/319,040, which carries two CTFRs, 2021-12-21 and 2022-12-27, and returned the 2021 one). Every response now carries `order = "submission_date_desc"`, `order_note`, and `candidates_considered` (how many matches were sorted before one was taken); `rows_applied` is 10 on every call, because a one-row request cannot be sorted.
 
 ---
 
@@ -366,6 +425,8 @@ PFW_get_oa_text
 **Expect:** `num_found = 3` (app 11/752,072 has 3 CTNFs: 2010-10-13, 2009-01-29, and 2008-09-08; re-verified 2026-09-03). Text returned for all non-final rejections. Confirms `latest_only=False` returns full prosecution history OA text.
 
 **Note:** The 2008-09-08 OA (Mathers, art unit 2132) predates the 2009 RCE round and was initially missed in the reference sheet. Corrected 2026-03-29.
+
+**Changed 2026-09-03:** `office_actions` is ordered NEWEST FIRST (`office_actions[0].submission_date = 2010-10-13`), and the per-document split is now tightened until the WHOLE serialized envelope fits the content budget. This call previously came back at about 106,000 characters and was discarded by the client; expect `per_document_char_budget` at or below `max_chars // 3`, a `_bounds` block with `reason = "window"` reporting `items_returned` / `items_total` in characters, and a `_window.next_offset` cursor on each entry that was cut. Actions that fit carry no `_window`, no `truncated`, and the envelope carries no `_bounds`: the no-op contract is unchanged.
 
 ---
 

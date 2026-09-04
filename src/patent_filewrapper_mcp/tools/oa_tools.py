@@ -31,9 +31,13 @@ from ..api.helpers import format_error_response
 from ..client_registry import _client, get_api_client
 from ..shared.injection_scan import RETRIEVED_TEXT_NOTE, scan_hits
 from ..shared.response_bounds import (
+    BOUNDS_KEY,
+    REASON_WINDOW,
+    STAGE_TRUNCATED,
     WINDOW_KEY,
     apply_text_window,
     content_char_budget,
+    measure_chars,
     window_text,
 )
 from ..shared.safe_logger import get_safe_logger
@@ -77,12 +81,45 @@ MAX_OA_ROWS = 100
 
 #: Rows the OA-text search requests. Hardcoded before; still fixed, but now
 #: surfaced in the response so `showing` vs `num_found` is explicable.
+#:
+#: OA_TEXT_ROWS_LATEST is how many office actions `latest_only=True` RETURNS,
+#: not how many rows are requested upstream. The dataset answers in ASCENDING
+#: submission-date order, so asking it for one row handed back the OLDEST
+#: action of the type: measured 2026-09-03 on application 16/319,040, which
+#: carries two CTFRs (2021-12-21 and 2022-12-27) and returned the 2021 one as
+#: "the most recent". Every call now requests the full window and sorts
+#: NEWEST FIRST here, then slices.
 OA_TEXT_ROWS_LATEST = 1
 OA_TEXT_ROWS_ALL = 10
+
+#: Value of the `order` field on every PFW_get_oa_text response.
+OA_TEXT_ORDER = "submission_date_desc"
+
+OA_TEXT_ORDER_NOTE = (
+    "Office actions are ordered NEWEST FIRST by submission_date. The USPTO "
+    "dataset answers in ascending date order, so this server sorts before "
+    "selecting: latest_only=True returns the action with the LATEST "
+    "submission_date among the matches, and with latest_only=False "
+    "office_actions[0] is the most recent."
+)
 
 #: Floor for the per-document slice when several office actions share one
 #: content budget — below this a "window" is not worth returning.
 _MIN_PER_DOCUMENT_CHARS = 2_000
+
+#: Headroom left for the `_bounds` marker the fitting loop may still attach.
+_BOUNDS_RESERVE_CHARS = 700
+
+_OA_TEXT_BOUNDS_NOTE = (
+    "Several office actions shared one content budget, so each was given a "
+    "per-document window (`per_document_char_budget`) and the longer ones were "
+    "cut. Nothing was discarded: each entry keeps `text_total_chars` next to "
+    "`text_returned_chars` and carries its own `_window.next_offset`. Re-call "
+    "PFW_get_oa_text(application_number='{application_number}', "
+    "char_offset=<_window.next_offset>) to continue, narrow with "
+    "action_type= or section='101'|'102'|'103'|'112', or set latest_only=True "
+    "to give the whole budget to the most recent action."
+)
 
 _OA_TEXT_WINDOW_NOTE = (
     "Only part of this office action's text is shown. Re-call "
@@ -125,6 +162,46 @@ def _get_oa_text_client():
 
 
 
+def _first_value(value: Any) -> Any:
+    """USPTO Solr returns most fields as single-element lists."""
+    if isinstance(value, list):
+        return value[0] if value else ""
+    return "" if value is None else value
+
+
+def _submission_date(doc: Dict[str, Any]) -> str:
+    """The row's submission date as a sortable ISO string ('' when absent)."""
+    return str(_first_value(doc.get("submissionDate", "")) or "")
+
+
+def sort_docs_newest_first(docs: list) -> list:
+    """Order raw dataset rows NEWEST FIRST by submission date.
+
+    `latest_only` used to mean "the first row the dataset happened to return",
+    which is its OLDEST matching action (see OA_TEXT_ROWS_LATEST). Submission
+    dates are ISO (YYYY-MM-DD), so a string sort IS a date sort. A row with no
+    date sorts last rather than displacing a dated one, and rows sharing a date
+    keep the dataset's own order (`sorted` is stable).
+    """
+    return sorted(
+        docs,
+        key=lambda doc: (bool(_submission_date(doc)), _submission_date(doc)),
+        reverse=True,
+    )
+
+
+def select_office_action_rows(docs: list, latest_only: bool):
+    """(rows_to_return, rows_considered), newest first and then sliced.
+
+    The ordering happens before the slice, which is the whole fix: taking the
+    dataset's own first row is taking the OLDEST matching action.
+    """
+    ordered = sort_docs_newest_first(docs)
+    if latest_only:
+        return ordered[:OA_TEXT_ROWS_LATEST], len(ordered)
+    return ordered, len(ordered)
+
+
 def _per_document_budget(budget: int, document_count: int) -> int:
     """Split one content budget across the office actions in a response."""
     if document_count <= 1:
@@ -133,28 +210,162 @@ def _per_document_budget(budget: int, document_count: int) -> int:
 
 
 def _window_office_actions(
-    results: list, application_number: str, char_offset: int, budget: int
-) -> None:
+    results: list, full_texts: list, application_number: str,
+    char_offset: int, per_doc: int,
+) -> Dict[str, int]:
     """Give every office action in a multi-OA response its own text window.
 
     Each entry keeps `text_total_chars` (the full length) next to
     `text_returned_chars` (this window), and carries its own `_window` cursor
     when there is more to read. Entries that fit are left untouched — no
     marker at all, same contract as the shared guard.
+
+    Windowing always starts from `full_texts` (the untouched bodies), so the
+    caller can re-run it with a smaller `per_doc` until the whole envelope
+    fits. Returns the character tallies the `_bounds` marker reports.
     """
-    per_doc = _per_document_budget(budget, len(results))
     note = _OA_TEXT_WINDOW_NOTE.format(application_number=application_number)
-    for entry in results:
+    returned_chars = 0
+    total_chars = 0
+    windowed_count = 0
+    for entry, full_text in zip(results, full_texts):
         windowed = window_text(
-            entry["text"], offset=char_offset, max_chars=per_doc, note=note
+            full_text, offset=char_offset, max_chars=per_doc, note=note
         )
         entry["text"] = windowed["text"]
         entry["text_returned_chars"] = len(windowed["text"])
         entry["text_length_chars"] = entry["text_returned_chars"]
+        entry["text_total_chars"] = len(full_text)
+        entry.pop(WINDOW_KEY, None)
+        entry.pop("truncated", None)
+        entry.pop("truncation_note", None)
         if WINDOW_KEY in windowed:
             entry[WINDOW_KEY] = windowed[WINDOW_KEY]
             entry["truncated"] = True
             entry["truncation_note"] = note
+            windowed_count += 1
+        returned_chars += entry["text_returned_chars"]
+        total_chars += len(full_text)
+    return {
+        "returned_chars": returned_chars,
+        "total_chars": total_chars,
+        "windowed_count": windowed_count,
+    }
+
+
+def _fit_office_actions(
+    envelope: Dict[str, Any], results: list, full_texts: list,
+    application_number: str, char_offset: int, budget: int,
+) -> Dict[str, Any]:
+    """Shrink the per-document window until the WHOLE envelope fits `budget`.
+
+    Splitting the budget evenly across the office actions is not enough on its
+    own: the envelope also carries the coverage census, the resolution block
+    and per-entry metadata, and JSON-escaping inflates every newline in the
+    text. A three-CTNF file came back at about 106,000 characters and was
+    discarded by the client instead of being windowed (measured 2026-09-03 on
+    application 11/752,072). The loop below measures what will actually ship.
+    """
+    per_doc = _per_document_budget(budget, len(results))
+    ceiling = max(_MIN_PER_DOCUMENT_CHARS, budget - _BOUNDS_RESERVE_CHARS)
+    while True:
+        tally = _window_office_actions(
+            results, full_texts, application_number, char_offset, per_doc
+        )
+        envelope["per_document_char_budget"] = per_doc
+        if measure_chars(envelope) <= ceiling or per_doc <= _MIN_PER_DOCUMENT_CHARS:
+            return tally
+        per_doc = max(_MIN_PER_DOCUMENT_CHARS, per_doc // 2)
+
+
+def _attach_office_action_bounds(
+    envelope: Dict[str, Any], tally: Dict[str, int], application_number: str, budget: int
+) -> None:
+    """`_bounds` for the multi-OA path. ABSENT when nothing was cut."""
+    if not tally.get("windowed_count"):
+        return
+    marker = {
+        "applied": True,
+        "reason": REASON_WINDOW,
+        "size_chars": 0,
+        "size_limit": budget,
+        "stages": [STAGE_TRUNCATED],
+        "slimmed_fields": [],
+        "items_returned": tally["returned_chars"],
+        "items_total": tally["total_chars"],
+        "note": _OA_TEXT_BOUNDS_NOTE.format(application_number=application_number),
+    }
+    envelope[BOUNDS_KEY] = marker
+    # Two passes: the second reports the size of the payload actually returned.
+    marker["size_chars"] = measure_chars(envelope)
+    marker["size_chars"] = measure_chars(envelope)
+
+
+def _int_or_zero(value: Any) -> int:
+    """Solr integers arrive as ints, strings or single-element lists."""
+    value = _first_value(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def row_has_corroborated_103(doc: Dict[str, Any]) -> bool:
+    """USPTO's hasRej103 flag, corroborated by an actual § 103 citation.
+
+    Measured 2026-09-03 on application 15/603,285 (patent 10,213,765): the sole
+    office action in that file rejects on nonstatutory (obviousness-type)
+    double patenting and 35 U.S.C. 112 first paragraph only, no rejection under
+    35 U.S.C. 103 appears anywhere in its text, and `cite103Max` is 0, yet
+    `hasRej103` came back true. The upstream classifier fires on the word
+    "obvious" inside the double-patenting boilerplate ("would have been obvious
+    over the reference claims").
+
+    A rejection UNDER § 103 applies prior art, so it carries at least one § 103
+    citation. This dataset serves no office-action text, so the citation count
+    is the corroboration available here; `PFW_get_oa_text(section='103')`
+    reads the statutory language itself.
+    """
+    if not _first_value(doc.get("hasRej103", 0)):
+        return False
+    return _int_or_zero(doc.get("cite103Max", 0)) > 0
+
+
+def distinct_office_actions(docs: list) -> int:
+    """Office actions among the returned ROWS, as distinct
+    (submission date, document code) pairs.
+
+    Rows are per rejection GROUP: application 15/603,285 answered with 10 rows
+    that were all one CTNF mailed 2018-01-10 (measured 2026-09-03).
+    """
+    return len({
+        (_submission_date(doc), str(_first_value(doc.get("legacyDocumentCodeIdentifier", ""))))
+        for doc in docs
+    })
+
+
+_OA_REJECTIONS_COUNTS_NOTE = (
+    "rejection_rows_total is the number of rejection ROWS the dataset holds "
+    "for this application, not the number of office actions: one office action "
+    "commonly yields several rows sharing a submission_date and doc_code. "
+    "office_actions_in_returned_rows counts the distinct "
+    "(submission_date, doc_code) pairs among the rows THIS response carries, "
+    "so it is a floor whenever has_more is true. office_actions_count is a "
+    "deprecated alias of rejection_rows_total, kept for one release; it was "
+    "named as if it counted office actions and never did. For the true office "
+    "action census use PFW_get_oa_text, whose num_found counts actions."
+)
+
+_OA_REJECTIONS_103_NOTE = (
+    "has_103 requires USPTO's hasRej103 flag AND at least one § 103 citation "
+    "(cite_103_max). The raw flag also fires on nonstatutory "
+    "(obviousness-type) double-patenting boilerplate, which is not a rejection "
+    "under 35 U.S.C. 103: measured 2026-09-03 on application 15/603,285, where "
+    "the flag was true with cite_103_max 0 and no § 103 rejection in the text. "
+    "has_103_indicator_raw reports the unqualified upstream flag; when the two "
+    "disagree, check has_double_patenting and read the action with "
+    "PFW_get_oa_text(section='103')."
+)
 
 
 def validate_action_type(action_type: str):
@@ -310,8 +521,18 @@ def register(mcp) -> None:
     is unavailable.
 
     Rows are per rejection group, not per office action: one office action commonly yields
-    several rows sharing a submission_date and doc_code with different claim sets. Use the
-    `summary` block for the roll-up and `office_actions_count` for the true OA count.
+    several rows sharing a submission_date and doc_code with different claim sets. The
+    `summary` block reports `rejection_rows_total` (rows the dataset holds) next to
+    `office_actions_in_returned_rows` (distinct submission_date + doc_code pairs among the
+    rows this response carries, a floor when has_more is true). `office_actions_count` is a
+    DEPRECATED alias of rejection_rows_total kept for one release: it was named as if it
+    counted office actions and never did. For the office-action census use PFW_get_oa_text,
+    whose num_found counts actions.
+
+    `has_103` requires USPTO's flag AND at least one § 103 citation. The raw flag alone
+    fires on nonstatutory (obviousness-type) double-patenting boilerplate, which is not a
+    rejection under 35 U.S.C. 103; `has_103_indicator_raw` reports the unqualified flag and
+    `summary.has_103_note` explains a disagreement.
 
     Args:
         application_number: Patent application number (e.g., '15992176') or the granted
@@ -380,15 +601,23 @@ def register(mcp) -> None:
             summary = {
                 "has_101": any(d.get("hasRej101", 0) for d in docs),
                 "has_102": any(d.get("hasRej102", 0) for d in docs),
-                "has_103": any(d.get("hasRej103", 0) for d in docs),
+                "has_103": any(row_has_corroborated_103(d) for d in docs),
+                "has_103_indicator_raw": any(d.get("hasRej103", 0) for d in docs),
                 "has_112": any(d.get("hasRej112", 0) for d in docs),
                 "has_double_patenting": any(d.get("hasRejDP", 0) for d in docs),
                 "alice_indicator": any(d.get("aliceIndicator") for d in docs),
                 "mayo_indicator": any(d.get("mayoIndicator") for d in docs),
                 "bilski_indicator": any(d.get("bilskiIndicator") for d in docs),
                 "myriad_indicator": any(d.get("myriadIndicator") for d in docs),
-                "max_103_citations": max((d.get("cite103Max", 0) for d in docs), default=0),
+                "max_103_citations": max((_int_or_zero(d.get("cite103Max", 0)) for d in docs), default=0),
+                "rejection_rows_total": num_found,
+                "office_actions_in_returned_rows": distinct_office_actions(docs),
+                # DEPRECATED alias of rejection_rows_total, kept for one
+                # release: the key was named as if it counted office actions
+                # and has always held the rejection-row count.
                 "office_actions_count": num_found,
+                "counts_note": _OA_REJECTIONS_COUNTS_NOTE,
+                "has_103_note": _OA_REJECTIONS_103_NOTE,
             }
 
             return {
@@ -408,7 +637,8 @@ def register(mcp) -> None:
                         "art_unit": d.get("groupArtUnitNumber", ""),
                         "has_101": bool(d.get("hasRej101", 0)),
                         "has_102": bool(d.get("hasRej102", 0)),
-                        "has_103": bool(d.get("hasRej103", 0)),
+                        "has_103": row_has_corroborated_103(d),
+                        "has_103_indicator_raw": bool(d.get("hasRej103", 0)),
                         "has_112": bool(d.get("hasRej112", 0)),
                         "alice": d.get("aliceIndicator"),
                         "mayo": d.get("mayoIndicator"),
@@ -469,6 +699,12 @@ def register(mcp) -> None:
                      If omitted, returns the most recent office action of any type.
         latest_only: Return only the most recent matching OA (default: True).
                      Set to False to return all matching OAs (up to 10).
+                     "Most recent" means the LATEST submission_date among the
+                     matches: the matches are sorted newest-first here before
+                     one is taken, so a file with two CTFRs returns the later
+                     one. With latest_only=False the returned office_actions
+                     are ordered newest first as well; every response states
+                     this in `order` / `order_note`.
         section: Which text to return:
                  'all' (default) — full bodyText (may be large; 70K+ chars on a heavy OA)
                  '101' — only the § 101 eligibility rejection section
@@ -484,7 +720,10 @@ def register(mcp) -> None:
                  `_window.next_offset` back here to continue.
         max_chars: Window size in characters (default USPTO_MAX_CONTENT_CHARS,
                  120,000). With latest_only=False the budget is split across the
-                 office actions returned.
+                 office actions returned (`per_document_char_budget`) and the
+                 split is tightened until the WHOLE envelope fits, so several
+                 long actions cannot add up past the budget. `_bounds` reports
+                 what was cut and each entry carries its own `_window` cursor.
         content_type: 'auto' (default), 'patent' or 'application'. The two explicit
                  values force one resolution lane for a bare 8-digit identifier
                  instead of the patent-number-first probe.
@@ -543,9 +782,15 @@ def register(mcp) -> None:
                 criteria_parts.append(f"legacyDocumentCodeIdentifier:{action_type}")
             criteria = " AND ".join(criteria_parts)
 
-            rows = OA_TEXT_ROWS_LATEST if latest_only else OA_TEXT_ROWS_ALL
+            # ALWAYS request the full window and sort here. Asking the dataset
+            # for one row returned its FIRST row in ascending date order, i.e.
+            # the OLDEST matching action, which is the opposite of what
+            # latest_only promises (see OA_TEXT_ROWS_LATEST).
+            rows = OA_TEXT_ROWS_ALL
             raw = await client.search(criteria=criteria, start=0, rows=rows)
-            docs = raw.get("response", {}).get("docs", [])
+            docs, candidates_considered = select_office_action_rows(
+                raw.get("response", {}).get("docs", []), latest_only
+            )
             num_found = raw.get("response", {}).get("numFound", 0)
 
             # The OA text dataset is a SUBSET of the file wrapper. Return the
@@ -556,6 +801,8 @@ def register(mcp) -> None:
                 "action_types_served": dict(OA_TEXT_ACTION_TYPES),
                 "documents_by_code": census,
                 "documents_by_code_note": census_note,
+                "order": OA_TEXT_ORDER,
+                "order_note": OA_TEXT_ORDER_NOTE,
             }
 
             if not docs:
@@ -605,6 +852,7 @@ def register(mcp) -> None:
                     "application_number": application_number,
                     "num_found": num_found,
                     "rows_applied": rows,
+                    "candidates_considered": candidates_considered,
                     **results[0],
                     **provenance,
                 }
@@ -620,8 +868,8 @@ def register(mcp) -> None:
                 envelope["text_length_chars"] = envelope["text_returned_chars"]
                 return envelope
 
-            _window_office_actions(results, application_number, char_offset, budget)
-            return {
+            full_texts = [entry["text"] for entry in results]
+            envelope = {
                 "success": True,
                 **resolution.response_fields(),
                 **coverage,
@@ -629,10 +877,16 @@ def register(mcp) -> None:
                 "num_found": num_found,
                 "showing": len(results),
                 "rows_applied": rows,
+                "candidates_considered": candidates_considered,
                 "per_document_char_budget": _per_document_budget(budget, len(results)),
                 "office_actions": results,
                 **provenance,
             }
+            tally = _fit_office_actions(
+                envelope, results, full_texts, application_number, char_offset, budget
+            )
+            _attach_office_action_bounds(envelope, tally, application_number, budget)
+            return envelope
 
         except Exception as e:
             return {"success": False, "error": str(e), "application_number": application_number}

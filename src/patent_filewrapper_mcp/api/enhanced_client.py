@@ -10,7 +10,7 @@ import os
 import re
 # defusedxml: hardens against XXE / entity-expansion in USPTO-served XML (audit L12)
 from typing import Dict, Any, List, Optional
-from .helpers import validate_app_number, format_error_response, generate_request_id, create_inventor_queries, map_user_fields_to_api_fields
+from .helpers import validate_app_number, format_error_response, generate_request_id, create_inventor_queries, map_user_fields_to_api_fields, parse_document_codes
 from .free_text_variants import (
     METHOD_UPLOADED_PDF,
     VariantEmptyError,
@@ -1114,8 +1114,10 @@ class EnhancedPatentClient:
         Args:
             app_number: Patent application number
             limit: Maximum number of documents to return (applied AFTER filtering)
-            document_code: Filter by specific document code (e.g., 'NOA', 'FWCLM', 'CTFR')
-                          Case-insensitive exact match
+            document_code: Filter by document code (e.g., 'NOA', 'FWCLM', 'CTFR').
+                          Case-insensitive EXACT match per code. Several codes
+                          may be given as a list (['CTFR', 'CTNF']) or as a
+                          pipe-joined string ('CTFR|CTNF'); the codes are OR-ed.
             direction_category: Filter by document direction: 'INCOMING', 'OUTGOING', or 'INTERNAL'
                                Case-insensitive exact match
         """
@@ -1134,14 +1136,19 @@ class EnhancedPatentClient:
             filtering_applied = []
             original_count = len(documents)
 
-            # Apply document_code filter (client-side)
-            if document_code:
+            # Apply document_code filter (client-side). One code or several:
+            # the pipe-joined form this server's own guidance has always taught
+            # ('CTFR|CTNF') used to be compared as a single literal string and
+            # therefore matched nothing, which reads exactly like "this
+            # application has no such document".
+            codes = parse_document_codes(document_code)
+            if codes:
                 filtered_docs = [
                     doc for doc in documents
-                    if doc.get('documentCode', '').upper() == document_code.upper()
+                    if doc.get('documentCode', '').upper() in codes
                 ]
                 documents = filtered_docs
-                filtering_applied.append(f"document_code='{document_code}'")
+                filtering_applied.append(f"document_code='{'|'.join(sorted(codes))}'")
 
             # Apply direction_category filter (client-side)
             if direction_category:
@@ -1403,11 +1410,20 @@ class EnhancedPatentClient:
 
     # XML parsing lives in api/xml_parsing.py (audit F3); these delegators
     # preserve the public client surface.
-    def parse_xml_for_llm(self, xml_content: str, include_fields: Optional[List[str]] = None) -> dict:
+    def parse_xml_for_llm(
+        self,
+        xml_content: str,
+        include_fields: Optional[List[str]] = None,
+        description_paragraph_from: int = 1,
+        description_paragraph_to: Optional[int] = None,
+    ) -> dict:
         """Parse USPTO XML into LLM-friendly structured format (see
         api/xml_parsing.py for field options)."""
         from .xml_parsing import parse_xml_for_llm
-        return parse_xml_for_llm(xml_content, include_fields)
+        return parse_xml_for_llm(
+            xml_content, include_fields,
+            description_paragraph_from, description_paragraph_to,
+        )
 
     def _build_fields_metadata(self, include_fields, structured_content) -> dict:
         from .xml_parsing import build_fields_metadata
@@ -1419,18 +1435,23 @@ class EnhancedPatentClient:
         identifier: str,
         content_type: str = "auto",
         include_fields: Optional[List[str]] = None,
-        include_raw_xml: bool = True
+        include_raw_xml: bool = True,
+        description_paragraph_from: int = 1,
+        description_paragraph_to: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Get XML content with intelligent patent-to-application mapping.
 
         Args:
-            identifier: Patent number (7971071) or application number (11752072)
+            identifier: Patent number (7971071), application number (11752072) or
+                pre-grant publication number (20080141381)
             content_type: "patent", "application", "auto" (default: auto-detect)
             include_fields: Optional list of fields to include (default: ["abstract", "claims", "description"])
             include_raw_xml: Include raw XML in response. The CLIENT default stays
                 True; the TOOL (PFW_get_patent_or_application_xml) defaults it to
                 False as of 2026-08-21 — the ~50K-token blob is almost never read.
+            description_paragraph_from / description_paragraph_to: 1-based inclusive
+                window over the description paragraphs (see api/xml_parsing.py).
 
         Returns:
             Clean, structured XML content with full text, claims, and metadata
@@ -1475,7 +1496,10 @@ class EnhancedPatentClient:
 
             # Step 4: Fetch and parse XML
             xml_content = await self.fetch_xml_from_url(xml_url)
-            structured = self.parse_xml_for_llm(xml_content, include_fields)
+            structured = self.parse_xml_for_llm(
+                xml_content, include_fields,
+                description_paragraph_from, description_paragraph_to,
+            )
 
             # Build fields metadata
             fields_metadata = self._build_fields_metadata(include_fields, structured)
