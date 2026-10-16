@@ -119,3 +119,17 @@ async def test_explicit_content_type_carries_no_ambiguity_note(family_tool):
     assert not any(
         q.startswith("applicationMetaData.patentNumber:") for q in client.queries
     )
+
+
+@pytest.mark.asyncio
+async def test_foreign_priority_opt_out_marks_the_priority_date_domestic_only(family_tool):
+    # 15/356,622 read 2016-11-20 with the opt-out against a 2016-04-11 foreign
+    # priority (re-test 2026-10-07): the date must say what it did not see.
+    tool, client = family_tool
+
+    checked = await tool("11/752,072")
+    assert "earliest_priority_complete" not in checked
+
+    skipped = await tool("11/752,072", include_foreign_priority=False)
+    assert skipped["earliest_priority_complete"] is False
+    assert "domestic chain only" in (skipped.get("priority_basis") or "")

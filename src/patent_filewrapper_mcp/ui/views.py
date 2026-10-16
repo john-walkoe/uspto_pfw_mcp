@@ -25,6 +25,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
 .filter-bar { background: #f4f7fd; border: 1px solid #c5d8f7; border-radius: 6px; margin: 8px 14px 0; padding: 7px 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .sort-bar { background: #f4f7fd; border: 1px solid #c5d8f7; border-radius: 6px; margin: 6px 14px 0; padding: 5px 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .field-notice { background: #fffbe6; border-bottom: 1px solid #ffe58f; padding: 5px 14px; font-size: 11px; color: #7d5a00; line-height: 1.5; }
+.pc-note { background: #f4f5f7; border-bottom: 1px solid #e3e5e9; padding: 5px 14px; font-size: 11px; color: #666; line-height: 1.5; }
 .filter-label { font-size: 10px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; margin-right: 2px; }
 .pill { border: 1px solid #c5d8f7; border-radius: 12px; padding: 2px 9px; font-size: 11px; font-weight: 700; cursor: pointer; background: #fff; color: #1a3a6b; transition: all 0.12s; user-select: none; }
 .pill:hover { border-color: #4a90d9; background: #e8f0fe; }
@@ -71,6 +72,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
 </div>
 <div class="summary-bar" id="summary-bar" style="display:none"></div>
 <div class="field-notice" id="field-notice" style="display:none"><strong>Note:</strong> Fields showing <strong>"—"</strong> were not requested in this tool call. The LLM selects fields to balance context efficiency. See the <em>Query</em> in the bar above for what was requested.</div>
+<div class="pc-note">Patent Center shows an application only to a signed-in reader: without a free USPTO.gov account the link lands on its own front page rather than on the desired application. Google Patents needs no account.</div>
 <div class="filter-bar" id="filter-bar" style="display:none"></div>
 <div class="sort-bar" id="sort-bar" style="display:none"></div>
 <div id="loading">Waiting for search results...</div>
@@ -509,6 +511,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
 .claim-type-dep { background: #6c757d; color: #fff; }
 
 .actions { padding: 10px 14px; }
+.pc-note { padding: 0 14px 8px; font-size: 11px; color: #666; line-height: 1.5; }
 .btn { display: inline-block; border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; cursor: pointer; background: #1a3a6b; color: #fff; }
 .btn:hover { background: #4a90d9; }
 
@@ -532,6 +535,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
     <button class="btn" id="open-btn">Open in Patent Center →</button>
     <button class="btn" id="google-btn" style="display:none;background:#4a90d9;margin-left:6px">Google Patents →</button>
   </div>
+  <div class="pc-note">Patent Center shows an application only to a signed-in reader: without a free USPTO.gov account the link lands on its own front page rather than on the desired application. Google Patents needs no account.</div>
   <div class="tabs">
     <div class="tab active" data-tab="claims">Claims</div>
     <div class="tab" data-tab="abstract">Abstract</div>
@@ -772,7 +776,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
   <span class="count" id="count-badge">0</span>
   <button class="refresh-btn" onclick="loadDownloads()">↻ Refresh</button>
 </div>
-<div class="tip">Click Download to open a document in your browser. Links are valid for 7 days.</div>
+<div class="tip">Click Download to open a document in your browser. Links are valid for __PFW_LINK_TIP__.</div>
 <div id="status"></div>
 <div class="container" id="content">
   <div class="empty-state" id="empty-state">
@@ -967,6 +971,20 @@ function formatTime(iso) {
 </html>"""
 
 
+def render_downloads_html() -> str:
+    """DOWNLOADS_HTML with the link-lifetime tip filled in from the live
+    settings (review 2026-09-28: the panel hard-coded "7 days", which
+    stopped matching PFW_LINK_TTL_DAYS/PFW_LINK_MAX_USES (1 day / 25 uses
+    by default) since ae7ac0e). DOWNLOADS_HTML stays a raw string -- it is
+    full of literal JS/CSS braces, so an f-string is not safe here; this is
+    the one token substituted at render time instead."""
+    from ..proxy.secure_link_cache import LINK_MAX_USES, LINK_TTL_DAYS
+
+    day_word = "day" if LINK_TTL_DAYS == 1 else "days"
+    tip = f"{LINK_TTL_DAYS} {day_word} or {LINK_MAX_USES} uses, whichever comes first"
+    return DOWNLOADS_HTML.replace("__PFW_LINK_TIP__", tip)
+
+
 # ---------------------------------------------------------------------------
 # View 4: Patent Family tree (PFW_get_family)
 # Renders the normalized node/edge graph as generations walked down from the
@@ -993,6 +1011,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
 
 .notes { background: #fffbe6; border-bottom: 1px solid #ffe58f; padding: 6px 14px; font-size: 11px; color: #7d5a00; line-height: 1.55; }
 .notes div { margin: 1px 0; }
+.pc-note { background: #f4f5f7; border-bottom: 1px solid #e3e5e9; padding: 5px 14px; font-size: 11px; color: #666; line-height: 1.5; }
 
 .container { padding: 10px 14px; }
 .gen-label { font-size: 10px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; margin: 8px 0 4px; }
@@ -1037,6 +1056,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
 </div>
 <div class="summary-bar" id="summary-bar" style="display:none"></div>
 <div class="notes" id="notes" style="display:none"></div>
+<div class="pc-note">Patent Center shows an application only to a signed-in reader: without a free USPTO.gov account the link lands on its own front page rather than on the desired application. Google Patents needs no account.</div>
 <div id="loading">Waiting for family data...</div>
 <div id="error" style="display:none"></div>
 <div class="container" id="content" style="display:none">

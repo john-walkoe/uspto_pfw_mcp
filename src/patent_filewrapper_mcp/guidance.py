@@ -50,6 +50,37 @@ def _get_overview_section() -> str:
 - ⚡ **"Optimize extraction and context usage"** → `cost`
 - 📏 **"Why was my response truncated / how do I page it?"** → `limits`
 
+### 🔗 CITATIONS ARE LINKS
+
+Every citable record this server returns carries **`cite_as`**, a ready-made markdown
+link: the label names what the record is, the target is the public record. Paste the
+record's `cite_as` after each sentence, table row, claim-chart cell or memo line that
+rests on it. A footnote number, an application number, a document code, a date or a
+claim number with no link is **not** a citation in this corpus: the reader has to be
+able to click through to the source.
+
+Where it appears and what it points at:
+
+| Tool | `cite_as` on | Target |
+|---|---|---|
+| `PFW_search_applications_*`, `PFW_search_inventor_*` | each hit | Google Patents when granted, else Patent Center |
+| `PFW_get_family` | each node (parents, children, provisionals) | Google Patents when granted, else Patent Center |
+| `PFW_get_patent_or_application_xml` | the response | Google Patents (patent or publication number), else Patent Center |
+| `PFW_get_term_adjustment` | the response | Patent Center application page |
+| `PFW_get_oa_text`, `PFW_get_oa_rejections` | each office action | Patent Center application page |
+| `PFW_get_application_documents` | each documentBag row | Patent Center application page |
+
+USPTO publishes no public per-document URL, so an office action or a documentBag row
+cites the APPLICATION in Patent Center; the document itself is under
+Documents & Transactions there, by date and document code. Say so when you cite one.
+
+Foreign priority entries carry no `cite_as`: they are foreign filings with no US public
+record here. **Never** paste this server's own persistent document links into an answer.
+Those are credentials minted for one reader, not public records; the `cite_as` values are
+the citable form.
+
+Every envelope carrying links also carries a `citation_note` restating this rule.
+
 ### Available Sections:
 - **overview**: Available sections and tool summary (this section)
 - **workflows_pfw**: PFW-only workflows (litigation, due diligence, prior art)
@@ -97,16 +128,17 @@ def _get_tools_section() -> str:
 - **PFW_get_granted_patent_documents_download** — All granted patent components (abstract, claims, drawings, spec) as download links
 
 ### Office Action Tools (2) — Deferred, loaded on demand. THE primary path for reading office actions.
-- **PFW_get_oa_rejections** — Rejection indicators: hasRej101/102/103/112, Alice/Bilski/Mayo/Myriad flags, citation counts. Structured data, small context. Coverage: Oct 1, 2017 to ~30 days ago. Rows are per rejection group, not per OA — one OA usually yields several rows sharing a submission_date and doc_code; use the `summary` block and `office_actions_count` for the roll-up.
-- **PFW_get_oa_text** — Full office action body text or section-filtered (101/102/103/112), in ONE call with no document bag, no PDF and no scanning step in between. Coverage is office actions mailed roughly 2008 onward (10-series applications and later), materially broader than the OA-rejections floor — an empty PFW_get_oa_rejections result does NOT mean the text is unavailable.
+- **PFW_get_oa_rejections** — One row per non-final (CTNF) or final (CTFR) rejection, newest first: `rejection_types` (USPTO's rejectionTypeBag: 101, 102, 103, 112, DoublePatent, Other) and `section_counts` (the 'rejected under 35 U.S.C. <n>' statements in that action's full text). `has_103` needs both. The bag and the text can disagree, so read the text before relying on either. The retired dataset's Alice/Mayo/Bilski/Myriad flags and citation counts are not published any more (null).
+- **PFW_get_oa_text** — Full office action text or section-filtered (101/102/103/112), in ONE call with no document bag, no PDF and no scanning step in between.
+- Both read the USPTO ODP Office Action API (search plus the officeActionText download): office actions mailed from 2007-07-27 onward, almost all for applications filed 2001 or later (probed 2026-10-11).
 
 ### Family & Term Tools (2) — Deferred, loaded on demand
 - **PFW_get_family** — Normalized continuity family graph: nodes + edges with CON/CIP/DIV relation types, direct parents and children, earliest ancestors, and foreign priority claims. One USPTO call at the default max_depth=1. See the `family` section for the depth-2 cost and the per-direction emptiness semantics.
 - **PFW_get_term_adjustment** — Patent Term Adjustment from the ODP /adjustment endpoint: total days, A/B/C delay, applicant delay, and a capped most-recent-first event history. Does NOT compute an expiration date.
 
-**Coverage floors differ per tool — do not lump them together.** Oct 1, 2017 is the PFW_get_oa_rejections floor (and the Citations MCP floor). PFW_get_oa_text reaches back roughly a decade further.
+**One coverage floor for both office-action tools.** They share the ODP Office Action index, whose earliest mailing date is 2007-07-27. Oct 1, 2017 is the Citations MCP floor, not a PFW one.
 
-**PFW_get_oa_text practicalities.** `latest_only` defaults True (single most recent matching OA); set False for up to 10. "Most recent" is the latest `submission_date` among the matches: the server sorts newest-first before selecting, and reports `order` / `order_note` / `candidates_considered`, so on a file with two CTFRs the later one comes back; with `latest_only=False` the returned `office_actions` are newest-first too. `action_type` takes the document code — CTNF, CTFR, NOA, CTRS. `section=` accepts only 101/102/103/112, and USPTO populates those sub-documents sparsely: 101/102/112 are frequently empty even when 103 is present, and when the requested section is empty the tool transparently falls back to the FULL body, so a section= request can return far more text than expected. Check `section_returned` and `text_length_chars`. Full bodies observed in practice range from ~3K chars (NOA) to ~69K chars (a heavy CTNF). No coverage is not an error: `success=True`, `num_found=0`, empty text — branch on num_found.
+**PFW_get_oa_text practicalities.** `latest_only` defaults True (single most recent matching OA); set False for up to 10. "Most recent" is the latest `submission_date` among the matches: the server sorts newest-first before selecting, and reports `order` / `order_note` / `candidates_considered`, so on a file with two CTFRs the later one comes back; with `latest_only=False` the returned `office_actions` are newest-first too. `action_type` takes the document code — CTNF, CTFR, NOA, CTRS. `section=` accepts only 101/102/103/112 and returns the text under the action's own "Claim Rejections - 35 USC § <n>" heading; when the action has no such heading the tool falls back to the FULL text, so a section= request can return far more text than expected. Check `section_returned`, `section_partial` and `text_length_chars`. Full bodies observed in practice range from ~3K chars (NOA) to ~69K chars (a heavy CTNF). No coverage is not an error: `success=True`, `num_found=0`, empty text — branch on num_found.
 
 ### Admin Tool (optional, not counted above)
 - **pfw_manage_users** — Registered-user management. Only registered when PFW_ENABLE_USER_MANAGEMENT=true (OAuth deployments); requires the pfw:admin scope. Absent in STDIO.
@@ -124,14 +156,14 @@ def _get_tools_section() -> str:
 - Limit to 10-20 user-selected results
 
 ### Stage 3: Office Actions (whenever the question is about rejections, examiner reasoning, or allowance)
-- Start with `PFW_get_oa_rejections` — structured triage of which OAs carry 101/102/103/112 and Alice flags. Cheap, small.
+- Start with `PFW_get_oa_rejections` — structured triage of which rejections carry 101/102/103/112, from USPTO's rejectionTypeBag and the statement counts in each action's text. Small.
 - Then `PFW_get_oa_text` for the ones that matter — the examiner's actual words in one call, nothing in between.
 - Only fall through to Stage 4 for what these two cannot serve.
 
 ### Stage 4: Documents
 - Use `PFW_get_application_documents` to see document metadata
 - Strategic selection of most valuable documents
-- This is the FALLBACK for office actions, not the default. Use it when: the OA predates the OA text dataset (roughly pre-2008); the document is not an office action (claims, amendments, 892/1449 forms, IDS, specifications, drawings); an actual PDF or an attorney-shareable download link is wanted; or `PFW_get_oa_text` returned num_found=0.
+- This is the FALLBACK for office actions, not the default. Use it when: the OA was mailed before 2007-07-27 (the ODP Office Action index starts there); the document is not an office action (claims, amendments, 892/1449 forms, IDS, specifications, drawings); an actual PDF or an attorney-shareable download link is wanted; or `PFW_get_oa_text` returned num_found=0.
 - Note this endpoint can return HTTP 403 on some older applications, so the bag is not guaranteed to be available even when the OA text is.
 
 ### Stage 5: Content
@@ -246,10 +278,10 @@ def _get_documents_section() -> str:
 
 ### Read this first: office actions do not need the document bag
 CTNF, CTFR, NOA and CTRS are served directly as text by `PFW_get_oa_text` — one call, no
-document identifier, no PDF, no scanning step, back to office actions mailed roughly 2008.
+document identifier, no PDF, no scanning step, back to office actions mailed 2007-07-27.
 Triage first with `PFW_get_oa_rejections`. Everything below is for the documents the OA
 tools do NOT cover (amendments, responses, IDS and 1449/892 forms, claims, specifications,
-drawings), for office actions older than that dataset, and for when an actual PDF is wanted.
+drawings), for office actions older than that index, and for when an actual PDF is wanted.
 `PFW_get_application_documents` can also return HTTP 403 on some older applications, so the
 bag is not always available even where the OA text still is.
 
@@ -264,13 +296,23 @@ granted patent whenever one carries the same digits (live example: 12539322 reso
 PATENT 12,539,322, application 17996652, not to application 12/539,322).
 
 **Forcing the application lane.** Two ways, both reliable:
-- **The slash-comma serial format, `11/752,072`**, the form printed on every USPTO
-  filing receipt. Resolution types it as an application before any lane is queried, so
-  it always works and costs no extra call. Prefer this.
+- **The slash-comma serial format, `11/752,072` or `29/328,018`**, the form printed on
+  every USPTO filing receipt, in every era and every series. Resolution types it as an
+  application before any lane is queried, so it always works and costs no extra call.
+  Prefer this whenever you hold a serial.
 - **`content_type='application'`** on the resolving tools: `PFW_get_application_documents`,
   `PFW_get_granted_patent_documents_download`, `PFW_get_family`, `PFW_get_term_adjustment`,
   `PFW_get_oa_rejections`, `PFW_get_oa_text`, `PFW_get_patent_or_application_xml`.
   Values are `'auto'` (default, patent lane first), `'patent'` and `'application'`.
+
+**Serial-only series need no forcing** (2026-09-19). No granted patent number begins
+with 29, 35, 60 to 63, 90, 95 or 96 while grants sit in the 12 millions, so a bare
+8-digit serial in the design (`29/`), Hague (`35/`), provisional (`60/` to `63/`) or
+reexamination (`90/`, `95/`, `96/`) series is read as an application directly, with
+no patent-lane call and no ambiguity flag: `29328018` is D618,677's application
+29/328,018, `90016071` is an ex parte reexamination control number. Until 2026-09-19
+an 8-digit number beginning with 2 was typed as a pre-grant publication number and
+came back "could not resolve"; a publication number is 11 digits, never 8.
 
 **Pre-grant publication numbers resolve too** (2026-09-03). An 11-digit publication
 number (`20080141381`, or the print forms `US20080141381A1` and `US 2008/0141381 A1`)
@@ -292,6 +334,23 @@ ran and what each matched) and `identifier_note` (plain-language explanation), p
 `document_identifier` obtained from `PFW_get_application_documents`. They run no lane
 probe and emit no identifier fields, so resolve the identifier upstream with a resolving
 tool and carry its `application_number` forward.
+
+### Drawings and design patents
+
+A DRW document is line art. `PFW_get_document_content_with_ocr` on it returns a handful
+of stray reference numerals and no usable text, so do not OCR drawing sheets. List them
+with `PFW_get_application_documents(document_code='DRW')` and hand the sheets to the
+reader with `PFW_get_document_download`.
+
+**On a DESIGN patent the drawings are the claim.** A design patent (29/ series
+application, D-prefixed patent number) claims one thing, in one sentence that names the
+article and then says "as shown and described". The scope is not in that sentence; it is
+in the sheets, where solid lines are the claimed design and broken lines are unclaimed
+environment. So `PFW_get_patent_or_application_xml` on a design patent hands you a claim
+that describes nothing. A record that looks like a design patent comes back carrying
+`design_patent_note`, and a record that does not comes back without it. On a design
+patent the earlier DRW filings in the bag are usually the priority-chain drawings that
+show the design as originally filed.
 
 ### Text variants are not the same document as the PDF
 
@@ -350,7 +409,8 @@ deadline, a form paragraph or a signature block matters, pull the PDF with
 ### Download Workflow
 1. **Automatic proxy startup** when download tools are called
 2. **Working links** immediately available in browser
-3. **7-day encrypted access** to downloaded documents
+3. **Encrypted, time- and use-bounded access** to downloaded documents (PFW_LINK_TTL_DAYS /
+   PFW_LINK_MAX_USES; currently 1 day / 25 uses)
 4. **Cross-MCP document store** for FPD and PTAB integration
 
 ## Extraction Method Selection
@@ -412,11 +472,11 @@ is the authority, not this list.
 - **NOA** - Notice of Allowance and Fees Due (PTOL-85)
 - **CTRS** - Requirement for Restriction/Election (this is the restriction requirement code)
 - **CTAV** - Advisory Action (PTOL-303) — the examiner's response to an after-final
-  amendment. Served by the OA text dataset (47,327 records, probed 2026-08-30).
-- **CTEQ** - Ex parte Quayle action (served by the OA text dataset, 106,588 records)
+  amendment. Served by PFW_get_oa_text (47,997 records in the ODP Office Action index, probed 2026-10-11).
+- **CTEQ** - Ex parte Quayle action (served by PFW_get_oa_text, 111,184 records)
 - **NRES** / **NTC.A.NONCPL** - Notice to the applicant regarding a non-compliant or
   non-responsive amendment
-- **ABN** - Notice of abandonment (served by the OA text dataset, 457 records)
+- **ABN** - Notice of abandonment (served by PFW_get_oa_text, 461 records)
 
 **Citations & search:**
 - **892** - List of references cited by examiner
@@ -605,7 +665,7 @@ def _get_workflows_pfw_section() -> str:
 
 **Steps:**
 1. **Find target patent**: `PFW_search_applications_balanced(query='applicationNumberText:16123456')`
-2. **Triage the office actions**: `PFW_get_oa_rejections(application_number='16123456')` — which OAs carry 101/102/103/112, Alice flags, citation counts
+2. **Triage the office actions**: `PFW_get_oa_rejections(application_number='16123456')` — which rejections carry 101/102/103/112
 3. **Read the examiner's reasoning directly**: `PFW_get_oa_text(application_number='16123456', action_type='NOA')` for the allowance rationale and `action_type='CTFR'` for the final rejection. One call each, no document bag and no scanning step. Use `section='103'` to isolate one rejection.
 4. **Analyze prior art**: `Citations_search_oa_citations_minimal` for the raw 892/1449 cited-art lists (broadest coverage); pull the 892 document itself via `PFW_get_application_documents(document_code='892')` only if the form image is needed
 5. **Get remaining prosecution docs**: `PFW_get_application_documents(app_number='16123456')` for amendments and applicant responses, which the OA tools do not serve
@@ -648,7 +708,9 @@ number and a valid application serial, and resolution queries the patent lane fi
 application serial can land on an unrelated granted patent.
 
 **Solutions:**
-- Re-call with the slash-comma serial format (`11/752,072`) or `content_type='application'`
+- Re-call with the slash-comma serial format (`11/752,072`, `29/328,018`) or
+  `content_type='application'`; design, Hague, provisional and reexamination serials
+  (29/, 35/, 60/ to 63/, 90/, 95/, 96/) never need it, they resolve as applications bare
 - Check `identifier_resolved_as`, `identifier_note` and `identifier_lanes_tried` in the
   response before using the data; `identifier_ambiguous: true` means the input could have
   gone either way
@@ -795,7 +857,7 @@ Take the CPC symbol from a known-good hit (the balanced tiers return
 status and date filters.
 
 The prosecution TEXT this server does serve is a different surface: office-action text
-via `PFW_get_oa_text` (OAs mailed roughly 2008 forward) and granted/published claims and
+via `PFW_get_oa_text` (OAs mailed from 2007-07-27) and granted/published claims and
 abstract via `PFW_get_patent_or_application_xml`. Neither is reachable from a search query.
 
 ### Search limit ceiling: 100 per call, page with offset
@@ -815,7 +877,10 @@ the usual `paging` block. The key is absent when the clamp did not fire. A
 Every search response now carries a `paging` block with `limit_requested`,
 `limit_applied`, `offset`, `returned`, `total`, `has_more` and `next_offset`.
 To walk a result set larger than 100, feed `paging.next_offset` back as
-`offset=`. See `PFW_get_guidance(section='limits')` for the full contract.
+`offset=`. When the response-size guard trims a page, `paging` and the
+top-level `count` are rewritten to the rows actually returned, so
+`next_offset` always points at the first row you did not receive. See
+`PFW_get_guidance(section='limits')` for the full contract.
 
 The inventor tools fan out over several name variants and de-duplicate, so they
 also report `queries_generated` vs `queries_executed`, `sub_query_limit` and
@@ -913,10 +978,10 @@ def _get_cost_section() -> str:
 
 #### Fast Structured Methods (Always Try First)
 1. **Office Action Text**: `PFW_get_oa_text`
-   - Any CTNF, CTFR, NOA or CTRS mailed roughly 2008 onward
+   - Any CTNF, CTFR, NOA or CTRS mailed from 2007-07-27 onward
    - ONE call, already-digital text, no document bag and no scanning step at all
    - One call instead of the bag-plus-extraction pair, and no scanning step for the same document. Triage first with `PFW_get_oa_rejections`, whose response is smaller still.
-   - `section='101'|'102'|'103'|'112'` narrows further when only one rejection matters, but note the section sub-documents are sparsely populated and an empty section falls back to the full body
+   - `section='101'|'102'|'103'|'112'` narrows further when only one rejection matters: it is cut at the action's "Claim Rejections - 35 USC § <n>" heading, and an action without that heading falls back to the full text
 
 2. **XML Content**: `PFW_get_patent_or_application_xml`
    - Patents and published applications
@@ -1031,7 +1096,7 @@ Prefer Lane 1 first for completeness, then escalate selected records to Lane 2 f
 reference is missing from Lane 2, that is a coverage gap in the enriched index, not evidence the
 reference was never cited — check Lane 1 before concluding anything.
 
-Both Citations lanes carry the Oct 1, 2017 floor. `PFW_get_oa_text` does not, so for older
+Both Citations lanes carry the Oct 1, 2017 floor. `PFW_get_oa_text` reaches office actions mailed from 2007-07-27, so for older
 prosecution you can still read what the examiner said about the art even when neither citation
 lane has structured records for it.
 
@@ -1057,7 +1122,7 @@ def _get_workflows_complete_section() -> str:
 2. **Citation Intelligence (Citations)**: Sweep with `Citations_search_oa_citations_minimal` (raw 892/1449, broadest coverage), then escalate selected references to the enriched lane. Both lanes cover OAs from Oct 1, 2017.
 3. **FPD Risk Assessment (FPD)**: Check procedural irregularities and petition history
 4. **PTAB Challenge Analysis (PTAB)**: Assess post-grant challenge exposure for granted patents
-5. **Prosecution Intelligence (PFW)**: `PFW_get_oa_rejections` to score rejection mix across the portfolio, then `PFW_get_oa_text` on the applications that matter. Drop to `PFW_get_application_documents` + `PFW_get_document_content_with_ocr` only for non-OA documents and pre-2008 office actions.
+5. **Prosecution Intelligence (PFW)**: `PFW_get_oa_rejections` to score rejection mix across the portfolio, then `PFW_get_oa_text` on the applications that matter. Drop to `PFW_get_application_documents` + `PFW_get_document_content_with_ocr` only for non-OA documents and office actions mailed before 2007-07-27.
 6. **Comprehensive Reporting**: Integrate findings across all four data sources
 
 **Enhanced Risk Scoring Matrix:**
@@ -1424,6 +1489,13 @@ nothing was dropped.
 - `items_returned` / `items_total`: records (or pages, per `reason` above).
   `items_total` is `null` only when the true total is unknown - it is never
   guessed.
+- When the guard drops rows from a search page it also rewrites that page's
+  `paging` block: `returned` is the rows you received, `has_more` is true, and
+  `next_offset` is `offset + returned`, the first row you did NOT receive, so
+  paging by `next_offset` visits every row exactly once. The top-level `count`
+  (application searches) and `total_unique_applications` (inventor searches)
+  are set to the same number. The inventor tools take no offset, so there
+  `next_offset` stays null: narrow the search instead.
 - Always read `note` - it names the call that recovers what was dropped.
 - Legacy aliases kept for this release: `documents_returned`,
   `documents_total`, `documents_note`, `truncated`, `truncation_note`.
@@ -1435,7 +1507,8 @@ text is longer than one window.
 
 ```json
 "_window": {{
-  "unit": "page",
+  "unit": "char",
+  "edges": "page",
   "offset": 0,
   "returned": 120000,
   "total": 310000,
@@ -1445,11 +1518,14 @@ text is longer than one window.
 }}
 ```
 
-All four counters are CHARACTER offsets in both units, so `next_offset` feeds
-straight back into `char_offset`. `unit` reports only whether the window edges
-snapped to `=== PAGE N ===` markers (`page`) or are raw character slices
-(`char`). Both extraction tiers (pypdf and OCR) emit those
-headers, so page-unit windows work on either.
+All four counters (`offset`, `returned`, `total`, `next_offset`) are
+CHARACTER counts, so `next_offset` feeds straight back into `char_offset`:
+`unit` is the unit of those counters and always reads `"char"`. `edges`
+reports whether the window boundaries snapped to `=== PAGE N ===` markers
+(`page`, so a page is never split mid-way) or are a raw character slice
+(`char`, including a single page too large for the whole budget, which
+degrades to a character window). Both extraction tiers (pypdf and OCR) emit
+those headers, so page-snapped windows work on either.
 
 **New parameters:**
 - `PFW_get_document_content_with_ocr(char_offset=0, max_chars=None)` - defaults
@@ -1497,7 +1573,7 @@ mistaken for an exhausted portfolio.
 | --- | --- |
 | `description_paragraphs_returned` / `_total` | `PFW_get_patent_or_application_xml` summarizes the specification to its first few paragraphs |
 | `citations_returned` / `citations_total` | same tool, XML citation list cap |
-| `section_requested` / `section_returned` + `section_note` | `PFW_get_oa_text` fell back to the FULL body because USPTO has no separately indexed sub-document for the requested section |
+| `section_requested` / `section_returned` + `section_note` | `PFW_get_oa_text` fell back to the FULL text because the office action has no "Claim Rejections - 35 USC § <n>" heading for the requested section |
 | `versions_considered` / `versions_available` | `PFW_get_granted_patent_documents_download` chose the earliest/latest component from a capped fetch |
 | `page_count` + `page_count_source` | `downloadOptionBag`, `pdf`, or `unknown` - a missing page count is reported as `null`, never as 0 |
 | `matched_count` | documents that passed the filters, before `limit` was applied |

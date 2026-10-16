@@ -47,3 +47,52 @@ def test_process_identifier_inputs(case):
 def test_process_identifier_inputs_rejects_empty():
     with pytest.raises(ValueError):
         process_identifier_inputs("", "", "")
+
+
+def test_eight_digit_serial_only_series_is_an_application_not_a_publication():
+    """2026-09-19: D618,677's serial 29328018 was typed as a publication number
+    (8 digits starting with 2), looked up on earliestPublicationNumber, and
+    reported unresolved without the application lane being tried."""
+    from patent_filewrapper_mcp.util.identifier_normalization import normalize_identifier
+
+    info = normalize_identifier("29328018")
+    assert info.identifier_type == "application"
+    assert info.app_number_for_docs == "29328018"
+    assert "29/328,018" in info.notes
+    # reexamination control numbers ride the same rule
+    assert normalize_identifier("90016071").identifier_type == "application"
+    # an 8-digit number starting with 2 outside those series is ambiguous, never a publication
+    assert normalize_identifier("20080141").identifier_type == "ambiguous"
+    # the real publication shape is untouched
+    assert normalize_identifier("20080141381").identifier_type == "publication"
+    assert normalize_identifier("US 2024/0000001 A1").identifier_type == "publication"
+
+
+@pytest.mark.parametrize(
+    "typed,expected",
+    [
+        ("D618677", "D618677"),
+        ("d618677", "D618677"),
+        ("D618,677", "D618677"),
+        ("US D618677 S1", "D618677"),
+        ("USD618677S1", "D618677"),
+        ("D0618677", "D618677"),
+        ("RE48123", "RE48123"),
+        ("RE48,123 E1", "RE48123"),
+        ("PP12345 P2", "PP12345"),
+        ("H1234", "H1234"),
+    ],
+)
+def test_series_prefixed_patent_number_keeps_its_prefix(typed, expected):
+    # The kind-code strip used to delete all of "D618677" (a letter followed by
+    # digits to the end of the string), and "D618,677" lost its D and became
+    # utility patent 618,677 of 1899. USPTO indexes these numbers WITH the prefix.
+    info = normalize_identifier(typed)
+    assert info.cleaned_value == expected
+    assert info.identifier_type == "patent"
+    assert info.confidence == "high"
+
+
+@pytest.mark.parametrize("typed", ["7971071B2", "US 7,971,071 B2", "11752072", "29/328,018"])
+def test_unprefixed_identifiers_are_untouched_by_the_prefix_rule(typed):
+    assert normalize_identifier(typed).cleaned_value.isdigit()

@@ -18,7 +18,7 @@ Operator-relevant summary of the July 2026 audit-remediation series (Critical/Hi
 - **OS-managed at-rest key storage** — Linux keys are now `systemd-creds`-encrypted (user+machine bound, TPM2-sealed where available), matching the existing Windows DPAPI posture; a unified Fernet key store replaced three drifting copies.
 - **Upstream PDF integrity check** — downloads verify the `%PDF-` magic bytes before response headers are sent, instead of after a partial stream.
 - **Streaming request-size cap hardened** — the 1MB body-size limit is enforced as a running byte count, closing a chunked-transfer-encoding bypass.
-- **Reverse-proxy IP attribution** — `PROXY_TRUSTED_IPS` controls which upstream peers' `X-Forwarded-For` is trusted for client-IP-based rate limiting and audit logging (default `127.0.0.1` only).
+- **Reverse-proxy IP attribution** — `PROXY_TRUSTED_IPS` controls which upstream peers' `CF-Connecting-IP` (falling back to the right-most untrusted `X-Forwarded-For` hop) is trusted for client-IP-based rate limiting and audit logging (default empty — trust nobody, key on the raw transport peer). Behind a containerised reverse proxy, set it to the proxy's Docker network (see `util/client_ip.py`).
 - **Non-root container + XXE hardening** — the Docker image runs as a non-root user; XML parsing goes through `defusedxml`.
 - **Shared cross-process USPTO rate limiter** — see the dedicated README section below; keeps all 4 USPTO MCPs under one API key's rate/burst limits when co-located.
 

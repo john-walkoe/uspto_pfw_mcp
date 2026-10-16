@@ -76,19 +76,21 @@ class PFWReflection(BaseReflection):
 - **Custom Fields** → Targeted extraction (2-3 fields for 99% reduction)
 
 ### 2. Office Action Access Patterns
-- **Rejection triage** → `PFW_get_oa_rejections` (structured 101/102/103/112 + Alice flags, Oct 2017 onward)
-- **Full OA text** → `PFW_get_oa_text` in one call, no document bag and no scanning step, covering OAs mailed roughly 2008 onward
+- **Rejection triage** → `PFW_get_oa_rejections` (rejectionTypeBag 101/102/103/112 per action, plus statement counts from the text)
+- **Full OA text** → `PFW_get_oa_text` in one call, no document bag and no scanning step
+- Both read the USPTO ODP Office Action API: office actions mailed from 2007-07-27 onward
 - Fall back to the document bag only for non-OA documents, older office actions, or when a PDF is needed
 
 ### 3. Document Access Patterns
 - **Proxy Downloads** → Browser-accessible PDFs
 - **Content Extraction** → Text analysis (pypdf + OCR; never use it on an OA `PFW_get_oa_text` can already serve)
-- **Persistent Links** → 7-day encrypted access
+- **Persistent Links** → encrypted, time- and use-bounded access (PFW_LINK_TTL_DAYS /
+  PFW_LINK_MAX_USES; currently 1 day / 25 uses)
 
 ### 4. Context Reduction Techniques
 - Use minimal searches for discovery (95% context reduction)
 - Customize fields via field_configs.yaml
-- `PFW_get_oa_text(section='103')` narrows an office action to one rejection, though the section sub-documents are sparsely populated and an empty section falls back to the full body
+- `PFW_get_oa_text(section='103')` narrows an office action to the text under its own "Claim Rejections - 35 USC § 103" heading; an action without that heading falls back to the full text (`section_returned='all'` plus a `section_note`)
 - Leverage cross-MCP integration for comprehensive analysis
 
 ### 5. Key Tools by Use Case

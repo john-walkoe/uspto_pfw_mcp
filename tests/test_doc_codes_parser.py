@@ -68,7 +68,7 @@ class TestCellCleaning:
         )
         table = render_doc_code_markdown(buckets)
         row = next(line for line in table.splitlines() if "`AMD`" in line)
-        assert row.count("|") == 4 + 1, (
+        assert row.count("|") == 5 + 1, (
             f"an unescaped pipe split the row into extra cells: {row!r}"
         )
         assert "\\|" in row

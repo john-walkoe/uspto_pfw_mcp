@@ -2,7 +2,8 @@
 its attach point, the tools/__init__.py registration proxy.
 
 The module itself is VENDORED byte-identically from uspto_fpd_mcp (md5
-699a1647c2fcff064f60aedd0ae08003, same file PTAB carries), so the module-level
+1d852c7eee7d6df2584271fc0b872aca since the 2026-09-11 paging-honesty change;
+699a1647c2fcff064f60aedd0ae08003 before it), so the module-level
 tests below are FPD's, ported only by import path — if they diverge, the
 vendored copy has drifted and should be re-copied rather than patched. The
 registration-proxy tests are adapted to PFW, whose tools return DICTS (FastMCP
@@ -14,6 +15,8 @@ stand-in `mcp` object that records what was registered.
 """
 
 import json
+
+import pytest
 
 from patent_filewrapper_mcp.shared.response_bounds import (
     BOUNDS_KEY,
@@ -230,6 +233,7 @@ def test_window_text_char_unit():
 
     window = result[WINDOW_KEY]
     assert window["unit"] == "char"
+    assert window["edges"] == "char"
     assert window["offset"] == 0
     assert window["returned"] == 1_000
     assert window["total"] == 10_000
@@ -239,11 +243,16 @@ def test_window_text_char_unit():
     assert result["text"] == text[:1_000]
 
 
-def test_window_text_page_unit_snaps_to_page_boundaries():
+def test_window_text_page_edges_snap_to_page_boundaries():
     result = window_text(_PAGES, offset=0, max_chars=2_000)
 
     window = result[WINDOW_KEY]
-    assert window["unit"] == "page"
+    # `edges` records the snapping; `unit` names the counters, which are
+    # characters whether or not the edges snapped (re-vendored FROM
+    # uspto_ptab_mcp, review 2026-09-28 — see docstring in
+    # shared/response_bounds.py for the contract change).
+    assert window["edges"] == "page"
+    assert window["unit"] == "char"
     assert window["returned"] <= 2_000
     # The window ends exactly where a page marker begins.
     assert _PAGES[window["next_offset"]:].startswith("=== PAGE ")
@@ -275,13 +284,32 @@ def test_window_text_offset_snaps_back_to_the_containing_page():
     assert result["text"].startswith("=== PAGE 1 ===")
 
 
-def test_window_text_single_oversized_page_degrades_to_char_unit():
+def test_window_text_single_oversized_page_degrades_to_char_edges():
     text = "=== PAGE 1 ===\n" + "q" * 5_000
 
     result = window_text(text, max_chars=1_000)
 
+    assert result[WINDOW_KEY]["edges"] == "char"
     assert result[WINDOW_KEY]["unit"] == "char"
     assert result[WINDOW_KEY]["returned"] == 1_000
+
+
+def test_window_unit_always_reports_characters():
+    """The counters are characters in every case, and the label says so.
+
+    `unit` used to read "page" whenever the edges snapped to page markers,
+    directly above four character counters — a consumer that believed the
+    label and divided by a page count got nonsense (re-vendored FROM
+    uspto_ptab_mcp, review 2026-09-28).
+    """
+    paged = window_text(_PAGES, offset=0, max_chars=2_000)[WINDOW_KEY]
+    raw = window_text("y" * 10_000, max_chars=1_000)[WINDOW_KEY]
+
+    assert paged["unit"] == raw["unit"] == "char"
+    assert (paged["edges"], raw["edges"]) == ("page", "char")
+    # And the counters really are characters, in both.
+    assert paged["total"] == len(_PAGES)
+    assert raw["returned"] == 1_000
 
 
 def test_window_marker_vocabulary_is_exact():
@@ -289,6 +317,7 @@ def test_window_marker_vocabulary_is_exact():
 
     assert set(result[WINDOW_KEY]) == {
         "unit",
+        "edges",
         "offset",
         "returned",
         "total",
@@ -625,3 +654,281 @@ def test_registered_tool_names_match_the_source():
 
     assert len(registered) == 17
     assert set(_TOOL_BOUNDS) <= registered
+
+
+# ---------------------------------------------------------------------------
+# Paging honesty: a trimmed page reports what it carries. Ported from FPD
+# (eval tr-cost-02, 2026-09-11). FPD_Search_petitions_minimal(decision_type="DENIED", limit=100)
+# went over the budget, the guard kept 50 rows, and `paging` still said
+# returned 100 / next_offset 100, so a caller paging by next_offset skipped
+# rows 50-99 without being told.
+# ---------------------------------------------------------------------------
+
+_PAGING_SPEC = {"key": "paging", "path": ["rows"]}
+
+
+def _page(offset: int, n: int, total: int, blob: int = 400) -> dict:
+    has_more = offset + n < total
+    return {
+        "rows": [{"i": offset + k, "blob": "z" * blob} for k in range(n)],
+        "paging": {
+            "limit_requested": n,
+            "limit_applied": n,
+            "offset": offset,
+            "returned": n,
+            "total": total,
+            "has_more": has_more,
+            "next_offset": offset + n if has_more else None,
+        },
+    }
+
+
+def _rows_spec(floor: int = 5) -> dict:
+    return {"path": ["rows"], "keep_fields": (), "min_items": floor, "label": "rows"}
+
+
+def test_trimmed_page_reports_the_rows_it_carries():
+    payload = _page(offset=0, n=100, total=7481)
+
+    result = bound_structured_response(
+        payload, bags=(_rows_spec(),), limit=20_000, paging=_PAGING_SPEC
+    )
+
+    kept = len(result["rows"])
+    assert 5 <= kept < 100
+    assert result[BOUNDS_KEY]["items_returned"] == kept
+    assert result["paging"]["returned"] == kept
+    assert result["paging"]["next_offset"] == kept
+    assert result["paging"]["has_more"] is True
+    assert result["paging"]["total"] == 7481  # the result set, untouched
+    assert result["paging"]["offset"] == 0
+    assert result["paging"]["limit_applied"] == 100  # what upstream was asked for
+
+
+def test_trimmed_page_cursor_is_offset_plus_kept():
+    payload = _page(offset=300, n=100, total=7481)
+
+    result = bound_structured_response(
+        payload, bags=(_rows_spec(),), limit=20_000, paging=_PAGING_SPEC
+    )
+
+    kept = len(result["rows"])
+    assert result["rows"][0]["i"] == 300  # the head of the page is what stays
+    assert result["paging"]["next_offset"] == 300 + kept
+
+
+def test_trimmed_last_page_gets_a_cursor_back():
+    """A last page has has_more false and no cursor. Once the guard drops some
+    of its rows there IS more to fetch, so both have to come back."""
+    payload = _page(offset=7400, n=81, total=7481)
+    assert payload["paging"]["has_more"] is False
+    assert payload["paging"]["next_offset"] is None
+
+    result = bound_structured_response(
+        payload, bags=(_rows_spec(),), limit=15_000, paging=_PAGING_SPEC
+    )
+
+    kept = len(result["rows"])
+    assert kept < 81
+    assert result["paging"]["has_more"] is True
+    assert result["paging"]["next_offset"] == 7400 + kept
+
+
+def test_paging_without_a_cursor_keeps_next_offset():
+    """`cursor: False` is for a tool with no offset parameter to follow: the
+    count and has_more are corrected, next_offset is not invented."""
+    payload = _page(offset=0, n=100, total=0)
+    payload["paging"].update({"total": None, "has_more": False, "next_offset": None})
+
+    result = bound_structured_response(
+        payload,
+        bags=(_rows_spec(),),
+        limit=20_000,
+        paging={"key": "paging", "path": ["rows"], "cursor": False},
+    )
+
+    kept = len(result["rows"])
+    assert result["paging"]["returned"] == kept < 100
+    assert result["paging"]["has_more"] is True
+    assert result["paging"]["next_offset"] is None
+
+
+def test_paging_untouched_when_nothing_was_dropped():
+    # Fits: identity, no marker, paging exactly as built.
+    small = _page(offset=0, n=3, total=10)
+    before = json.dumps(small)
+    assert bound_structured_response(
+        small, bags=(_rows_spec(),), limit=1_000_000, paging=_PAGING_SPEC
+    ) is small
+    assert json.dumps(small) == before
+
+    # Over budget but shed by slimming alone: every row survives, so the
+    # cursor was already right and must not move.
+    slimmable = {
+        "rows": [{"i": k, "heavy": "z" * 500} for k in range(20)],
+        "paging": {"offset": 0, "returned": 20, "total": 40, "has_more": True, "next_offset": 20},
+    }
+    result = bound_structured_response(
+        slimmable,
+        bags=({"path": ["rows"], "keep_fields": ("i",), "min_items": 5, "label": "rows"},),
+        limit=5_000,
+        paging=_PAGING_SPEC,
+    )
+    assert result[BOUNDS_KEY]["stages"] == ["slimmed"]
+    assert result["paging"] == {
+        "offset": 0, "returned": 20, "total": 40, "has_more": True, "next_offset": 20,
+    }
+
+
+def test_paging_untouched_without_a_paging_spec():
+    """Back-compat: a caller that passes no spec gets the old behaviour."""
+    payload = _page(offset=0, n=100, total=7481)
+
+    result = bound_structured_response(payload, bags=(_rows_spec(),), limit=20_000)
+
+    assert len(result["rows"]) < 100
+    assert result["paging"]["returned"] == 100
+    assert result["paging"]["next_offset"] == 100
+
+
+
+# ---------------------------------------------------------------------------
+# Paging honesty through PFW's registrar: the six search tools
+# ---------------------------------------------------------------------------
+
+def _applications_page(offset: int, limit: int, corpus: list, total: int) -> dict:
+    """A search response shaped like api/enhanced_client.py::search_applications
+    builds it: `count` is the page length, `total` the result set."""
+    rows = corpus[offset:offset + limit]
+    has_more = offset + len(rows) < total
+    return {
+        "success": True,
+        "count": len(rows),
+        "total": total,
+        "applications": [dict(r) for r in rows],
+        "limit": limit,
+        "offset": offset,
+        "paging": {
+            "limit_requested": limit,
+            "limit_applied": limit,
+            "offset": offset,
+            "returned": len(rows),
+            "total": total,
+            "has_more": has_more,
+            "next_offset": offset + len(rows) if has_more else None,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        "PFW_search_applications",
+        "PFW_search_applications_minimal",
+        "PFW_search_applications_balanced",
+    ],
+)
+async def test_paging_by_next_offset_visits_every_application_exactly_once(tool, monkeypatch):
+    """Walk a result set whose every page overflows the budget, through the
+    real registrar wiring, feeding back only `paging.next_offset`. Before the
+    fix a trimmed page kept `next_offset = offset + limit` and the walk
+    skipped every row the guard dropped."""
+    from patent_filewrapper_mcp.tools import _BoundedRegistrar
+
+    monkeypatch.setenv("USPTO_MAX_RESPONSE_CHARS", "12000")
+    total = 437
+    corpus = [
+        {"applicationNumberText": f"{16000000 + k}", "blob": "z" * (200 + (k % 7) * 40)}
+        for k in range(total)
+    ]
+
+    fake = _FakeMCP()
+
+    async def search(limit: int = 100, offset: int = 0):
+        return _applications_page(offset, limit, corpus, total)
+
+    _BoundedRegistrar(fake).tool(name=tool)(search)
+    registered = fake.registered[tool]
+
+    seen: list = []
+    offset, trimmed_pages = 0, 0
+    for _ in range(total):  # a loop guard, never reached
+        page = await registered(limit=100, offset=offset)
+        rows = page["applications"]
+        assert page["paging"]["returned"] == len(rows)
+        assert page["count"] == len(rows)  # the top-level counter too
+        assert page["total"] == total
+        if BOUNDS_KEY in page:
+            trimmed_pages += 1
+            assert page[BOUNDS_KEY]["items_returned"] == len(rows)
+        seen.extend(r["applicationNumberText"] for r in rows)
+        if not page["paging"]["has_more"]:
+            assert page["paging"]["next_offset"] is None
+            break
+        assert page["paging"]["next_offset"] == offset + len(rows)
+        offset = page["paging"]["next_offset"]
+
+    assert trimmed_pages > 0  # the walk really did go through the guard
+    assert seen == [r["applicationNumberText"] for r in corpus]
+
+
+def _inventor_response(n: int, discovered: int) -> dict:
+    """Shaped like api/enhanced_client.py::_build_inventor_response."""
+    apps = [
+        {"applicationNumberText": f"{17000000 + k}", "blob": "z" * 600} for k in range(n)
+    ]
+    return {
+        "success": True,
+        "inventor_name": "Doe, Jane",
+        "strategy": "comprehensive",
+        "total_unique_applications": n,
+        "unique_applications": apps,
+        "unique_applications_discovered": discovered,
+        "paging": {
+            "limit_requested": n,
+            "limit_applied": n,
+            "offset": 0,
+            "returned": n,
+            "total": None,
+            "has_more": discovered > n,
+            "next_offset": None,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "tool",
+    ["PFW_search_inventor", "PFW_search_inventor_minimal", "PFW_search_inventor_balanced"],
+)
+async def test_trimmed_inventor_page_counts_what_it_carries(tool):
+    """The inventor fan-out takes no offset, so there is no cursor to move:
+    after a trim `returned`, `has_more` and `total_unique_applications` are
+    corrected and `next_offset` stays null rather than inventing a cursor the
+    tool cannot follow."""
+    from patent_filewrapper_mcp.tools import _BoundedRegistrar
+
+    fake = _FakeMCP()
+
+    async def inventor():
+        return _inventor_response(100, discovered=100)
+
+    _BoundedRegistrar(fake).tool(name=tool)(inventor)
+    page = await fake.registered[tool]()
+
+    kept = len(page["unique_applications"])
+    assert BOUNDS_KEY in page and kept < 100
+    assert page["total_unique_applications"] == kept
+    assert page["paging"]["returned"] == kept
+    assert page["paging"]["has_more"] is True
+    assert page["paging"]["next_offset"] is None
+    assert page["paging"]["total"] is None
+    assert page["unique_applications_discovered"] == 100
+
+
+async def test_page_counters_untouched_when_the_guard_is_a_no_op():
+    from patent_filewrapper_mcp.tools import _bound_result
+
+    small = _applications_page(0, 3, [{"applicationNumberText": str(k)} for k in range(10)], 10)
+    before = json.dumps(small)
+    assert _bound_result(small, "PFW_search_applications_minimal") is small
+    assert json.dumps(small) == before

@@ -120,7 +120,7 @@ print()
 basic_package = await PFW_get_granted_patent_documents_download(
     app_number=app_number,
     include_drawings=True,
-    generate_persistent_links=True  # 7-day encrypted access
+    generate_persistent_links=True  # encrypted, PFW_LINK_TTL_DAYS/PFW_LINK_MAX_USES bound (1 day / 25 uses by default)
 )
 
 # Extract download links (already formatted in response)
@@ -172,7 +172,7 @@ for doc_code, doc_name, max_limit in doc_configs:
         for doc in docs_response['documentBag'][:max_limit]:
             doc_id = doc['documentIdentifier']
 
-            # Generate persistent download link (7-day access)
+            # Generate persistent download link (PFW_LINK_TTL_DAYS/PFW_LINK_MAX_USES bound, 1 day / 25 uses by default)
             download_link = await PFW_get_document_download(
                 app_number=app_number,
                 document_identifier=doc_id,
@@ -501,7 +501,7 @@ if search_strategy == "fuzzy_search" and results['count'] > 1:
 **Complete Implementation:**
 - Shows actual tool calls with parameters
 - Includes download link generation workflow
-- Demonstrates persistent link handling (7-day access)
+- Demonstrates persistent link handling (PFW_LINK_TTL_DAYS/PFW_LINK_MAX_USES bound, 1 day / 25 uses by default)
 - Proper result aggregation shown
 
 **Cross-MCP Intelligence:**

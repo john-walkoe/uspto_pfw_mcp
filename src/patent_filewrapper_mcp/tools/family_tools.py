@@ -8,6 +8,11 @@ from ..api.helpers import build_family_graph, compute_earliest_priority
 from ..app_uris import _FAMILY_URI
 from ..client_registry import _client
 from ..shared.safe_logger import get_safe_logger
+from ..util.citation_links import (
+    CITATION_NOTE,
+    application_cite_as,
+    citation_block,
+)
 from ..util.error_handlers import mcp_error_handler
 from ..util.identifier_resolution import (
     application_lane_query,
@@ -133,6 +138,27 @@ async def _own_filing_date(client, app_number: str):
     return meta.get("filingDate"), meta.get("effectiveFilingDate")
 
 
+def _attach_node_cite_as(graph: Dict[str, Any]) -> int:
+    """Stamp `cite_as` on every family node (parents, children, provisionals).
+
+    CITATIONS ARE LINKS (2026-09-05): a family answer used to name a parent by
+    serial with nothing to click. A node that issued cites Google Patents, every
+    other node its Patent Center application page. Foreign priority entries get
+    no link: they are foreign filings with no US public record here.
+    """
+    stamped = 0
+    for node in graph.get("nodes") or []:
+        if not isinstance(node, dict) or node.get("cite_as") is not None:
+            continue
+        link = application_cite_as(
+            node.get("application_number"), patent_number=node.get("patent_number")
+        )
+        if link:
+            node["cite_as"] = link
+            stamped += 1
+    return stamped
+
+
 def register(mcp) -> None:
     """Register PFW_get_family."""
     @mcp.tool(
@@ -156,6 +182,13 @@ def register(mcp) -> None:
     foreign priority it claims, then pull the interesting members with the search,
     document or office-action tools.
 
+    CITATIONS ARE LINKS: every node carries `cite_as`, a ready-made markdown link
+    (a node that issued points at Google Patents, every other node at its Patent
+    Center application page). Paste it after each sentence, table row or chart cell
+    that rests on that family member. A serial number or a relation code with no
+    link is not a citation here. Foreign priority entries carry no cite_as: they
+    are foreign filings with no US public record in this corpus.
+
     Args:
         application_number: Patent application number (e.g., '14853719') or the granted
                                   patent number. WARNING: a bare 8-digit number is ambiguous.
@@ -164,8 +197,11 @@ def register(mcp) -> None:
                                   number, and resolution is patent-number-first, so an
                                   8-digit serial can be captured by an unrelated granted
                                   patent. For an application serial, use the slash-comma
-                                  format (e.g. '11/752,072') or pass
-                                  content_type='application'; the response reports
+                                  format (e.g. '11/752,072', '29/328,018'; unambiguous in every era) or pass
+                                  content_type='application'. Design (29/), Hague (35/), provisional
+                                  (60/ to 63/) and reexamination (90/, 95/, 96/) serials are read as
+                                  applications even when bare; a bare 8-digit number is never a
+                                  pre-grant publication number (those are 11 digits); the response reports
                                   identifier_resolved_as and identifier_lanes_tried.
         content_type: 'auto' (default), 'patent' or 'application'. The two explicit
                                   values force one resolution lane for a bare 8-digit
@@ -270,6 +306,18 @@ def register(mcp) -> None:
                 parent_entries=_ancestor_entries(graph, app_number),
                 foreign_priority=graph.get("foreign_priority"),
             )
+            if not (include_foreign_priority and foreign_available):
+                # The minimum above never saw the foreign priority bag, so a
+                # foreign claim earlier than every domestic date is missing from
+                # it (15/356,622 read 2016-11-20 against a 2016-04-11 foreign
+                # priority, skills re-test 2026-10-07). Say so beside the date.
+                why = ("include_foreign_priority=False" if not include_foreign_priority
+                       else "the /foreign-priority call failed")
+                priority["earliest_priority_complete"] = False
+                priority["priority_basis"] = (
+                    f"{priority['priority_basis']} (domestic chain only: foreign priority "
+                    f"was not checked because {why}; an earlier foreign date may exist)"
+                )
 
             response = {
                 "success": True,
@@ -282,6 +330,8 @@ def register(mcp) -> None:
                 **priority,
                 **graph,
             }
+            _attach_node_cite_as(response)
+            response.update(citation_block(response.get("nodes"), CITATION_NOTE))
             if expansion_note:
                 response["expansion_note"] = expansion_note
             return response

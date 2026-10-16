@@ -482,23 +482,34 @@ def document_tools(monkeypatch):
 
 
 class _FakeOAClient:
-    """Stands in for OATextClient / OARejectionClient."""
+    """Stands in for OfficeActionClient (api/office_action_client.py).
 
-    def __init__(self, docs, num_found=None, section_text=None):
-        self._docs = docs
+    Records are shaped like the ODP Office Action API's officeActionDataBag
+    entries; a record's `_body` is what its officeActionText download returns.
+    """
+
+    def __init__(self, docs, num_found=None):
+        self._docs = [
+            {"officeActionRecordIdentifier": f"{i:032x}", **doc} for i, doc in enumerate(docs)
+        ]
         self._num_found = len(docs) if num_found is None else num_found
-        self._section_text = section_text
         self.calls = []
+        self.text_calls = []
 
-    async def search(self, criteria, start=0, rows=10):
-        self.calls.append({"criteria": criteria, "start": start, "rows": rows})
-        return {"response": {"docs": self._docs, "numFound": self._num_found}}
+    async def search_office_actions(self, application_number, document_codes=None,
+                                    offset=0, limit=10, fields=None):
+        self.calls.append({"application_number": application_number,
+                           "document_codes": list(document_codes or []),
+                           "offset": offset, "limit": limit})
+        bag = [{k: v for k, v in d.items() if k != "_body"} for d in self._docs][:limit]
+        return {"count": self._num_found, "officeActionDataBag": bag}
 
-    def extract_body_text(self, doc):
-        return doc.get("_body", "")
-
-    def extract_section_text(self, doc, section):
-        return self._section_text or ""
+    async def get_office_action_text(self, record_id):
+        self.text_calls.append(record_id)
+        for doc in self._docs:
+            if doc["officeActionRecordIdentifier"] == record_id:
+                return doc.get("_body", "")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -511,31 +522,31 @@ async def test_oa_text_says_all_when_the_section_matched_nothing(oa_tools, monke
     office action while section_returned still said '103'."""
     tools, mod = oa_tools
     body = "Full office action body. " * 40
-    client = _FakeOAClient([{"_body": body, "legacyDocumentCodeIdentifier": ["CTFR"]}])
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    client = _FakeOAClient([{"_body": body, "documentCode": "CTFR"}])
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_text"]("15992176", section="103")
 
     assert result["section_requested"] == "103"
     assert result["section_returned"] == "all"
-    assert "no separately indexed" in result["section_note"]
+    assert "heading was found" in result["section_note"]
     assert result["text"] == body
 
 
 @pytest.mark.asyncio
 async def test_oa_text_keeps_the_section_label_when_the_section_exists(oa_tools, monkeypatch):
     tools, mod = oa_tools
-    section = "Claims 1-9 are rejected under 35 USC 103. " * 5
-    client = _FakeOAClient(
-        [{"_body": "Full body. " * 40, "legacyDocumentCodeIdentifier": ["CTFR"]}],
-        section_text=section,
-    )
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    section = "Claim Rejections - 35 USC § 103\n" + "Claims 1-9 are rejected under 35 USC 103. " * 5
+    body = "Full body.\n" + section + "\nConclusion\nAny inquiry concerning this communication."
+    client = _FakeOAClient([{"_body": body, "documentCode": "CTFR"}])
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_text"]("15992176", section="103")
 
     assert result["section_returned"] == "103"
     assert "section_note" not in result
+    assert result["text"].startswith("Claim Rejections - 35 USC § 103")
+    assert "Conclusion" not in result["text"]
 
 
 # ---------------------------------------------------------------------------
@@ -546,8 +557,8 @@ async def test_oa_text_keeps_the_section_label_when_the_section_exists(oa_tools,
 async def test_oa_text_windows_a_long_office_action(oa_tools, monkeypatch):
     tools, mod = oa_tools
     body = "z" * 50_000
-    client = _FakeOAClient([{"_body": body, "legacyDocumentCodeIdentifier": ["CTNF"]}])
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    client = _FakeOAClient([{"_body": body, "documentCode": "CTNF"}])
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_text"]("15992176", max_chars=10_000)
 
@@ -570,8 +581,8 @@ async def test_oa_text_windows_a_long_office_action(oa_tools, monkeypatch):
 @pytest.mark.asyncio
 async def test_oa_text_short_document_gets_no_window(oa_tools, monkeypatch):
     tools, mod = oa_tools
-    client = _FakeOAClient([{"_body": "short body", "legacyDocumentCodeIdentifier": ["NOA"]}])
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    client = _FakeOAClient([{"_body": "short body", "documentCode": "NOA"}])
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_text"]("15992176")
 
@@ -586,11 +597,11 @@ async def test_oa_text_splits_the_budget_across_office_actions(oa_tools, monkeyp
     office actions after it."""
     tools, mod = oa_tools
     docs = [
-        {"_body": "z" * 30_000, "legacyDocumentCodeIdentifier": ["CTNF"]}
+        {"_body": "z" * 30_000, "documentCode": "CTNF"}
         for _ in range(5)
     ]
     client = _FakeOAClient(docs)
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_text"]("15992176", latest_only=False, max_chars=50_000)
 
@@ -625,24 +636,27 @@ async def test_oa_text_rejects_bad_cursor_params(oa_tools):
 async def test_oa_rejections_rejects_out_of_range_rows(oa_tools, monkeypatch, rows):
     tools, mod = oa_tools
     client = _FakeOAClient([])
-    monkeypatch.setattr(mod, "_get_oa_rejection_client", lambda: client)
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_rejections"]("15992176", rows=rows)
 
     assert result.get("error")
-    assert client.calls == []  # nothing reached USPTO
+    assert client.calls == [] and client.text_calls == []  # nothing reached USPTO
 
 
 @pytest.mark.asyncio
 async def test_oa_rejections_surfaces_the_rows_applied(oa_tools, monkeypatch):
     tools, mod = oa_tools
-    docs = [{"hasRej103": 1, "submissionDate": "2020-01-01"} for _ in range(10)]
+    docs = [{"rejectionTypeBag": ["103"], "documentCode": "CTNF", "submissionDate": "2020-01-01"}
+            for _ in range(10)]
     client = _FakeOAClient(docs, num_found=42)
-    monkeypatch.setattr(mod, "_get_oa_rejection_client", lambda: client)
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_rejections"]("15992176", rows=10)
 
-    assert client.calls[0]["rows"] == 10
+    assert client.calls[0]["limit"] == 10
+    assert client.calls[0]["document_codes"] == ["CTNF", "CTFR"]
+    assert len(client.text_calls) == 10  # one text download per returned row
     assert result["rows_requested"] == 10
     assert result["rows_applied"] == 10
     assert result["showing"] == 10
@@ -683,9 +697,12 @@ async def test_ocr_content_cursor_pages_long_text(document_tools, monkeypatch):
     )
 
     window = result[WINDOW_KEY]
-    # Page-unit: the window edge lands exactly on a page marker, so a page is
-    # never split mid-way.
-    assert window["unit"] == "page"
+    # Page-snapped edges: the window edge lands exactly on a page marker, so
+    # a page is never split mid-way. `unit` names the counters below, which
+    # are characters either way (re-vendored FROM uspto_ptab_mcp, review
+    # 2026-09-28 — see docstring in shared/response_bounds.py).
+    assert window["edges"] == "page"
+    assert window["unit"] == "char"
     assert window["has_more"] is True
     assert content[window["next_offset"]:].startswith("=== PAGE ")
     assert result["content_total_chars"] == len(content)

@@ -8,13 +8,28 @@ form-encoded POSTs — see api/oa_base.py).
 """
 import asyncio
 import random
+import time
 from typing import Any, Dict
 
 import httpx
 
 from ..shared.safe_logger import get_safe_logger
-from ..shared.uspto_shared_rate_limiter import get_shared_limiter
-from .helpers import create_error_response, format_error_response, generate_request_id
+from ..shared.uspto_hosts import USPTO_KEY_EVENT_HOOKS
+from ..shared.uspto_shared_rate_limiter import (
+    SharedLimiterTimeoutError,
+    get_shared_limiter,
+    note_429,
+)
+from .helpers import (
+    RATE_LIMIT_SOURCE_SHARED_LIMITER,
+    RATE_LIMIT_SOURCE_UPSTREAM,
+    create_error_response,
+    format_error_response,
+    generate_request_id,
+    planned_429_wait,
+    rate_limited_response,
+    retry_after_from,
+)
 from .resilience import CircuitBreaker, ResponseCache, RetryBudget
 
 logger = get_safe_logger(__name__)
@@ -23,12 +38,20 @@ logger = get_safe_logger(__name__)
 class USPTOTransport:
     """Resilient HTTP layer for USPTO ODP endpoints."""
 
+    #: Local in-memory bulkhead for THIS process only (keeps one burst of
+    #: tool calls from opening unbounded connections). It is not the USPTO
+    #: limit: burst 1 per key and cross-process fairness are the shared FIFO
+    #: limiter's job (shared/uspto_shared_rate_limiter.py).
     MAX_CONCURRENT_REQUESTS = 10
 
     # Retry configuration
     RETRY_ATTEMPTS = 3
     RETRY_DELAY = 1.0  # Base delay in seconds
     RETRY_BACKOFF = 2  # Exponential backoff multiplier
+
+    #: HTTP 429. Handled apart from the other 4xx because it is the one client
+    #: error where the caller did nothing wrong and waiting is the whole fix.
+    RATE_LIMIT_STATUS = 429
 
     def __init__(
         self,
@@ -43,7 +66,7 @@ class USPTOTransport:
         self.default_timeout = default_timeout
         self.api_limits = api_limits
 
-        # Rate limiting to prevent DoS - limit concurrent requests
+        # Local bulkhead (see MAX_CONCURRENT_REQUESTS); not a rate limit
         self.semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
         # Circuit breaker for API resilience
         self.circuit_breaker = CircuitBreaker(failure_threshold=3, timeout=30)
@@ -61,9 +84,13 @@ class USPTOTransport:
         Shared cross-process rate limiter (token + concurrency slot), one
         acquire per ATTEMPT — off unless USPTO_SHARED_RATE_LIMIT_DIR is set.
         This is the single choke point around the actual outbound USPTO HTTP
-        send.
+        send. USPTO_KEY_EVENT_HOOKS (shared/uspto_hosts.py) strip the key off
+        any non-uspto.gov hop.
         """
-        async with httpx.AsyncClient(timeout=self.default_timeout, limits=self.api_limits, verify=True) as client:
+        async with httpx.AsyncClient(
+            timeout=self.default_timeout, limits=self.api_limits, verify=True,
+            event_hooks=USPTO_KEY_EVENT_HOOKS,
+        ) as client:
             if method.upper() == "POST":
                 send = client.post(url, headers=self.headers, **kwargs)
             else:
@@ -73,6 +100,64 @@ class USPTOTransport:
                 async with limiter:
                     return await send
             return await send
+
+    async def _absorb_429(
+        self,
+        response: "httpx.Response",
+        already_retried: bool,
+        remaining_budget: float,
+        request_id: str,
+    ) -> "Dict[str, Any] | None":
+        """The 429 rule (helpers.planned_429_wait) applied to one
+        429 response: note it on the shared key cooldown, then either sleep
+        the single allowed wait and return None (the caller sends once more)
+        or return the rate-limit envelope. No shared slot is held here:
+        `_send_once` released it when the response came back.
+
+        A method rather than inline branches for the same reason `_send_once`
+        is one: `request` carries a pre-existing C901 flag and this work must
+        not grow it.
+        """
+        retry_after = retry_after_from(response)
+        note_429(retry_after)
+        wait = planned_429_wait(retry_after, already_retried, remaining_budget)
+        if wait is None:
+            logger.error(f"[{request_id}] Rate limited by USPTO (429); answering with the envelope")
+            return rate_limited_response(
+                retry_after_seconds=retry_after,
+                source=RATE_LIMIT_SOURCE_UPSTREAM,
+                request_id=request_id,
+            )
+        logger.warning(f"[{request_id}] Rate limited (429); one retry in {wait:.0f}s")
+        await asyncio.sleep(wait)
+        return None
+
+    async def _handle_client_error(
+        self,
+        response: "httpx.Response",
+        already_retried: bool,
+        remaining_budget: float,
+        request_id: str,
+    ) -> "Dict[str, Any] | None":
+        """The whole 4xx decision, in one place off `request`'s hot path.
+
+        Returns the response to hand back, or None meaning "the single 429
+        wait was absorbed, send once more". Every 4xx branch lives here
+        together: `request` carries a pre-existing C901 flag, and adding 429
+        handling beside the existing `< 500` block would have grown it. This
+        keeps one exit for client errors.
+        """
+        if response.status_code == self.RATE_LIMIT_STATUS:
+            return await self._absorb_429(
+                response, already_retried, remaining_budget, request_id
+            )
+
+        # Status only — response bodies stay out of logs (the returned error
+        # keeps the API detail for the user).
+        logger.error(f"[{request_id}] API error {response.status_code}")
+        return format_error_response(
+            f"API error: {response.text}", response.status_code, request_id
+        )
 
     async def request(self, endpoint: str, method: str = "GET", **kwargs) -> Dict[str, Any]:
         """Make HTTP request to Patent File Wrapper API with rate limiting and retry logic"""
@@ -103,9 +188,15 @@ class USPTOTransport:
 
         logger.info(f"[{request_id}] Starting {method} request to {endpoint}")
 
-        # Rate limiting: acquire semaphore before making request
+        # Local bulkhead: acquire the in-process semaphore before sending
         async with self.semaphore:
             last_exception = None
+            # At most ONE 429 retry per request. A 429 answered by
+            # waiting and sending again is pacing; a LOOP of them is the hang.
+            # The wait's budget is the request timeout counted from here.
+            retried_429 = False
+            budget = float(kwargs.get("timeout") or self.default_timeout)
+            call_started = time.monotonic()
 
             for attempt in range(self.RETRY_ATTEMPTS):
                 try:
@@ -124,19 +215,47 @@ class USPTOTransport:
                     return response_data
 
                 except httpx.HTTPStatusError as e:
-                    # Don't retry authentication errors or client errors (4xx)
+                    # Don't retry authentication errors or client errors (4xx).
+                    # DO NOT record 4xx as circuit breaker failures - they are valid client error responses
+                    # Circuit breaker should only open for 5xx errors (server failures) and timeouts
+                    # 4xx errors (404 Not Found, 400 Bad Request, etc.) are expected responses, not API failures
                     if e.response.status_code < 500:
-                        # Status only — response bodies stay out of logs
-                        # (the returned error keeps the API detail for the user)
-                        logger.error(f"[{request_id}] API error {e.response.status_code}")
-                        # DO NOT record 4xx as circuit breaker failures - they are valid client error responses
-                        # Circuit breaker should only open for 5xx errors (server failures) and timeouts
-                        # 4xx errors (404 Not Found, 400 Bad Request, etc.) are expected responses, not API failures
-                        return format_error_response(f"API error: {e.response.text}", e.response.status_code, request_id)
+                        outcome = await self._handle_client_error(
+                            e.response, retried_429,
+                            budget - (time.monotonic() - call_started),
+                            request_id,
+                        )
+                        if outcome is None:  # the single 429 wait was absorbed
+                            retried_429 = True
+                            continue
+                        return outcome
                     last_exception = e
 
                 except httpx.TimeoutException as e:
                     last_exception = e
+
+                except SharedLimiterTimeoutError:
+                    # The shared cross-process limiter gave up acquiring a
+                    # slot or a token (USPTO_SHARED_MAX_WAIT_SECONDS, 45 s by
+                    # default). RETRYING that is the hang: three attempts of
+                    # up to the ceiling each, plus backoff, is well past the
+                    # client's patience and it reports the connector as not
+                    # responding. The key is busy or cooling down NOW, so
+                    # answer now and let the caller pace itself. httpx
+                    # timeouts are httpx.TimeoutException, caught above.
+                    logger.error(
+                        f"[{request_id}] Shared USPTO rate limiter did not "
+                        f"admit the request; returning without retrying"
+                    )
+                    return rate_limited_response(
+                        source=RATE_LIMIT_SOURCE_SHARED_LIMITER,
+                        request_id=request_id,
+                        message=(
+                            "Rate limited by this deployment's shared USPTO "
+                            "limiter. Retry this call once after "
+                            "retry_after_seconds."
+                        ),
+                    )
 
                 except Exception as e:
                     # Don't retry unexpected errors on final attempt

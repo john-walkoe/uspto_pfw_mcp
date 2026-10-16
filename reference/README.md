@@ -66,15 +66,20 @@ OpenAPI/Swagger specification for the USPTO Patent File Wrapper (PFW) REST API.
 
 ### Office Action API references
 
-Four files document the two USPTO Office Action datasets the OA tools call:
+Both OA tools read the ODP Office Action API
+(`/api/v1/patent/office-action/search` and
+`/api/v1/patent/office-action/{officeActionRecordIdentifier}/download/officeActionText`,
+client `api/office_action_client.py`), documented on the USPTO Open Data
+Portal; the live-probed coverage is in the `tools/oa_tools.py` module
+docstring.
+
+Four files document the two RETIRED Office Action datasets the OA tools used
+to call (both answer an HTML 404 since about 2026-10-10), kept for history:
 
 - `oa-rejections.yaml` / `Office Action Rejections.txt` - the Office Action
-  Rejections dataset behind `PFW_get_oa_rejections` (rejection indicators;
-  documented coverage Oct 1, 2017 onward)
+  Rejections dataset (`/api/v1/patent/oa/oa_rejections/v2`)
 - `oa-text-retrieval.yaml` / `Office Action Text Retrieval.txt` - the Office
-  Action text dataset behind `PFW_get_oa_text` (full body text and section
-  sub-documents; documented coverage reaches roughly 2008 onward, hedged and
-  not probe-verified in this repo)
+  Action text dataset (`/api/v1/patent/oa/oa_actions/v1`)
 
 ---
 

@@ -13,7 +13,15 @@ IdP. This provider is the in-house bridge for two (ported from edgar_mcp via cit
 - Authorization is decided by the ``mcp_users`` table, not by the IdP: a login
   succeeds only when the verified email maps to an active row. role 'admin'
   adds the ``pfw:admin`` scope, which per-identity unhides the
-  user-management tool (see main.py).
+  user-management tool (see main.py). With ``PFW_OWNER_EMAILS`` set, only an
+  owner account can hold ``pfw:admin`` (the roster is shared across the
+  suite, so "admin" there is not by itself enough here), and the scope is
+  withheld at bearer load from tokens issued before the list was set.
+- The requested scope is honored: a token carries the scopes the client
+  asked for at /authorize, intersected with what the account holds. A
+  request naming no scope gets ``pfw:user``, so a connector that asks for
+  user scope only never carries admin; the admin tool is managed over stdio
+  or an owner token.
 - Access tokens are short-lived HS256 JWTs minted by this server (FastMCP's
   JWTIssuer); refresh tokens rotate on every use and re-check the user row,
   so deactivating a user takes effect at the next refresh.
@@ -120,6 +128,9 @@ class PfwAuthorizationCode(AuthorizationCode):
     idp: str = ""
     display_name: str | None = None
     role: str = "user"
+    # What the client asked for at /authorize. Carried onto the refresh token
+    # so a later grant or demotion applies within this bound, never beyond.
+    requested_scopes: list[str] | None = None
 
 
 class PfwRefreshToken(RefreshToken):
@@ -130,6 +141,24 @@ class PfwRefreshToken(RefreshToken):
 
 def scopes_for_role(role: str) -> list[str]:
     return [SCOPE_USER, SCOPE_ADMIN] if role == "admin" else [SCOPE_USER]
+
+
+def admin_allowed_for(email: str | None, owners: frozenset[str]) -> bool:
+    """May this identity hold ``pfw:admin`` at all? Always, when no owner
+    list is configured; otherwise only an email on PFW_OWNER_EMAILS."""
+    if not owners:
+        return True
+    return (email or "").strip().lower() in owners
+
+
+def scopes_for_user(
+    role: str, email: str | None, owners: frozenset[str] = frozenset()
+) -> list[str]:
+    """The scopes the account holds: its role's, with admin withheld from a
+    non-owner when an owner list is configured."""
+    if role == "admin" and admin_allowed_for(email, owners):
+        return [SCOPE_USER, SCOPE_ADMIN]
+    return [SCOPE_USER]
 
 
 class PfwAuthProvider(OAuthProvider):
@@ -164,6 +193,7 @@ class PfwAuthProvider(OAuthProvider):
         }
         self._access_ttl = settings.auth_access_ttl
         self._refresh_ttl = settings.auth_refresh_ttl
+        self._owners: frozenset[str] = settings.owner_emails
         # Tokens are audience-bound to the MCP resource URL; the transport
         # mounts the MCP endpoint at /mcp.
         self._audience = f"{base_url}/mcp"
@@ -206,6 +236,21 @@ class PfwAuthProvider(OAuthProvider):
                 "PFW_AUTH_GOOGLE_CLIENT_ID and/or PFW_AUTH_MS_CLIENT_ID"
             )
 
+    @property
+    def owner_emails(self) -> frozenset[str]:
+        """PFW_OWNER_EMAILS (lowercased); empty when no owner list is set."""
+        return self._owners
+
+    def _granted_scopes(
+        self, user: dict[str, Any], requested: list[str] | None
+    ) -> list[str]:
+        """Honor the requested scope: what the account holds (admin only for
+        an owner, when an owner list is set), intersected with what the client
+        asked for. A request naming no scope gets pfw:user."""
+        asked = set(requested or []) or {SCOPE_USER}
+        held = scopes_for_user(user["role"], user.get("email"), self._owners)
+        return [s for s in held if s in asked] or [SCOPE_USER]
+
     # ------------------------------------------------------------ MCP clients
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
@@ -216,12 +261,34 @@ class PfwAuthProvider(OAuthProvider):
         if payload is None:
             return None
         client = OAuthClientInformationFull.model_validate(payload)
+        # CR-01 (review 2026-09-28): the allowlist below used to run only
+        # inside register_client, so a row this server never vetted — written
+        # by a sibling server sharing oauth_clients (PTAB, FPD, hypergraph,
+        # RAG), by one of those with its own open-registration escape hatch,
+        # or predating this allowlist entirely — was still served to
+        # /authorize and /token here. Enforce it where rows are READ, so it
+        # holds regardless of which server, or how long ago, wrote the row.
+        if not self._open_registration and not all(
+            self._redirect_host_allowed(str(u)) for u in (client.redirect_uris or [])
+        ):
+            log.warning(
+                "OAuth client %s refused: redirect host not approved here",
+                client_id,
+            )
+            return None
         self._client_cache[client_id] = client
         return client
 
     def _redirect_host_allowed(self, uri: str) -> bool:
-        host = (urlparse(uri).hostname or "").lower()
+        parsed = urlparse(uri)
+        host = (parsed.hostname or "").lower()
         if not host:
+            return False
+        # CR-01 (review 2026-09-28): require https except on loopback hosts,
+        # so a plaintext redirect on an otherwise-listed host is no longer
+        # treated as approved (this gates both registration and get_client,
+        # since both call this helper).
+        if parsed.scheme != "https" and host not in {"localhost", "127.0.0.1", "::1"}:
             return False
         return any(
             host == allowed or host.endswith("." + allowed)
@@ -302,6 +369,7 @@ class PfwAuthProvider(OAuthProvider):
             "created_at": time.time(),
             "nonce": secrets.token_urlsafe(16),
             "binding": secrets.token_urlsafe(16),
+            "requested_scopes": list(params.scopes or []),
         }
         if len(self._idps) == 1:
             # Single configured IdP: skip the chooser, but still route through
@@ -462,7 +530,7 @@ class PfwAuthProvider(OAuthProvider):
             )
 
         await self._users.record_login(email, idp)
-        scopes = scopes_for_role(user["role"])
+        scopes = self._granted_scopes(user, txn.get("requested_scopes"))
         display_name = claims.get("name") or user.get("display_name")
 
         our_code = secrets.token_urlsafe(32)
@@ -481,6 +549,7 @@ class PfwAuthProvider(OAuthProvider):
                 "idp": idp,
                 "display_name": display_name,
                 "role": user["role"],
+                "requested_scopes": txn.get("requested_scopes") or [SCOPE_USER],
             },
             ttl_seconds=_CODE_TTL_SECONDS,
         )
@@ -545,15 +614,36 @@ class PfwAuthProvider(OAuthProvider):
             if claims.get("email_verified") is not True:
                 raise ValueError("Google account email is not verified")
         else:
-            # Multi-tenant Entra: iss embeds the caller's tenant id; require
-            # the canonical host/path shape and that tid matches.
-            tid = claims.get("tid", "")
-            if not tid or iss != f"https://login.microsoftonline.com/{tid}/v2.0":
-                raise ValueError(f"unexpected Entra issuer {iss!r}")
-            tenant = self._settings.auth_ms_tenant
-            if tenant not in ("organizations", "common") and tid != tenant:
-                raise ValueError(f"tenant {tid!r} not allowed")
+            self._verify_entra_claims(claims)
         return claims
+
+    def _verify_entra_claims(self, claims: dict[str, Any]) -> None:
+        """Entra-specific checks on a signature-verified id_token.
+
+        Multi-tenant Entra: iss embeds the caller's tenant id; require the
+        canonical host/path shape and that tid matches the configured tenant.
+        Against a multi-tenant authority any Entra tenant on the internet can
+        sign in, and a tenant admin can put any address in the `email` claim.
+        The address is this server's whole authorization decision (registered
+        users, admin grants), so it is trusted only when Entra attests it:
+        `xms_edov` is true for a tenant-verified domain, a personal Microsoft
+        account, a Google account, or a one-time-passcode sign-in. Ported from
+        edgar_mcp 2026-09-06; the app registration must request the optional
+        claim or every multi-tenant sign-in fails here.
+        """
+        iss = claims.get("iss", "")
+        tid = claims.get("tid", "")
+        if not tid or iss != f"https://login.microsoftonline.com/{tid}/v2.0":
+            raise ValueError(f"unexpected Entra issuer {iss!r}")
+        tenant = self._settings.auth_ms_tenant
+        if tenant not in ("organizations", "common", "consumers"):
+            if tid != tenant:
+                raise ValueError(f"tenant {tid!r} not allowed")
+        elif claims.get("xms_edov") is not True:
+            raise ValueError(
+                "Entra email domain is not verified (xms_edov absent or false) "
+                "and the configured tenant is a multi-tenant authority"
+            )
 
     async def _get_jwks(self, idp: str, force: bool = False) -> jwk.KeySet:
         cached = self._jwks.get(idp)
@@ -602,6 +692,7 @@ class PfwAuthProvider(OAuthProvider):
             idp=payload["idp"],
             display_name=payload.get("display_name"),
             role=payload.get("role", "user"),
+            requested_scopes=payload.get("requested_scopes"),
         )
 
     async def exchange_authorization_code(
@@ -617,6 +708,7 @@ class PfwAuthProvider(OAuthProvider):
             idp=authorization_code.idp,
             display_name=authorization_code.display_name,
             role=authorization_code.role,
+            requested_scopes=authorization_code.requested_scopes,
         )
 
     async def _issue_tokens(
@@ -628,6 +720,7 @@ class PfwAuthProvider(OAuthProvider):
         idp: str,
         display_name: str | None,
         role: str,
+        requested_scopes: list[str] | None = None,
     ) -> OAuthToken:
         access = self._issuer.issue_access_token(
             client_id=client_id,
@@ -646,7 +739,11 @@ class PfwAuthProvider(OAuthProvider):
             refresh,
             client_id=client_id,
             email=email,
-            scopes=scopes,
+            # The refresh row carries the REQUESTED bound, so a grant or a
+            # demotion since sign-in applies at refresh within it. A code
+            # issued before 2026-10 carried none: fall back to the grant,
+            # which is at most what was asked then.
+            scopes=list(requested_scopes or scopes),
             ttl_seconds=self._refresh_ttl,
         )
         return OAuthToken(
@@ -702,10 +799,13 @@ class PfwAuthProvider(OAuthProvider):
         user = await self._users.get_user(refresh_token.email)
         if user is None or not user["active"]:
             raise TokenError("invalid_grant", "user is no longer authorized")
-        fresh_scopes = scopes_for_role(user["role"])
-        if scopes:
-            requested = set(scopes)
-            fresh_scopes = [s for s in fresh_scopes if s in requested] or [SCOPE_USER]
+        # The refresh row carries what the client requested at sign-in; the
+        # token handler passes it (or a subset the client names) here, and an
+        # empty list falls back to it. The account's CURRENT scopes are
+        # intersected with that bound, so a grant or demotion since sign-in
+        # applies now, and nothing beyond the request ever does.
+        bound = list(scopes or refresh_token.scopes or [])
+        fresh_scopes = self._granted_scopes(user, bound)
         return await self._issue_tokens(
             client_id=refresh_token.client_id,
             email=refresh_token.email,
@@ -713,6 +813,7 @@ class PfwAuthProvider(OAuthProvider):
             idp=user.get("last_login_idp") or "unknown",
             display_name=user.get("display_name"),
             role=user["role"],
+            requested_scopes=bound,
         )
 
     # -------------------------------------------------------- bearer validation
@@ -752,10 +853,24 @@ class PfwAuthProvider(OAuthProvider):
         except Exception:  # noqa: BLE001 — malformed input must read as 401
             return None
         upstream: dict[str, Any] = payload.get("upstream_claims") or {}
+        scopes = (payload.get("scope") or "").split()
+        if SCOPE_ADMIN in scopes and not admin_allowed_for(
+            upstream.get("email"), self._owners
+        ):
+            # A token minted before PFW_OWNER_EMAILS was set (or before the
+            # account left the list) can still carry pfw:admin for up to
+            # PFW_AUTH_ACCESS_TTL. Withheld here, the one place every bearer
+            # is read, so the admin tool is hidden and refused for a non-owner
+            # at once, not at expiry.
+            scopes = [s for s in scopes if s != SCOPE_ADMIN]
+            log.warning(
+                "Admin scope withheld from a non-owner token (client %s)",
+                payload.get("client_id", ""),
+            )
         return AccessToken(
             token=token,
             client_id=payload.get("client_id", ""),
-            scopes=(payload.get("scope") or "").split(),
+            scopes=scopes,
             expires_at=payload.get("exp"),
             subject=upstream.get("email"),
             claims=upstream,
@@ -784,5 +899,10 @@ def build_auth_provider(
         raise ValueError(
             "PFW_AUTH_JWT_SECRET must be a random string of at least 32 "
             "characters (e.g. `openssl rand -hex 32`)"
+        )
+    if not settings.owner_emails:
+        log.warning(
+            "PFW_OWNER_EMAILS is not set: every active roster admin holds "
+            "pfw:admin on this server. Set it to make admin owner-only."
         )
     return PfwAuthProvider(settings, users)

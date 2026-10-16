@@ -152,11 +152,9 @@ class TestNoContentInLogCalls:
 
     @pytest.mark.parametrize("relative_path", [
         "api/enhanced_client.py",
-        "api/ppubs/client.py",
-        "api/oa_text_client.py",
+        "api/office_action_client.py",
         "services/ocr_service.py",
         "api/docling_client.py",
-        "util/logging.py",
     ])
     def test_no_raw_content_interpolation_in_log_calls(self, relative_path):
         source = (SRC_DIR / relative_path).read_text(encoding="utf-8")

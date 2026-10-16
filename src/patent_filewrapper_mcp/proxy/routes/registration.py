@@ -9,6 +9,7 @@ import time
 from ...api.helpers import generate_request_id
 from ...shared.internal_auth import get_pfw_auth
 from ...shared.safe_logger import get_safe_logger
+from ...util.client_ip import resolve_client_ip
 from ...util.security_logger import security_logger
 from ..fpd_document_store import get_fpd_store
 from ..models import (
@@ -32,6 +33,33 @@ _DOC_ID_ALIASES = ("document_identifier", "document_id")
 # PTAB's proceeding number reaches the token as "identifier" when the
 # document-access shape is used, and is absent from today's service token.
 _PROCEEDING_ALIASES = ("proceeding_number", "identifier")
+
+
+def _require_pfw_key(request_id: str) -> None:
+    """PFW's own USPTO API key must be available; the caller's is never used.
+    Checked at registration so a missing key fails here, not at download."""
+    try:
+        from ...shared_secure_storage import get_uspto_api_key
+        pfw_uspto_api_key = get_uspto_api_key()
+        if not pfw_uspto_api_key:
+            # Fall back to environment variable
+            pfw_uspto_api_key = os.getenv("USPTO_API_KEY")
+
+        if not pfw_uspto_api_key:
+            logger.error(f"[{request_id}] No USPTO API key available in PFW")
+            raise HTTPException(
+                status_code=500,
+                detail="Configuration error: No USPTO API key available"
+            )
+
+        logger.info(f"[{request_id}] Using PFW's secure USPTO API key for document registration")
+
+    except Exception as e:
+        logger.error(f"[{request_id}] Failed to get PFW USPTO API key: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Configuration error: Unable to access secure API key"
+        )
 
 
 def _require_bound_token(request_id, token_payload, bindings, *, required_binding):
@@ -104,8 +132,10 @@ async def register_fpd_document(registration: FPDDocumentRegistration, request: 
     request_id = generate_request_id()
 
     try:
-        # Get client IP for logging and rate limiting
-        client_ip = request.client.host if request.client else "unknown"
+        # Get client IP for logging and rate limiting. Resolved, not the raw
+        # peer: behind a reverse proxy the raw peer is the proxy's own address
+        # for every caller.
+        client_ip = resolve_client_ip(request)
 
         # Rate-limit registration endpoints: 10 req/min per IP
         if not rate_limiter.is_allowed(client_ip, limit=10, window=60.0):
@@ -157,29 +187,8 @@ async def register_fpd_document(registration: FPDDocumentRegistration, request: 
 
         logger.info(f"[{request_id}] Access token validated successfully for FPD document")
 
-        # Get PFW's own secure USPTO API key (don't use the one from FPD)
-        try:
-            from ...shared_secure_storage import get_uspto_api_key
-            pfw_uspto_api_key = get_uspto_api_key()
-            if not pfw_uspto_api_key:
-                # Fall back to environment variable
-                pfw_uspto_api_key = os.getenv("USPTO_API_KEY")
-
-            if not pfw_uspto_api_key:
-                logger.error(f"[{request_id}] No USPTO API key available in PFW")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Configuration error: No USPTO API key available"
-                )
-
-            logger.info(f"[{request_id}] Using PFW's secure USPTO API key for document registration")
-
-        except Exception as e:
-            logger.error(f"[{request_id}] Failed to get PFW USPTO API key: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Configuration error: Unable to access secure API key"
-            )
+        # PFW's own secure USPTO API key must exist (the caller's is never used).
+        _require_pfw_key(request_id)
 
         # Get FPD document store
         fpd_store = get_fpd_store()
@@ -269,8 +278,10 @@ async def register_ptab_document(registration: PTABDocumentRegistration, request
     request_id = generate_request_id()
 
     try:
-        # Get client IP for logging and rate limiting
-        client_ip = request.client.host if request.client else "unknown"
+        # Get client IP for logging and rate limiting. Resolved, not the raw
+        # peer: behind a reverse proxy the raw peer is the proxy's own address
+        # for every caller.
+        client_ip = resolve_client_ip(request)
 
         # Rate-limit registration endpoints: 10 req/min per IP
         if not rate_limiter.is_allowed(client_ip, limit=10, window=60.0):
@@ -325,27 +336,8 @@ async def register_ptab_document(registration: PTABDocumentRegistration, request
 
         logger.info(f"[{request_id}] Access token validated successfully for PTAB document")
 
-        # Get PFW's own secure USPTO API key
-        try:
-            from ...shared_secure_storage import get_uspto_api_key
-            pfw_uspto_api_key = get_uspto_api_key()
-            if not pfw_uspto_api_key:
-                # Fall back to environment variable
-                pfw_uspto_api_key = os.getenv("USPTO_API_KEY")
-
-            if not pfw_uspto_api_key:
-                logger.error(f"[{request_id}] No USPTO API key available in PFW")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Configuration error: No USPTO API key available"
-                )
-
-        except Exception as e:
-            logger.error(f"[{request_id}] Failed to get PFW USPTO API key: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Configuration error: Unable to access secure API key"
-            )
+        # PFW's own secure USPTO API key must exist (the caller's is never used).
+        _require_pfw_key(request_id)
 
         # Get PTAB document store
         ptab_store = get_ptab_store()

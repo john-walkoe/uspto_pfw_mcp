@@ -36,9 +36,36 @@ class IdentifierInfo:
     alternate_identifier_type: Optional[str] = None
 
 
+#: Application-serial series that can NEVER be a granted patent number while
+#: patent numbers sit in the 12 millions (2026): design (29/), Hague design
+#: (35/), provisional (60/ to 63/), ex parte reexamination (90/), inter partes
+#: reexamination (95/) and supplemental examination (96/). An 8-digit bare
+#: number in one of these series is an application serial, full stop, and is
+#: routed to the application lane without spending a patent-lane call.
+#: A series-prefixed patent number: design (D), reissue (RE), plant (PP),
+#: statutory invention registration (H), defensive publication (T), with
+#: optional commas, zero padding and a trailing kind code. USPTO indexes these
+#: WITH the prefix (live-verified 2026-09-21:
+#: applicationMetaData.patentNumber:D618677 -> application 29328018, and
+#: RE48123 -> 15255460), and the bare digits name a different patent
+#: (618,677 is a utility patent of 1899).
+_PREFIXED_PATENT = re.compile(r'^(D|RE|PP|H|T)\s*0*(\d[\d,]*)\s*(?:[A-Z]\d{1,2})?$')
+
+SERIAL_ONLY_SERIES = ("29", "35", "60", "61", "62", "63", "90", "95", "96")
+
+
 def _is_publication_digits(value: str) -> bool:
-    """Publication-number shape: 8-11 digits beginning with the year's '2'."""
-    return value.isdigit() and value.startswith('2') and len(value) in (8, 9, 10, 11)
+    """Publication-number shape: exactly 11 digits (YYYY + 7) beginning with '2'.
+
+    Until 2026-09-19 this accepted 8 to 11 digits, so every 8-digit serial
+    beginning with 2 (the whole design series 29/xxx,xxx, the reexamination
+    series, any 2x series) was typed as a publication number, looked up on
+    earliestPublicationNumber, and reported "could not resolve" without the
+    application lane ever being tried (D618,677's serial 29328018, live).
+    USPTO has printed pre-grant publication numbers as 11 digits since they
+    began in 2001; there is no 8-digit publication number.
+    """
+    return value.isdigit() and value.startswith('2') and len(value) == 11
 
 
 def _is_slashed_publication(value: str) -> bool:
@@ -75,6 +102,25 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
     cleaned = user_input.strip().upper()
     cleaned = re.sub(r'^(US|USPTO)\s*', '', cleaned)  # Remove US prefix
 
+    # Series-prefixed patent numbers go first. The kind-code strip below reads
+    # "D618677" as one long kind code and deleted ALL of it, so the identifier
+    # arrived empty, fell through to the 8-digit ambiguity branch and was
+    # reported as an unresolvable application serial (2026-09-21).
+    prefixed = _PREFIXED_PATENT.match(cleaned)
+    if prefixed and prefixed.group(2).replace(',', ''):
+        number = f"{prefixed.group(1)}{int(prefixed.group(2).replace(',', ''))}"
+        return IdentifierInfo(
+            original_input=user_input,
+            cleaned_value=number,
+            identifier_type="patent",
+            search_query=f"patentNumber:{number}",
+            app_number_for_docs=None,  # Will extract from search result
+            confidence="high",
+            notes="Series-prefixed patent number (design D, reissue RE, plant PP, "
+                  "SIR H, defensive publication T): the prefix is part of the "
+                  "number and is kept"
+        )
+
     # Remove patent kind codes (A1, A2, B1, B2, C1, E1, H1, P1, P2, P3, P4, S1, etc.)
     # These appear at the END of patent numbers like "7971071B2"
     # Must remove BEFORE general character removal to avoid keeping the digit
@@ -108,7 +154,7 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
                   "on the slash alone, in any filing era (slashes removed for API)"
         )
 
-    # 2. Publication number format: Usually 8-11 digits starting with 2
+    # 2. Publication number format: 11 digits starting with 2 (YYYY + 7)
     elif _is_publication_digits(cleaned.replace("/", "").replace(",", "")):
         cleaned = cleaned.replace("/", "").replace(",", "")
         return IdentifierInfo(
@@ -136,6 +182,24 @@ def normalize_identifier(user_input: str) -> IdentifierInfo:
     # 4. AMBIGUOUS CASE: 8 digits is BOTH a valid patent number and a valid
     #    application serial, at every value. No arithmetic threshold separates
     #    them, so none is applied.
+    elif cleaned.isdigit() and len(cleaned) == 8 and cleaned[:2] in SERIAL_ONLY_SERIES:
+        # A design, Hague, provisional or reexamination serial: no granted
+        # patent number lives in these series, so the patent lane would only
+        # cost a call and a misleading ambiguity note.
+        return IdentifierInfo(
+            original_input=user_input,
+            cleaned_value=cleaned,
+            identifier_type="application",
+            search_query=f'applicationNumberText:{cleaned}',
+            app_number_for_docs=cleaned,
+            confidence="high",
+            notes=(
+                f"8-digit serial in series {cleaned[:2]}/ (design, Hague, provisional "
+                "or reexamination), which no granted patent number can be: read as "
+                f"application {cleaned[:2]}/{cleaned[2:5]},{cleaned[5:]} directly."
+            ),
+        )
+
     elif cleaned.isdigit() and len(cleaned) == 8:
         # The old rule typed any 8-digit number >= 8,000,000 as an application
         # serial. Patent numbers passed 12,000,000 in 2024, so every recent
@@ -277,6 +341,13 @@ TEST_CASES = [
     ("12539322", "ambiguous", "medium"),  # the reported miss: patent 12,539,322
     ("07999999", "ambiguous", "medium"),  # the old <8M patent branch
     ("08000000", "ambiguous", "medium"),  # the old >=8M application branch
+
+    # Serial-only series (2026-09-19): no granted patent number can start with
+    # 29, 35, 60-63, 90, 95 or 96 while grants sit in the 12 millions, and an
+    # 8-digit number is never a publication number (those are 11 digits).
+    ("29328018", "application", "high"),  # D618,677's design serial 29/328,018
+    ("90016071", "application", "high"),  # an ex parte reexamination control number
+    ("20080141", "ambiguous", "medium"),  # 8 digits starting with 2 is NOT a publication
 
     # Patent kind codes (suffixes like B2, A1)
     ("US7971071B2", "patent", "high"),  # Granted patent with B2 suffix

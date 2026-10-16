@@ -198,11 +198,14 @@ async def _run_proxy_server(port: int = 8080):
             port=port,
             log_level="info",
             access_log=False,  # Reduce noise in logs
-            # Honor X-Forwarded-For only from trusted proxy peers (audit M2):
-            # behind NPM/reverse proxy every request otherwise shares the
-            # proxy's IP — one rate-limit bucket, wrong audit attribution.
-            proxy_headers=True,
-            forwarded_allow_ips=os.getenv("PROXY_TRUSTED_IPS", "127.0.0.1"),
+            # uvicorn's own proxy_headers/
+            # forwarded_allow_ips used to do this (audit M2), but it rewrites
+            # request.client itself and that collided with the PEER allowlist
+            # in proxy/server.py's add_ip_access_control, which has to see
+            # the actual socket peer. util/client_ip.py now reads
+            # PROXY_TRUSTED_IPS and CF-Connecting-IP/X-Forwarded-For directly
+            # wherever a rate limit or a security-log line needs the real
+            # client, leaving request.client always the raw peer here.
         )
         server = uvicorn.Server(config)
         logger.info(f"HTTP proxy server starting on http://127.0.0.1:{port}")
@@ -392,9 +395,19 @@ def main():
                     "PFW_AUTH_MODE=oauth: x-api-key guard and probe shim "
                     "disabled; the MCP surface is protected by bearer tokens."
                 )
+                # Every 401/403 /mcp returns goes to
+                # security.log with the client address and a reason code,
+                # never the token (util/auth_failure_log.py). Inside CORS so a
+                # preflight is never counted.
+                from .util.auth_failure_log import AuthFailureLogMiddleware
+
                 app = RequestSizeLimitMiddleware(
                     SecurityHeadersMiddleware(
-                        _wrap_cors(mcp.http_app(stateless_http=stateless_http))
+                        _wrap_cors(
+                            AuthFailureLogMiddleware(
+                                mcp.http_app(stateless_http=stateless_http),
+                            )
+                        )
                     )
                 )
             else:
@@ -420,9 +433,11 @@ def main():
             # /document/persistent/{hash} paths embed the link credential
             uvicorn.run(
                 app, host=host, port=port, access_log=False,
-                # Trust X-Forwarded-For only from these peers (audit M2)
-                proxy_headers=True,
-                forwarded_allow_ips=os.getenv("PROXY_TRUSTED_IPS", "127.0.0.1"),
+                # See the proxy uvicorn.Config
+                # above — proxy_headers/forwarded_allow_ips (audit M2) is
+                # replaced by util/client_ip.py's own PROXY_TRUSTED_IPS +
+                # CF-Connecting-IP/X-Forwarded-For resolution, read only
+                # where a rate limit or security-log line needs it.
             )
         except ImportError as e:
             raise ImportError(

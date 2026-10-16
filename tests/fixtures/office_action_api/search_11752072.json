@@ -1,0 +1,105 @@
+{
+  "count": 5,
+  "requestIdentifier": "ff109828-5d78-458f-be30-0b39e0a0dace",
+  "officeActionDataBag": [
+    {
+      "documentCode": "CTNF",
+      "lastModifiedDateTime": "2026-10-08T02:52:23",
+      "filingDate": "2007-05-22",
+      "patentNumber": "7971071",
+      "rejectionTypeBag": [
+        "102",
+        "103",
+        "112",
+        "Other"
+      ],
+      "submissionDate": "2010-10-13",
+      "groupArtUnitNumber": 2432,
+      "applicationNumberText": "11752072",
+      "inventionTitle": "INTEGRATED DELIVERY AND PROTECTION DEVICE FOR DIGITAL OBJECTS",
+      "documentCodeDescriptionText": "Non-Final Rejections",
+      "officeActionRecordIdentifier": "1af635b1ff383b0d75a9719b284b7b58",
+      "officeActionText": "\n\n    Continued Examination Under 37 CFR 1.114\nA request for continued examination under 37 CFR 1.114, including the fee set forth in 37 CFR 1.17(e), was filed in this application after final rejection.  Since this application is eligible for continued examination under 37 CFR 1.114, and the fee set forth in 37 CFR 1.17(e) has been timely paid, the finality of the previous Office action has been withdrawn pursuant to 37 CFR 1.114.  Applicant's submission filed on 22 March 2010 has been enter ...",
+      "obsoleteDocumentIdentifier": "GF7AGXYVPPOPPY5",
+      "publicStatusIndicator": true
+    },
+    {
+      "documentCode": "CTFR",
+      "lastModifiedDateTime": "2026-10-07T23:39:16",
+      "filingDate": "2007-05-22",
+      "patentNumber": "7971071",
+      "rejectionTypeBag": [
+        "103",
+        "112"
+      ],
+      "submissionDate": "2009-09-21",
+      "groupArtUnitNumber": 2432,
+      "applicationNumberText": "11752072",
+      "inventionTitle": "INTEGRATED DELIVERY AND PROTECTION DEVICE FOR DIGITAL OBJECTS",
+      "documentCodeDescriptionText": "Final Rejections",
+      "officeActionRecordIdentifier": "04af5606ecd10d9d8aa3e70579192948",
+      "officeActionText": "\n\n    DETAILED ACTION\nResponse to Amendment\nApplicant’s amendment filed 30 July 2009 amends claims 1, 3, 5, 11, 18, 22, 24, and 27. Claim 2 has been cancelled. Claims 28-34 have been added. Applicant’s amendment has been fully considered and entered.\nResponse to Arguments\nApplicant’s argument that “Mathers…does not disclose or suggest…updatable by a provider of the digital object using a secure channel after distribution of the secure hardware adjunct to the end user,\" has been fully conside ...",
+      "obsoleteDocumentIdentifier": "FZV8RTZWPPOPPY5",
+      "publicStatusIndicator": true
+    },
+    {
+      "documentCode": "CTNF",
+      "lastModifiedDateTime": "2026-10-07T23:19:18",
+      "filingDate": "2007-05-22",
+      "patentNumber": "7971071",
+      "rejectionTypeBag": [
+        "102",
+        "103",
+        "112",
+        "Other"
+      ],
+      "submissionDate": "2009-01-29",
+      "groupArtUnitNumber": 2432,
+      "applicationNumberText": "11752072",
+      "inventionTitle": "INTEGRATED DELIVERY AND PROTECTION DEVICE FOR DIGITAL OBJECTS",
+      "documentCodeDescriptionText": "Non-Final Rejections",
+      "officeActionRecordIdentifier": "8832016d83a7ceeeac6d6faba5120b29",
+      "officeActionText": "\n\n    DETAILED ACTION\nContinued Examination Under 37 CFR 1.114\nA request for continued examination under 37 CFR 1.114, including the fee set forth in 37 CFR 1.17(e), was filed in this application after final rejection.  Since this application is eligible for continued examination under 37 CFR 1.114, and the fee set forth in 37 CFR 1.17(e) has been timely paid, the finality of the previous Office action has been withdrawn pursuant to 37 CFR 1.114.  Applicant's submission filed on 15 January 2 ...",
+      "obsoleteDocumentIdentifier": "FQIV4W4DPPOPPY5",
+      "publicStatusIndicator": true
+    },
+    {
+      "documentCode": "CTFR",
+      "lastModifiedDateTime": "2026-10-07T23:26:00",
+      "filingDate": "2007-05-22",
+      "patentNumber": "7971071",
+      "rejectionTypeBag": [
+        "103",
+        "112"
+      ],
+      "submissionDate": "2008-09-30",
+      "groupArtUnitNumber": 2432,
+      "applicationNumberText": "11752072",
+      "inventionTitle": "INTEGRATED DELIVERY AND PROTECTION DEVICE FOR DIGITAL OBJECTS",
+      "documentCodeDescriptionText": "Final Rejections",
+      "officeActionRecordIdentifier": "5be5818afc901562036a39217ba0373c",
+      "officeActionText": "\n\n    DETAILED ACTION\nResponse to Amendment\nApplicant’s amendment filed 22 September 2008 amends claims 3 and 11. Claims 23-25 have been added. Applicant’s amendment has been fully considered and entered.\nResponse to Arguments\nApplicant argues, “These passages merely illustrate a portable drive with a password to control access thereto and fail to disclose how the simple portable drive of Mathers can possible ‘execute predefined digital rights verification and enforcement located on the secu ...",
+      "obsoleteDocumentIdentifier": "FLSTTPTHPPOPPY5",
+      "publicStatusIndicator": true
+    },
+    {
+      "documentCode": "CTNF",
+      "lastModifiedDateTime": "2026-10-07T23:39:49",
+      "filingDate": "2007-05-22",
+      "patentNumber": "7971071",
+      "rejectionTypeBag": [
+        "102",
+        "103"
+      ],
+      "submissionDate": "2008-09-08",
+      "groupArtUnitNumber": 2432,
+      "applicationNumberText": "11752072",
+      "inventionTitle": "INTEGRATED DELIVERY AND PROTECTION DEVICE FOR DIGITAL OBJECTS",
+      "documentCodeDescriptionText": "Non-Final Rejections",
+      "officeActionRecordIdentifier": "0007c7563fab0280d25982af58d70925",
+      "officeActionText": "\n\n    DETAILED ACTION\nResponse to Amendment\nApplicant’s amendment filed 14 August 2007 amends claims 1-18. Claims 19-22 have been added. Applicant’s amendment has been fully considered and entered.\nClaim Rejections - 35 USC § 102\nThe following is a quotation of the appropriate paragraphs of 35 U.S.C. 102 that form the basis for the rejections under this section made in this Office action:\nA person shall be entitled to a patent unless –\n(b) the invention was patented or described in a printed ...",
+      "obsoleteDocumentIdentifier": "FKXJ4C5RPPOPPY5",
+      "publicStatusIndicator": true
+    }
+  ]
+}

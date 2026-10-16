@@ -64,12 +64,16 @@ _UNIQUE_APPLICATIONS_SPEC = {
 #: `PFW_search_applications` / `PFW_search_inventor` accept a caller-supplied
 #: `fields` list, so a record can drag in heavy nested bags the tiers exclude.
 #: Slim those to what a follow-up call actually needs before dropping records.
+#: `cite_as` is in the keep list on purpose: it is a short markdown link and it
+#: is the ONLY thing in a slimmed row a reader can click, so slimming must not
+#: be what turns a citable row back into a bare document code (2026-09-05).
 _DOC_SLIM_FIELDS = (
     "documentIdentifier",
     "documentCode",
     "documentCodeDescriptionText",
     "officialDate",
     "directionCategory",
+    "cite_as",
 )
 
 _NESTED_BAG_SPECS = tuple(
@@ -111,6 +115,27 @@ _FAMILY_SPECS = (
     {"path": ["edges"], "keep_fields": (), "min_items": 10, "label": "edges"},
     {"path": ["nodes"], "keep_fields": (), "min_items": 10, "label": "nodes"},
 )
+
+#: The paging block the application searches publish
+#: (api/enhanced_client.py::search_applications) and the record list it counts.
+#: The guard rewrites that block when it drops records, so a trimmed page
+#: reports what it carries: `returned` is the rows kept, `next_offset` is
+#: offset + rows kept, `has_more` is true. Before this a 100-row page cut to 50
+#: still said `returned: 100, next_offset: 100`, and a caller paging by
+#: next_offset skipped rows 50-99 without being told (found on the FPD sibling,
+#: 2026-09-11).
+_APPLICATIONS_PAGING = {"key": "paging", "path": ["applications"]}
+
+#: The inventor searches take no offset (the fan-out de-duplicates across
+#: name variants and publishes `next_offset: null`), so there is no cursor to
+#: move: `returned` and `has_more` are corrected and `next_offset` stays null.
+_INVENTOR_PAGING = {"key": "paging", "path": ["unique_applications"], "cursor": False}
+
+#: Top-level counters that restate how many records the page holds, as
+#: (counter key, list key). The guard rewrites `paging` but knows nothing of
+#: these, so after a trim `_reconcile_page_count` sets them to the rows kept.
+_APPLICATIONS_COUNT = ("count", "applications")
+_INVENTOR_COUNT = ("total_unique_applications", "unique_applications")
 
 _SEARCH_NOTE_TEMPLATE = (
     "Response exceeded the client response-size limit, so fewer records were "
@@ -163,27 +188,39 @@ _TOOL_BOUNDS: Dict[str, Dict[str, Any]] = {
     "PFW_search_applications": {
         "bags": _NESTED_BAG_SPECS + (_APPLICATIONS_SPEC,),
         "note": _SEARCH_NOTE_TEMPLATE.format(tool="PFW_search_applications"),
+        "paging": _APPLICATIONS_PAGING,
+        "page_count": _APPLICATIONS_COUNT,
     },
     "PFW_search_applications_minimal": {
         "bags": _NESTED_BAG_SPECS + (_APPLICATIONS_SPEC,),
         "note": _SEARCH_NOTE_TEMPLATE.format(tool="PFW_search_applications_minimal"),
+        "paging": _APPLICATIONS_PAGING,
+        "page_count": _APPLICATIONS_COUNT,
     },
     "PFW_search_applications_balanced": {
         "bags": _NESTED_BAG_SPECS + (_APPLICATIONS_SPEC,),
         "note": _SEARCH_NOTE_TEMPLATE.format(tool="PFW_search_applications_balanced"),
+        "paging": _APPLICATIONS_PAGING,
+        "page_count": _APPLICATIONS_COUNT,
     },
     # ---- inventor searches ----
     "PFW_search_inventor": {
         "bags": _NESTED_BAG_SPECS + (_UNIQUE_APPLICATIONS_SPEC,),
         "note": _INVENTOR_NOTE_TEMPLATE.format(tool="PFW_search_inventor"),
+        "paging": _INVENTOR_PAGING,
+        "page_count": _INVENTOR_COUNT,
     },
     "PFW_search_inventor_minimal": {
         "bags": _NESTED_BAG_SPECS + (_UNIQUE_APPLICATIONS_SPEC,),
         "note": _INVENTOR_NOTE_TEMPLATE.format(tool="PFW_search_inventor_minimal"),
+        "paging": _INVENTOR_PAGING,
+        "page_count": _INVENTOR_COUNT,
     },
     "PFW_search_inventor_balanced": {
         "bags": _NESTED_BAG_SPECS + (_UNIQUE_APPLICATIONS_SPEC,),
         "note": _INVENTOR_NOTE_TEMPLATE.format(tool="PFW_search_inventor_balanced"),
+        "paging": _INVENTOR_PAGING,
+        "page_count": _INVENTOR_COUNT,
     },
     # ---- documents ----
     "PFW_get_application_documents": {
@@ -234,10 +271,29 @@ _TOOL_BOUNDS: Dict[str, Dict[str, Any]] = {
 _DEFAULT_BOUNDS: Dict[str, Any] = {"bags": ()}
 
 
+def _reconcile_page_count(payload: Any, page_count: Any) -> Any:
+    """Set a top-level page counter to the rows the guard kept.
+
+    `page_count` is (counter key, list key) from _TOOL_BOUNDS. A no-op unless
+    the guard actually changed the payload (a `_bounds` marker is present), so
+    a response that fits keeps its counter exactly as the tool set it.
+    """
+    if not page_count or not isinstance(payload, dict):
+        return payload
+    if response_bounds.BOUNDS_KEY not in payload:
+        return payload
+    counter, list_key = page_count
+    records = payload.get(list_key)
+    if counter in payload and isinstance(records, list):
+        payload[counter] = len(records)
+    return payload
+
+
 def _bound_result(result: Any, tool_name: str) -> Any:
     """Apply the shared guard to one tool result (dict or JSON string)."""
     config = dict(_TOOL_BOUNDS.get(tool_name) or _DEFAULT_BOUNDS)
     budget = config.pop("budget", "response")
+    page_count = config.pop("page_count", None)
     config.setdefault("text_fallback", True)
     config["limit"] = (
         response_bounds.content_char_budget()
@@ -246,7 +302,9 @@ def _bound_result(result: Any, tool_name: str) -> Any:
     )
 
     if isinstance(result, dict):
-        return response_bounds.bound_structured_response(result, **config)
+        return _reconcile_page_count(
+            response_bounds.bound_structured_response(result, **config), page_count
+        )
 
     if isinstance(result, str) and result.lstrip().startswith("{"):
         try:
@@ -258,7 +316,7 @@ def _bound_result(result: Any, tool_name: str) -> Any:
         bounded = response_bounds.bound_structured_response(parsed, **config)
         if response_bounds.BOUNDS_KEY not in bounded:
             return result  # no-op: hand back the original string byte-for-byte
-        return json.dumps(bounded, default=str)
+        return json.dumps(_reconcile_page_count(bounded, page_count), default=str)
 
     return result
 

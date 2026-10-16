@@ -5,14 +5,22 @@ Single owner of the Mistral OCR call path (audit F1): EnhancedPatentClient
 delegates here instead of carrying its own copy, so the model slug, timeout,
 rate limiting, and cost-control page cap live in exactly one place.
 """
+import asyncio
 import httpx
 import os
+import random
 import time
 from typing import Dict, Any, Optional
 
 from ..api.helpers import format_error_response, generate_request_id
 from ..exceptions import OCRRateLimitError
 from ..shared.safe_logger import get_safe_logger
+from ..util.deadline import (
+    Deadline,
+    DeadlineExceeded,
+    current_deadline,
+    deadline_exceeded_fields,
+)
 
 logger = get_safe_logger(__name__)
 
@@ -87,6 +95,14 @@ def validate_mistral_api_key(raw_key: Optional[str]) -> Optional[str]:
 
 class OCRService:
     """Service for handling OCR operations with Mistral API"""
+
+    #: Mistral statuses worth another attempt: rate limit and server-side.
+    _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+    _RETRY_ATTEMPTS = 3
+
+    #: Below this many seconds left in the call's deadline an attempt is not
+    #: started (an upload or OCR request cannot finish in less).
+    _MIN_ATTEMPT_SECONDS = 2.0
 
     def __init__(
         self,
@@ -212,6 +228,89 @@ class OCRService:
                 f"({type(e).__name__}); the file remains in the account"
             )
 
+    async def _post_with_retry(self, client, url: str,
+                               deadline: Optional[Deadline] = None, **kwargs):
+        """POST with bounded backoff on transient failures (429, 5xx, transport).
+
+        Both Mistral requests (upload, OCR) were single attempts: a 429 or a
+        connection reset discarded the call (Wave 2 Part A item 4, ported from
+        uspto_ptab_mcp's OCRService). Retries do NOT re-count against the
+        caller's OCR budget: _check_ocr_rate_limit and the daily page budget
+        run once per extract_document_content, above this.
+
+        With a `deadline` (one per tool call, util/deadline.py) every attempt
+        is capped at the time left, and a retry whose backoff would not leave
+        room for another attempt is not taken: the last status is returned,
+        or DeadlineExceeded raised when the last attempt never answered.
+        """
+        last = self._RETRY_ATTEMPTS - 1
+        for attempt in range(self._RETRY_ATTEMPTS):
+            response, exc = await self._attempt(client, url, deadline, **kwargs)
+            if exc is None and getattr(response, "status_code", None) not in self._RETRY_STATUSES:
+                return response
+            if attempt == last:
+                if exc is not None:
+                    raise exc
+                return response
+            self._log_retry(url, response, exc, attempt)
+            backoff = 2 ** attempt + random.uniform(0.1, 0.5)
+            if not self._room_for(deadline, backoff):
+                if exc is not None:
+                    raise DeadlineExceeded("no time left to retry") from exc
+                return response
+            await asyncio.sleep(backoff)
+        raise RuntimeError("unreachable")  # pragma: no cover - loop always returns
+
+    async def _attempt(self, client, url: str, deadline: Optional[Deadline], **kwargs):
+        """One POST: (response, None), or (None, transport exception)."""
+        try:
+            return await self._post_once(client, url, deadline, **kwargs), None
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            return None, exc
+
+    async def _post_once(self, client, url: str, deadline: Optional[Deadline], **kwargs):
+        if deadline is None:
+            return await client.post(url, **kwargs)
+        remaining = deadline.remaining()
+        if remaining < self._MIN_ATTEMPT_SECONDS:
+            raise DeadlineExceeded("no time left for another attempt")
+        try:
+            return await asyncio.wait_for(client.post(url, **kwargs), timeout=remaining)
+        except asyncio.TimeoutError as exc:
+            raise DeadlineExceeded("attempt ran past the deadline") from exc
+
+    def _room_for(self, deadline: Optional[Deadline], backoff: float) -> bool:
+        if deadline is None:
+            return True
+        return deadline.remaining() >= backoff + self._MIN_ATTEMPT_SECONDS
+
+    @staticmethod
+    def _log_retry(url: str, response, exc, attempt: int) -> None:
+        reason = type(exc).__name__ if exc is not None else str(response.status_code)
+        logger.warning(
+            "Mistral OCR %s failed (%s); retrying (attempt %d/%d)",
+            url.rsplit("/", 1)[-1], reason, attempt + 1, OCRService._RETRY_ATTEMPTS,
+        )
+
+    @staticmethod
+    def _deadline_result(request_id: str, app_number: str, document_identifier: str) -> Dict[str, Any]:
+        """The OCR result when the call's time budget ran out (util/deadline.py).
+        Says what to do next, never what it would cost."""
+        logger.warning(
+            f"[{request_id}] OCR for {app_number}/{document_identifier} stopped "
+            "at the call's time limit"
+        )
+        return {
+            **format_error_response(
+                "OCR did not finish within this call's time limit.", 504, request_id
+            ),
+            **deadline_exceeded_fields(
+                "OCR did not finish within this call's time limit. Try the call "
+                "again, or read fewer pages at a time with page_from/page_to; "
+                "PFW_get_document_download gives the PDF directly."
+            ),
+        }
+
     def _check_ocr_rate_limit(self, request_id: str) -> None:
         """
         Check if OCR rate limit is exceeded and raise exception if so.
@@ -244,7 +343,8 @@ class OCRService:
 
     async def extract_document_content(self, pdf_content: bytes, page_count: int,
                                      app_number: str, document_identifier: str,
-                                     page_offset: int = 0) -> Dict[str, Any]:
+                                     page_offset: int = 0,
+                                     deadline: Optional[Deadline] = None) -> Dict[str, Any]:
         """
         Extract document content using Mistral OCR API
 
@@ -260,11 +360,16 @@ class OCRService:
                 said 51-53. The offset makes `=== PAGE N ===` the true document
                 page on this branch, as it already is on the pypdf branch
                 (api/enhanced_client.py::extract_with_pypdf2).
+            deadline: The tool call's end-to-end time budget; default the
+                running call's (util/deadline.py current_deadline()). Both
+                Mistral requests and their retries take what is left of it;
+                when it runs out the result is a "Deadline exceeded" failure.
 
         Returns:
             Dictionary containing OCR-extracted content and metadata
         """
         request_id = generate_request_id()
+        deadline = deadline if deadline is not None else current_deadline()
 
         try:
             # Check if Mistral API key is available
@@ -312,8 +417,10 @@ class OCRService:
             if self.ocr_http_limits is not None:
                 client_kwargs["limits"] = self.ocr_http_limits
             async with httpx.AsyncClient(**client_kwargs) as client:
-                upload_response = await client.post(
+                upload_response = await self._post_with_retry(
+                    client,
                     f"{self.mistral_base_url}/files",
+                    deadline=deadline,
                     headers=mistral_headers,
                     files=files,
                     data=data
@@ -335,12 +442,15 @@ class OCRService:
                         app_number=app_number,
                         document_identifier=document_identifier,
                         request_id=request_id,
+                        deadline=deadline,
                     )
                 finally:
                     await self._delete_uploaded_file(
                         client, mistral_headers, file_id, request_id
                     )
 
+        except DeadlineExceeded:
+            return self._deadline_result(request_id, app_number, document_identifier)
         except OCRRateLimitError as e:
             logger.warning(f"[{request_id}] OCR rate limit exceeded: {e.message}")
             return format_error_response(e.message, e.status_code, e.request_id)
@@ -364,7 +474,7 @@ class OCRService:
 
     async def _run_ocr(
         self, *, client, file_id, pdf_content, page_count, page_offset,
-        app_number, document_identifier, request_id,
+        app_number, document_identifier, request_id, deadline=None,
     ) -> Dict[str, Any]:
         """OCR an already-uploaded file and build the result envelope.
 
@@ -384,8 +494,10 @@ class OCRService:
             "include_image_base64": False  # Save tokens
         }
 
-        ocr_response = await client.post(
+        ocr_response = await self._post_with_retry(
+            client,
             f"{self.mistral_base_url}/ocr",
+            deadline=deadline,
             headers={
                 "Authorization": f"Bearer {self.mistral_api_key}",
                 "Content-Type": "application/json"

@@ -63,3 +63,15 @@ class OCRRateLimitError(RateLimitError):
     def __init__(self, message: str, retry_after_seconds: Optional[int] = None, request_id: Optional[str] = None):
         super().__init__(message, request_id)
         self.retry_after_seconds = retry_after_seconds
+
+
+class UpstreamRateLimitedError(RateLimitError):
+    """USPTO answered 429 on a path whose callers expect data, not an
+    envelope (the Office Action clients, the direct XML/PDF downloads).
+
+    Carries the same `rate_limited_response` envelope USPTOTransport returns,
+    so a tool hands back one shape for a 429 whichever ODP client met it
+    (Wave 2 Part A item 2)."""
+    def __init__(self, envelope: dict, request_id: Optional[str] = None):
+        super().__init__(str(envelope.get("message") or "Rate limited by USPTO"), request_id)
+        self.envelope = envelope

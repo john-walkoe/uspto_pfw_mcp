@@ -46,23 +46,32 @@ class _CaptureMCP:
 
 
 class _FakeOAClient:
-    """Stands in for OATextClient / OARejectionClient."""
+    """Stands in for OfficeActionClient (api/office_action_client.py).
 
-    def __init__(self, docs, num_found=None, section_text=None):
-        self._docs = docs
+    Records are ODP Office Action API officeActionDataBag entries; a record's
+    `_body` is what its officeActionText download returns.
+    """
+
+    def __init__(self, docs, num_found=None):
+        self._docs = [
+            {"officeActionRecordIdentifier": f"{i:032x}", **doc} for i, doc in enumerate(docs)
+        ]
         self._num_found = len(docs) if num_found is None else num_found
-        self._section_text = section_text
         self.calls = []
 
-    async def search(self, criteria, start=0, rows=10):
-        self.calls.append({"criteria": criteria, "start": start, "rows": rows})
-        return {"response": {"docs": self._docs, "numFound": self._num_found}}
+    async def search_office_actions(self, application_number, document_codes=None,
+                                    offset=0, limit=10, fields=None):
+        self.calls.append({"application_number": application_number,
+                           "document_codes": list(document_codes or []),
+                           "offset": offset, "limit": limit})
+        bag = [{k: v for k, v in d.items() if k != "_body"} for d in self._docs][:limit]
+        return {"count": self._num_found, "officeActionDataBag": bag}
 
-    def extract_body_text(self, doc):
-        return doc.get("_body", "")
-
-    def extract_section_text(self, doc, section):
-        return self._section_text or ""
+    async def get_office_action_text(self, record_id):
+        for doc in self._docs:
+            if doc["officeActionRecordIdentifier"] == record_id:
+                return doc.get("_body", "")
+        return None
 
 
 @pytest.fixture
@@ -89,7 +98,7 @@ def _ctfr(date, body="body"):
     return {
         "_body": body,
         "submissionDate": date,
-        "legacyDocumentCodeIdentifier": ["CTFR"],
+        "documentCode": "CTFR",
     }
 
 
@@ -109,7 +118,7 @@ async def test_latest_only_returns_the_newest_action_not_the_first_row(oa_tools,
         _ctfr("2021-12-21", "the superseded final rejection"),
         _ctfr("2022-12-27", "the final rejection under appeal"),
     ])
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_text"]("16/319,040", action_type="CTFR")
 
@@ -125,11 +134,12 @@ async def test_latest_only_asks_the_dataset_for_the_whole_window(oa_tools, monke
     on latest_only."""
     tools, mod = oa_tools
     client = _FakeOAClient([_ctfr("2021-12-21"), _ctfr("2022-12-27")])
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     await tools["PFW_get_oa_text"]("16/319,040", action_type="CTFR")
 
-    assert client.calls[0]["rows"] == mod.OA_TEXT_ROWS_ALL
+    assert client.calls[0]["limit"] == mod.OA_TEXT_ROWS_ALL
+    assert client.calls[0]["document_codes"] == ["CTFR"]
 
 
 @pytest.mark.asyncio
@@ -138,7 +148,7 @@ async def test_all_actions_come_back_newest_first(oa_tools, monkeypatch):
     client = _FakeOAClient([
         _ctfr("2008-09-08"), _ctfr("2009-01-29"), _ctfr("2010-10-13"),
     ])
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_text"]("11/752,072", latest_only=False)
 
@@ -177,10 +187,10 @@ async def test_three_long_actions_stay_inside_the_content_budget(oa_tools, monke
     body = ("z" * 79 + "\n") * 450  # 36,000 chars, ~106K across three actions
     docs = [
         {"_body": body, "submissionDate": f"201{i}-01-01",
-         "legacyDocumentCodeIdentifier": ["CTNF"]}
+         "documentCode": "CTNF"}
         for i in range(3)
     ]
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: _FakeOAClient(docs))
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOAClient(docs))
 
     result = await tools["PFW_get_oa_text"]("11/752,072", latest_only=False, max_chars=40_000)
 
@@ -197,10 +207,10 @@ async def test_the_multi_action_cut_is_reported_in_bounds(oa_tools, monkeypatch)
     tools, mod = oa_tools
     docs = [
         {"_body": "z" * 30_000, "submissionDate": f"201{i}-01-01",
-         "legacyDocumentCodeIdentifier": ["CTNF"]}
+         "documentCode": "CTNF"}
         for i in range(3)
     ]
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: _FakeOAClient(docs))
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOAClient(docs))
 
     result = await tools["PFW_get_oa_text"]("11/752,072", latest_only=False, max_chars=30_000)
 
@@ -219,10 +229,10 @@ async def test_actions_that_fit_carry_no_bounds_marker(oa_tools, monkeypatch):
     tools, mod = oa_tools
     docs = [
         {"_body": "short body", "submissionDate": "2019-01-01",
-         "legacyDocumentCodeIdentifier": ["CTNF"]}
+         "documentCode": "CTNF"}
         for _ in range(3)
     ]
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: _FakeOAClient(docs))
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOAClient(docs))
 
     result = await tools["PFW_get_oa_text"]("11/752,072", latest_only=False)
 
@@ -369,15 +379,29 @@ async def test_the_supported_window_parameters_are_still_validated(document_tool
 # Ledger: "`PFW_get_oa_rejections` `summary.office_actions_count` is a
 # rejection-row count". Measured on application 15/603,285: num_found 10, all
 # one CTNF mailed 2018-01-10, confirmed by PFW_get_oa_text's num_found of 1.
+# Since the 2026-10-11 port rows are one per office action; the distinct
+# (date, code) count still guards a duplicated record.
+
+#: Application 15/603,285's CTNF of 2018-01-10 as the ODP Office Action index
+#: carries it (probed 2026-10-11): the bag names 103, the text rejects only on
+#: obviousness-type double patenting and § 112.
+_DP_BODY = (
+    "Double Patenting\n"
+    "Claims 1-20 are rejected on the ground of nonstatutory double patenting as being "
+    "unpatentable over claims 1-20 of U.S. Patent No. 9,000,000. The claims at issue "
+    "would have been obvious over the reference claims.\n"
+    "Claim Rejections - 35 USC § 112\n"
+    "Claims 1-20 are rejected under 35 U.S.C. 112(a) as failing to comply with the "
+    "written description requirement.\n"
+)
+
 
 def _rejection_row(**overrides):
     row = {
         "submissionDate": "2018-01-10",
-        "legacyDocumentCodeIdentifier": "CTNF",
-        "hasRej112": 1,
-        "hasRejDP": 1,
-        "hasRej103": 1,
-        "cite103Max": 0,
+        "documentCode": "CTNF",
+        "rejectionTypeBag": ["103", "112", "DoublePatent"],
+        "_body": _DP_BODY,
     }
     row.update(overrides)
     return row
@@ -387,14 +411,13 @@ def _rejection_row(**overrides):
 async def test_rejection_rows_and_office_actions_are_counted_separately(oa_tools, monkeypatch):
     tools, mod = oa_tools
     docs = [_rejection_row() for _ in range(10)]
-    monkeypatch.setattr(mod, "_get_oa_rejection_client", lambda: _FakeOAClient(docs, num_found=10))
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOAClient(docs, num_found=10))
 
     summary = (await tools["PFW_get_oa_rejections"]("15/603,285"))["summary"]
 
     assert summary["rejection_rows_total"] == 10
     assert summary["office_actions_in_returned_rows"] == 1
-    # The old key is kept for one release, as a documented alias of the ROW
-    # count it has always held.
+    # The old key is kept as a documented alias of rejection_rows_total.
     assert summary["office_actions_count"] == summary["rejection_rows_total"]
     assert "deprecated alias" in summary["counts_note"]
 
@@ -405,10 +428,10 @@ async def test_distinct_office_actions_counts_date_and_code_pairs(oa_tools, monk
     docs = [
         _rejection_row(),
         _rejection_row(),
-        _rejection_row(submissionDate="2018-09-26", legacyDocumentCodeIdentifier="CTFR"),
-        _rejection_row(legacyDocumentCodeIdentifier="CTFR"),
+        _rejection_row(submissionDate="2018-09-26", documentCode="CTFR"),
+        _rejection_row(documentCode="CTFR"),
     ]
-    monkeypatch.setattr(mod, "_get_oa_rejection_client", lambda: _FakeOAClient(docs, num_found=4))
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOAClient(docs, num_found=4))
 
     summary = (await tools["PFW_get_oa_rejections"]("15/603,285"))["summary"]
 
@@ -420,13 +443,15 @@ async def test_distinct_office_actions_counts_date_and_code_pairs(oa_tools, monk
 # ---------------------------------------------------------------------------
 # Ledger: "`has_103` fires on double-patenting boilerplate with
 # `cite_103_max: 0`". Measured on application 15/603,285, whose sole office
-# action rejects only on obviousness-type double patenting and 112(1st).
+# action rejects only on obviousness-type double patenting and 112(1st). The
+# ODP index's rejectionTypeBag names 103 for the same action, so the text is
+# the corroboration now.
 
 @pytest.mark.asyncio
-async def test_has_103_needs_a_103_citation_not_the_word_obvious(oa_tools, monkeypatch):
+async def test_has_103_needs_a_103_rejection_in_the_text_not_the_word_obvious(oa_tools, monkeypatch):
     tools, mod = oa_tools
-    docs = [_rejection_row()]  # hasRej103 set, cite103Max 0, double patenting
-    monkeypatch.setattr(mod, "_get_oa_rejection_client", lambda: _FakeOAClient(docs, num_found=1))
+    docs = [_rejection_row()]  # bag names 103, the text rejects on DP and 112 only
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOAClient(docs, num_found=1))
 
     result = await tools["PFW_get_oa_rejections"]("15/603,285")
 
@@ -435,19 +460,23 @@ async def test_has_103_needs_a_103_citation_not_the_word_obvious(oa_tools, monke
     assert result["summary"]["has_double_patenting"] is True
     assert result["rejections"][0]["has_103"] is False
     assert result["rejections"][0]["has_103_indicator_raw"] is True
+    assert result["rejections"][0]["section_counts"] == {"101": 0, "102": 0, "103": 0, "112": 1}
     assert "double-patenting" in result["summary"]["has_103_note"]
 
 
 @pytest.mark.asyncio
 async def test_a_real_103_rejection_still_reads_as_103(oa_tools, monkeypatch):
     tools, mod = oa_tools
-    docs = [_rejection_row(cite103Max=3, hasRejDP=0)]
-    monkeypatch.setattr(mod, "_get_oa_rejection_client", lambda: _FakeOAClient(docs, num_found=1))
+    body = "Claims 1-5 are rejected under 35 U.S.C. 103 as being unpatentable over Smith in view of Jones."
+    docs = [_rejection_row(rejectionTypeBag=["103"], _body=body)]
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOAClient(docs, num_found=1))
 
     result = await tools["PFW_get_oa_rejections"]("18/407,147")
 
     assert result["summary"]["has_103"] is True
-    assert result["summary"]["max_103_citations"] == 3
+    assert result["summary"]["section_counts"]["103"] == 1
+    # The ODP Office Action API publishes no citation counts.
+    assert result["summary"]["max_103_citations"] is None
 
 
 # ---------------------------------------------------------------------------

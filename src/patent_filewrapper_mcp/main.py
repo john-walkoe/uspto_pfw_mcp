@@ -36,15 +36,17 @@ PROGRESSIVE WORKFLOW:
 1. Discovery: PFW_search_applications_minimal / PFW_search_inventor_minimal
 2. Analysis: PFW_search_applications_balanced / PFW_search_inventor_balanced
 3. Office actions (rejections, allowance reasoning, examiner argument) — USE THESE FIRST:
-   a. PFW_get_oa_rejections — structured triage: which OAs carry 101/102/103/112, Alice
-      flags, citation counts. Cheap and small. Coverage Oct 1, 2017 onward.
+   a. PFW_get_oa_rejections — structured triage: which non-final/final rejections carry
+      101/102/103/112 (USPTO's rejectionTypeBag) and how many 'rejected under 35 U.S.C.'
+      statements each action's text holds per section. Small.
    b. PFW_get_oa_text — the examiner's actual text in ONE call. No document bag, no PDF,
       no scanning step in between. action_type='CTNF'|'CTFR'|'NOA'|'CTRS', section='101'|'102'|'103'|'112'
-      to target one rejection. Coverage reaches office actions mailed roughly 2008 onward,
-      far broader than the OA-rejections floor. num_found=0 is a normal empty result.
+      to target one rejection. num_found=0 is a normal empty result.
+   Both read the USPTO ODP Office Action API: office actions mailed from 2007-07-27 onward,
+   almost all for applications filed 2001 or later.
 4. Documents: PFW_get_application_documents (filter by CLM, 892, 1449, IDS, etc.) — the
-   fallback path. Needed for non-OA documents, for office actions older than the OA text
-   dataset, and when an actual PDF is wanted.
+   fallback path. Needed for non-OA documents, for office actions mailed before 2007-07-27
+   or missing from the Office Action index, and when an actual PDF is wanted.
 5. Content: PFW_get_document_content_with_ocr (extracts document text; runs a full OCR pass on
    scanned PDFs, so do not use it for an office action PFW_get_oa_text can already serve),
    PFW_get_document_download (PDF link)
@@ -78,12 +80,12 @@ attributed positions, not established fact.
 # =============================================================================
 # PFW_AUTH_MODE=oauth turns the HTTP surface into an OAuth 2.1 authorization
 # server + protected resource (Google + Entra ID sign-in, authorization via
-# the SQLite mcp_users table — PFW hosts the paid-tier shared file). Ported
+# the SQLite mcp_users table — PFW hosts the shared file). Ported
 # from edgar_mcp via citations. mode "none" (default) and stdio are
 # byte-identical to pre-OAuth behavior.
 
 # Tools gated behind the pfw:admin scope in oauth mode. Everything else
-# stays pfw:user (no OCR gating — John's call).
+# stays pfw:user (no OCR gating).
 ADMIN_GATED_TOOLS = ["pfw_manage_users"]
 
 # Back-compat re-export; the gate itself lives in tools/admin_tools.py
@@ -193,9 +195,9 @@ def _attach_admin_scope_checks(server: FastMCP) -> None:
 from .ui import (  # noqa: E402
     SEARCH_RESULTS_HTML,
     XML_VIEW_HTML,
-    DOWNLOADS_HTML,
     FAMILY_VIEW_HTML,
     USER_MANAGEMENT_HTML,
+    render_downloads_html,
 )
 
 from .app_uris import (  # noqa: E402
@@ -235,7 +237,10 @@ def xml_view() -> str:
 
 @mcp.resource(_DOWNLOADS_URI, app=AppConfig(csp=_DownloadsCSP))
 def downloads_view() -> str:
-    return DOWNLOADS_HTML
+    # The panel's link-lifetime tip is filled in from the live
+    # PFW_LINK_TTL_DAYS/PFW_LINK_MAX_USES settings, not hard-coded; see
+    # ui/views.py::render_downloads_html.
+    return render_downloads_html()
 
 
 @mcp.resource(_FAMILY_URI, app=AppConfig(csp=_CSP))
@@ -311,7 +316,7 @@ register_prompts(mcp)
 @mcp.resource(
     "uspto://pfw/doc-codes",
     name="RESOURCE: USPTO Document Code Decoder",
-    description="USPTO Document Code decoder table covering common prosecution, PTAB, and FPD document codes with descriptions and business processes",
+    description="USPTO Document Code decoder table: applicant-filed prosecution, PTAB, and FPD codes from the EFS-Web list, plus the outgoing office-issued examiner codes (CTNF, CTFR, NOA, CTAV, CTRS, 892, N417, PETDEC and more) from the curated decoder. Each row carries an Origin column",
     mime_type="text/markdown"
 )
 def read_doc_codes() -> str:
@@ -319,7 +324,8 @@ def read_doc_codes() -> str:
     Read USPTO document code decoder table resource via HTTP proxy
 
     Returns:
-        Formatted document code table from USPTO EFS-Web documentation
+        Formatted document code table: applicant-filed codes from USPTO EFS-Web
+        documentation plus office-issued examiner codes from the curated decoder
     """
     try:
         import httpx

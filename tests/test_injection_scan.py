@@ -52,6 +52,32 @@ def test_scan_hits_payload_contains_no_matched_text():
     assert out["flagged"][0]["doc_code"] == "CTNF"
 
 
+def test_scan_hits_flags_a_list_valued_text_field():
+    """Fleet-wide pattern 9 (review 2026-09-28): a list-valued field used to
+    be skipped outright (`isinstance(h.get(k), str)` is False for a list),
+    so injection-shaped text inside it was never scanned."""
+    out = scan_hits(
+        [{"doc_code": "CTNF", "text": ["normal text", CANNED]}], id_key="doc_code"
+    )
+    assert out is not None
+    assert out["flagged"][0]["doc_code"] == "CTNF"
+    assert "instruction_override" in out["flagged"][0]["kinds"]
+
+
+def test_scan_hits_flags_a_list_of_dicts_text_field():
+    out = scan_hits(
+        [{"doc_code": "CTNF", "text": [{"value": "clean"}, {"value": CANNED}]}],
+        id_key="doc_code",
+    )
+    assert out is not None
+    assert "instruction_override" in out["flagged"][0]["kinds"]
+
+
+def test_scan_hits_list_valued_field_clean_stays_absent():
+    out = scan_hits([{"doc_code": "CTNF", "text": ["one", "two", CLEAN]}])
+    assert out is None
+
+
 def test_invisible_unicode_threshold_seven_clean_eight_flagged():
     assert scan_text("a" + "​" * 7) == []
     assert "invisible_unicode" in scan_text("a" + "​" * 8)
@@ -76,27 +102,26 @@ class _FakeMCP:
 
 
 class _StubOATextClient:
+    """Stands in for OfficeActionClient (api/office_action_client.py)."""
+
     def __init__(self, body_text: str):
         self._body_text = body_text
 
-    async def search(self, criteria, start, rows):
+    async def search_office_actions(self, application_number, document_codes=None,
+                                    offset=0, limit=10, fields=None):
         return {
-            "response": {
-                "numFound": 1,
-                "docs": [{
-                    "submissionDate": "2024-01-01",
-                    "legacyDocumentCodeIdentifier": ["CTNF"],
-                    "groupArtUnitNumber": "2145",
-                    "inventionTitle": ["Test Invention"],
-                }],
-            }
+            "count": 1,
+            "officeActionDataBag": [{
+                "officeActionRecordIdentifier": "1af635b1ff383b0d75a9719b284b7b58",
+                "submissionDate": "2024-01-01",
+                "documentCode": "CTNF",
+                "groupArtUnitNumber": 2145,
+                "inventionTitle": "Test Invention",
+            }],
         }
 
-    def extract_body_text(self, doc):
+    async def get_office_action_text(self, record_id):
         return self._body_text
-
-    def extract_section_text(self, doc, section):
-        return ""
 
 
 async def _call_oa_text(monkeypatch, body_text, **kwargs):
@@ -104,7 +129,7 @@ async def _call_oa_text(monkeypatch, body_text, **kwargs):
 
     fake = _FakeMCP()
     oa_tools.register(fake)
-    monkeypatch.setattr(oa_tools, "_oa_text_client", _StubOATextClient(body_text))
+    monkeypatch.setattr(oa_tools, "_office_action_client", _StubOATextClient(body_text))
     return await fake.tools["PFW_get_oa_text"](application_number="12345678", **kwargs)
 
 

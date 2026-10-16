@@ -9,6 +9,7 @@ from fastmcp.apps import AppConfig
 
 from ..api.helpers import (
     format_error_response,
+    is_rate_limited,
     validate_app_number,
 )
 from ..client_registry import _client
@@ -17,7 +18,25 @@ from ..shared import response_bounds
 from ..shared.injection_scan import RETRIEVED_TEXT_NOTE, _WARNING_NOTE, scan_text
 from ..shared.response_bounds import apply_text_window, content_char_budget
 from ..shared.safe_logger import get_safe_logger
+from ..util.citation_links import (
+    CITATION_NOTE,
+    DOCUMENT_CITATION_NOTE,
+    application_cite_as,
+    attach_document_cite_as,
+    citation_block,
+    single_citation_block,
+)
+from ..util.deadline import Deadline, content_deadline_seconds, deadline_scope
+from ..util.design_patents import (
+    DESIGN_DOCUMENTS_NOTE,
+    DESIGN_DRAWINGS_NOTE,
+    attach_design_note,
+    is_design_application,
+    iter_claim_texts,
+    looks_like_design_record,
+)
 from ..util.error_handlers import mcp_error_handler
+from ..util.identifier_normalization import normalize_identifier
 from ..util.identifier_resolution import content_type_error_message, resolve_or_error
 from ..app_uris import _DOWNLOADS_URI, _XML_URI
 from ..server_bootstrap import _ensure_proxy_server_running
@@ -61,16 +80,89 @@ async def _resolve_target_document(client, app_number: str, document_identifier:
     return target_doc, pdf_option
 
 
-def _build_download_link(
+async def _build_download_link(
     app_number: str, document_identifier: str, proxy_port: int, generate_persistent_link: bool
 ) -> str:
-    """Immediate or persistent (7-day encrypted) proxy download URL.
+    """Immediate or persistent (encrypted, PFW_LINK_TTL_DAYS/PFW_LINK_MAX_USES
+    bound -- currently 1 day / 25 uses) proxy download URL.
     PFW_PROXY_BASE_URL overrides the base for external deployments."""
     proxy_base = os.getenv("PFW_PROXY_BASE_URL", f"http://localhost:{proxy_port}")
     if generate_persistent_link:
         from ..proxy.secure_link_cache import get_link_cache
         return get_link_cache().generate_persistent_link(app_number, document_identifier, proxy_base)
     return f"{proxy_base}/download/{app_number}/{document_identifier}"
+
+
+#: What the generic rate-limit envelope cannot know: this tool is the one with
+#: a published allowance, and five back-to-back calls is exactly what exceeded
+#: it (walkthrough follow-up, 2026-09-05). Appended rather than replacing, so
+#: the shared instruction ("retry once, then space them") still leads.
+_DOWNLOAD_RATE_LIMIT_NOTE = (
+    " USPTO allows 5 downloads per 10 seconds, and this proxy enforces the "
+    "same. When several documents are wanted, ask for them one at a time with "
+    "a pause between rather than issuing every PFW_get_document_download call "
+    "at once. Links already returned in this conversation stay valid for 7 "
+    "days, so nothing has to be re-fetched."
+)
+
+
+def _attach_xml_design_note(result: Dict[str, Any]) -> None:
+    """Point a design record from the XML tool at its drawings.
+
+    Applied to BOTH outcomes, because both mislead on a design patent. On the
+    success path the tool has just handed the model a claim that is one
+    sentence ending "as shown and described", as if that were the scope. On
+    the failure path it is worse: design applications commonly have no XML at
+    all (29/328,018 answers "No application XML available"), and a bare 404
+    reads as "nothing here" when the entire patent is sitting in the DRW
+    document. Either way the next call is the same one.
+
+    Gated on the record being a design patent, so it is absent from every
+    utility response. Module level, not inline in `register`, so it does not
+    add to that function's pre-existing C901 flag (the `_send_once` precedent).
+    """
+    if looks_like_design_record(
+        application_number=result.get("application_number")
+        or result.get("identifier_input")
+        or result.get("identifier_used"),
+        patent_number=result.get("patent_number") or result.get("patent_number_resolved"),
+        claim_texts=iter_claim_texts(result.get("structured_content")),
+    ):
+        attach_design_note(result, DESIGN_DRAWINGS_NOTE)
+
+
+def _design_documents_note(
+    application_number: Optional[str], document_bag: List[Any]
+) -> Dict[str, Any]:
+    """`{"design_patent_note": ...}` for a design bag that holds drawings, else {}.
+
+    Gated twice: the 29 series AND a DRW actually present, so it is silent on
+    every utility bag and on a design bag with nothing to read.
+    """
+    if not is_design_application(application_number):
+        return {}
+    has_drawings = any(
+        str((doc or {}).get("documentCode", "")).upper() == "DRW"
+        for doc in document_bag
+        if isinstance(doc, dict)
+    )
+    return {"design_patent_note": DESIGN_DOCUMENTS_NOTE} if has_drawings else {}
+
+
+def _rate_limit_passthrough(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Hand a rate-limit refusal back with this tool's own pacing advice.
+
+    Returned unchanged when it is not a rate-limit envelope, so the caller can
+    apply it to any error dict without first asking what kind it is.
+    """
+    if not is_rate_limited(result):
+        return result
+    result["rate_limit_note"] = (
+        str(result.get("rate_limit_note", "")) + _DOWNLOAD_RATE_LIMIT_NOTE
+    )
+    result["guidance"] = result["rate_limit_note"]
+    result["tool"] = "PFW_get_document_download"
+    return result
 
 
 async def _get_title_and_patent_number(client, app_number: str):
@@ -358,7 +450,7 @@ async def _register_download_via_proxy(port: int, title: str, doc_type: str, app
 
 
 
-def _upgrade_component_links(result: Dict[str, Any], app_number: str, proxy_port: int) -> None:
+async def _upgrade_component_links(result: Dict[str, Any], app_number: str, proxy_port: int) -> None:
     """Replace each granted-patent component's proxy URL with a persistent
     encrypted link. Best effort: a link-cache failure leaves the plain proxy
     URLs in place rather than failing the package."""
@@ -390,6 +482,21 @@ _MAX_PAGES_ERROR = (
     "themselves are server settings (PYPDF_MAX_PAGES, MISTRAL_OCR_MAX_PAGES), "
     "not call parameters."
 )
+
+
+def _resolved_publication_number(result: Dict[str, Any], identifier: str) -> Optional[str]:
+    """The pre-grant publication number this XML answers to, or None.
+
+    Only the publication LANE establishes one: `identifier_resolved_as` says
+    'publication' exactly when the resolver crosswalked an 11-digit publication
+    number (bare, or the ST.16 'US20080141381A1' form) to its application, so
+    the caller's own identifier is the publication number. Nothing else in the
+    response carries one on the default field set, and a guess would cite the
+    wrong document.
+    """
+    if result.get("identifier_resolved_as") != "publication":
+        return None
+    return normalize_identifier(identifier).cleaned_value or None
 
 
 def _validate_content_window(char_offset, max_chars, page_from, page_to, max_pages=None):
@@ -488,10 +595,14 @@ def register(mcp) -> None:
                 if ctx:
                     await ctx.report_progress(progress, total, message)
 
-            result = await api_client.extract_document_content_hybrid(
-                app_number, document_identifier, auto_optimize, progress_cb=_progress,
-                page_from=page_from, page_to=page_to,
-            )
+            # One end-to-end budget for the whole call (variant fetches, PDF
+            # download, OCR and its retries, Docling), under a reverse proxy's
+            # ~100 s cut: util/deadline.py, PFW_CONTENT_DEADLINE_SECONDS.
+            with deadline_scope(Deadline(content_deadline_seconds())):
+                result = await api_client.extract_document_content_hybrid(
+                    app_number, document_identifier, auto_optimize, progress_cb=_progress,
+                    page_from=page_from, page_to=page_to,
+                )
             # Provenance labeling + detection-only injection scan of the
             # extracted text (kind labels only, text served verbatim — see
             # shared/injection_scan.py). `injection_scan` is ABSENT when clean.
@@ -542,17 +653,21 @@ def register(mcp) -> None:
     Creates clickable proxy links that handle API authentication while keeping credentials secure.
 
     🔗 LINK TYPES:
-    - generate_persistent_link=True: Persistent links (default) - encrypted, valid for 7 days
+    - generate_persistent_link=True: Persistent links (default) - encrypted, valid for
+      PFW_LINK_TTL_DAYS days / PFW_LINK_MAX_USES uses (currently 1 day / 25 uses)
     - generate_persistent_link=False: Immediate links - work while proxy running
 
     🔧 ENHANCED PROXY BEHAVIOR:
     - Always-on proxy: Set ENABLE_ALWAYS_ON_PROXY=true for immediate access
     - On-demand proxy: Automatic startup when first download is requested
-    - Persistent links: Enabled by default - 7-day encrypted links (set generate_persistent_link=false to disable)
-    - Download links work immediately in user's browser and remain valid for 7 days
+    - Persistent links: Enabled by default - encrypted, PFW_LINK_TTL_DAYS/PFW_LINK_MAX_USES
+      bound (currently 1 day / 25 uses; set generate_persistent_link=false to disable)
+    - Download links work immediately in user's browser and remain valid for
+      PFW_LINK_TTL_DAYS days / PFW_LINK_MAX_USES uses (currently 1 day / 25 uses)
 
     🔒 PERSISTENT LINK BENEFITS:
-    - Links work for 7 days without proxy restart
+    - Links work for PFW_LINK_TTL_DAYS days / PFW_LINK_MAX_USES uses (currently 1 day / 25
+      uses) without proxy restart
     - Encrypted storage - no sensitive data in URLs
     - Automatic cleanup of expired links
     - Perfect for lawyer workflows with delayed document review
@@ -567,7 +682,8 @@ def register(mcp) -> None:
     Example workflow for multiple downloads:
     1. PFW_get_application_documents(app_number='17/896,175') → get doc IDs
     2. PFW_get_document_download(app_number='17/896,175', document_identifier='ABC123XYZ') → GENERATES PERSISTENT LINK
-    3. Format ALL download links as clickable markdown (links work immediately and remain valid for 7 days)
+    3. Format ALL download links as clickable markdown (links work immediately and remain
+       valid for PFW_LINK_TTL_DAYS days / PFW_LINK_MAX_USES uses -- currently 1 day / 25 uses)
     4. Optional: Use generate_persistent_link=false for immediate-only links (requires proxy to stay running)
 
     For document selection strategies and multi-document workflows, use PFW_get_guidance (see quick reference chart for section selection)."""
@@ -582,10 +698,13 @@ def register(mcp) -> None:
 
             resolved = await _resolve_target_document(api_client, app_number, document_identifier)
             if isinstance(resolved, dict):  # error response
-                return resolved
+                # A rate-limit refusal passes straight through, carrying its
+                # retry_after_seconds, rather than being restated as a failure
+                # to build a link: the link was never the problem.
+                return _rate_limit_passthrough(resolved)
             target_doc, pdf_option = resolved
 
-            proxy_download_url = _build_download_link(
+            proxy_download_url = await _build_download_link(
                 app_number, document_identifier, proxy_port, generate_persistent_link
             )
             original_download_url = pdf_option.get('downloadUrl', '')
@@ -716,14 +835,28 @@ def register(mcp) -> None:
     US 10,000,000 in mid-2018, also a valid patent number, so it is resolved against the API
     patent-number-first (applicationMetaData.patentNumber, then applicationNumberText) and an
     8-digit serial can be captured by an unrelated granted patent. To FORCE the application
-    lane, pass the slash-comma serial format (e.g. '11/752,072') or content_type='application'
-    ('auto' is the default, 'patent' forces the patent lane). Every response reports
+    lane, pass the slash-comma serial format (e.g. '11/752,072', '29/328,018') or
+    content_type='application' ('auto' is the default, 'patent' forces the patent lane).
+    The slash form is unambiguous in every era and for every series; prefer it whenever
+    you hold a serial. Design (29/), Hague (35/), provisional (60/ to 63/) and
+    reexamination (90/, 95/, 96/) serials are read as applications even when bare, since
+    no granted patent number starts with those digits; a bare 8-digit number is never
+    read as a pre-grant publication number (those are 11 digits, e.g. 20080141381, or
+    'US 2024/0000001 A1'). Every response reports
     identifier_resolved_as, identifier_note, identifier_lanes_tried and, when the input
     could have gone either way, identifier_ambiguous: true, the same block
     PFW_get_patent_or_application_xml returns, on the success path, the upstream-error
     path and the exception path alike. Check those before trusting the documents.
 
     Oversized responses are automatically slimmed (and truncated if still too large) with a `documents_note` explaining what was dropped and how to narrow.
+
+    CITATIONS ARE LINKS: every documentBag row carries `cite_as`, a ready-made markdown
+    link labelled with the row's document code and official date. Paste it after each
+    sentence, table row or timeline entry that rests on that document. A document code
+    plus a date with no link is not a citation. USPTO publishes no public per-document
+    URL, so the link opens the APPLICATION in Patent Center; the document itself is under
+    Documents & Transactions there, by date and code. Never cite this server's own
+    persistent document links: those are credentials, not public records.
 
     For cross-MCP workflows, use PFW_get_guidance (see quick reference chart)."""
         # Bound before the try so the failure path can still report WHICH
@@ -769,12 +902,29 @@ def register(mcp) -> None:
             if docs_result.get('error'):
                 return {**docs_result, **resolution.response_fields()}
 
+            # CITATIONS ARE LINKS (2026-09-05). Stamped BEFORE the response
+            # guard measures the payload, so the links are inside the budget
+            # rather than pushing it over after the fact.
+            document_bag = docs_result.get('documentBag', [])
+            attach_document_cite_as(
+                document_bag,
+                docs_result.get('application_number') or app_number,
+                code_keys=("documentCode", "documentCodeDescriptionText"),
+                date_keys=("officialDate",),
+            )
+
+            # A design application's DRW documents ARE its claim, so the bag
+            # carries the same routing sentence the XML tool gives.
             return _bound_documents_response({
                 "success": True,
                 **resolution.response_fields(),
+                **_design_documents_note(
+                    docs_result.get('application_number') or app_number, document_bag
+                ),
                 "application_number": docs_result.get('application_number'),
                 "count": docs_result.get('count'),
-                "documentBag": docs_result.get('documentBag', []),
+                "documentBag": document_bag,
+                **citation_block(document_bag, DOCUMENT_CITATION_NOTE),
                 "summary": docs_result.get('summary', {}),
                 "request_id": f"docs-{app_number}",
                 "guidance": {
@@ -782,8 +932,8 @@ def register(mcp) -> None:
                         "To READ an office action (CTNF, CTFR, NOA, CTRS), do not use this bag plus "
                         "PFW_get_document_content_with_ocr. PFW_get_oa_text returns the examiner's text "
                         "in one call with no PDF and no scanning step, and PFW_get_oa_rejections triages which "
-                        "OAs are worth reading. Use the bag path for office actions older than the OA text "
-                        "dataset (roughly pre-2008), for non-OA documents, or when an actual PDF is needed."
+                        "OAs are worth reading. Use the bag path for office actions mailed before 2007-07-27 "
+                        "(the ODP Office Action index starts there), for non-OA documents, or when an actual PDF is needed."
                     ),
                     "workflow": [
                         "For office action TEXT, prefer PFW_get_oa_rejections (triage) then PFW_get_oa_text (full text, no OCR)",
@@ -851,6 +1001,10 @@ def register(mcp) -> None:
       - content_type='auto'        → default; patent lane first, application lane second
       - any other value is rejected with a 400 (it does NOT fall back to 'auto')
     Example: identifier='12539322' resolves to PATENT 12,539,322 (application 17996652).
+    The slash-comma form ('11/752,072', '29/328,018') is unambiguous and skips the dance;
+    bare serials in the design (29/), Hague (35/), provisional (60/ to 63/) and
+    reexamination (90/, 95/, 96/) series are read as applications directly, and an
+    11-digit number (or 'US 2024/0000001 A1') is a pre-grant publication number.
     Pass content_type='application' to reach application 12/539,322 instead.
 
     **PUBLICATION NUMBERS.** An 11-digit pre-grant publication number ('20080141381',
@@ -870,6 +1024,13 @@ def register(mcp) -> None:
     the XML carries no references-cited block (normal for pre-grant publication XML),
     'parse_failed' means one IS present but nothing came out of it. Non-patent
     literature is counted in `npl_citations_total` and not listed.
+
+    **CITATIONS ARE LINKS.** The response carries `cite_as`, a ready-made markdown link
+    to the public record this XML came from: Google Patents by patent number for a
+    granted patent, Google Patents by publication number when a pre-grant publication
+    number was resolved, and the application's Patent Center page otherwise. Paste it
+    after every quoted claim, abstract line or specification paragraph you rely on. A
+    claim number or a paragraph pinpoint with no link is not a citation.
 
     **PRE-2005 GRANTS.** The USPTO full-text grant XML dataset starts with patents issued
     in 2005 (probe-verified 2026-08-30). An older grant returns an explicit "not served
@@ -977,6 +1138,10 @@ def register(mcp) -> None:
                 description_paragraph_from, description_paragraph_to,
             )
 
+            # Both outcomes mislead on a design patent, so the routing note is
+            # attached before the success branch. Gated inside the helper.
+            _attach_xml_design_note(result)
+
             # Add patent_number to response so the MCP App widget can show it.
             # For PTGRXML: if the user passed a patent number (identifier != derived app_number),
             # identifier_used IS the patent number.
@@ -994,6 +1159,20 @@ def register(mcp) -> None:
                 # labels only, text served verbatim; `injection_scan` is
                 # ABSENT when clean. See shared/injection_scan.py.
                 result["provenance_note"] = RETRIEVED_TEXT_NOTE
+
+                # CITATIONS ARE LINKS (2026-09-05): a claim quoted out of this
+                # tool used to arrive with nothing to click. A granted patent
+                # cites Google Patents by patent number; a pre-grant publication
+                # cites Google Patents by publication number; anything else
+                # falls back to the application's Patent Center page.
+                cite_as = application_cite_as(
+                    result.get("application_number"),
+                    patent_number=result.get("patent_number")
+                    or result.get("patent_number_resolved"),
+                    publication_number=_resolved_publication_number(result, identifier),
+                )
+                result.update(single_citation_block(cite_as, CITATION_NOTE))
+
                 joined = " ".join(_iter_strings(result.get("structured_content")))
                 kinds = scan_text(joined)
                 if kinds:
@@ -1037,8 +1216,10 @@ def register(mcp) -> None:
         ✅ ENHANCED PROXY INTEGRATION: This tool provides immediate download access!
         - Always-on proxy: Links work immediately (if ENABLE_ALWAYS_ON_PROXY=true)
         - On-demand proxy: Automatic startup when needed
-        - Persistent links: Enabled by default - 7-day encrypted access (set generate_persistent_links=false to disable)
-        - Download links are immediately clickable after tool execution and remain valid for 7 days
+        - Persistent links: Enabled by default - encrypted, PFW_LINK_TTL_DAYS/PFW_LINK_MAX_USES
+          bound (currently 1 day / 25 uses; set generate_persistent_links=false to disable)
+        - Download links are immediately clickable after tool execution and remain valid for
+          PFW_LINK_TTL_DAYS days / PFW_LINK_MAX_USES uses (currently 1 day / 25 uses)
 
         📋 RESPONSE FORMAT: Each component includes BOTH clickable link AND raw URL:
         **📁 [Download {Component} ({Pages} pages)]({url})** | Raw URL: `{url}`
@@ -1106,7 +1287,7 @@ def register(mcp) -> None:
 
             # Upgrade proxy URLs to persistent encrypted links if requested
             if generate_persistent_links and result.get("success"):
-                _upgrade_component_links(result, app_number, proxy_port)
+                await _upgrade_component_links(result, app_number, proxy_port)
 
             # Register each component in recent downloads store for MCP App panel (via proxy endpoint)
             if result.get("success"):

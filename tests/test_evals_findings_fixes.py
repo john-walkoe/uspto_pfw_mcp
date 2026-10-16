@@ -182,7 +182,7 @@ async def test_pdf_tiers_hand_the_page_offset_to_the_mistral_tier(client, monkey
     seen = {}
 
     async def fake_mistral_tier(pdf_content, page_count, app_number, document_identifier,
-                                auto_optimize, progress_cb=None, page_offset=0):
+                                auto_optimize, progress_cb=None, page_offset=0, **_):
         seen["page_offset"] = page_offset
         return {"extracted_content": "x", "extraction_method": "Mistral OCR (direct)"}
 

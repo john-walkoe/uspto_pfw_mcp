@@ -499,8 +499,8 @@ All identifiers are for application **11/752,072** (US-7971071-B2):
 
 | API | Coverage | App 11/752,072 | App 15/992,176 |
 |-----|----------|-------------|-------------|
-| `PFW_get_oa_rejections` | Oct 1, 2017 → ~30 days before today (documented coverage, not probe-verified) | ❌ No data (pre-2017) | ✅ 19 records |
-| `PFW_get_oa_text` | office actions mailed roughly 2008 onward (documented coverage, deliberately hedged and NOT probe-verified - see the module docstring in `tools/oa_tools.py`) | ✅ CTNF text available | ✅ Available |
+| `PFW_get_oa_rejections` | ODP Office Action API: office actions mailed from 2007-07-27 (probe-verified 2026-10-11, module docstring of `tools/oa_tools.py`) | ✅ 5 CTNF/CTFR rows (2008-09-08 to 2010-10-13) | not re-measured since the port |
+| `PFW_get_oa_text` | same index and coverage | ✅ CTNF text available | not re-measured since the port |
 
 **When to use which tool for office action text:**
 
@@ -518,11 +518,10 @@ All identifiers are for application **11/752,072** (US-7971071-B2):
 | Observation | Notes |
 |-------------|-------|
 | App 11/752,072 | 151 total prosecution documents - heavily prosecuted, good for filter reduction testing |
-| OA rejections coverage | Oct 1, 2017 forward only — pre-2017 apps return `num_found = 0` gracefully |
-| OA text coverage | Office actions mailed roughly 2008 onward. This is documented coverage, hedged and not probe-verified anywhere in this repo (see the `tools/oa_tools.py` module docstring); app 11/752,072, filed 2007, has covered office actions from 2008 on |
+| OA coverage (both tools) | ODP Office Action index, office actions mailed from 2007-07-27 (probed 2026-10-11); app 11/752,072, filed 2007, has 5 CTNF/CTFR records from 2008-09-08 on. An application with none returns `num_found = 0` gracefully |
 | Document identifiers | Only valid with their specific `applicationNumberText` — not portable |
-| `PFW_get_oa_text` bodyText | Returned as joined plain text (underlying API returns list — joined server-side) |
+| `PFW_get_oa_text` text | The officeActionText download (text/plain), fetched only for the office actions returned |
 | CTNF vs CTFR | CTNF = Non-Final rejection (common), CTFR = Final rejection — don't swap them |
-| `PFW_get_oa_rejections` for 15/992,176 | 19 records, §101+§112 only, no §103 - art units 2100 / 1765, eligibility focus |
+| `PFW_get_oa_rejections` for 15/992,176 | 19 records, §101+§112 only, no §103 - art units 2100 / 1765, eligibility focus (measured on the retired rejections dataset, rows per rejection group; not re-measured since the 2026-10-11 port) |
 | Docling OCR progress | Visible as "Sending to Docling OCR (N pages — this may take a minute)..." in Claude Desktop status |
 | DOCLING_MAX_PAGES | Default 25 - a longer document skips Docling and the advice names `page_from`/`page_to` plus `DOCLING_MAX_PAGES`; `MISTRAL_API_KEY` is suggested only when no Docling URL is configured |

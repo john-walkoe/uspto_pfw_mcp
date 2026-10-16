@@ -27,7 +27,10 @@ class LogSanitizer:
         # USPTO API keys (30 character alphanumeric)
         'uspto_api_key': re.compile(r'\b[a-zA-Z0-9]{30}\b'),
 
-        # Mistral API keys (32 character alphanumeric)
+        # Mistral API keys: the 2026-09 shape (prefix_<32>_<suffix>) first, so the
+        # bare-32 pattern below does not leave the prefix and suffix in the log
+        'mistral_api_key_v2': re.compile(r'\b[a-z]{2,8}_[a-zA-Z0-9]{32}_[a-zA-Z0-9]{4,8}\b'),
+        # Mistral API keys (32 character alphanumeric, the classic shape)
         'mistral_api_key': re.compile(r'\b[a-zA-Z0-9]{32}\b'),
 
         # JWT tokens (Bearer token pattern)
@@ -68,6 +71,7 @@ class LogSanitizer:
     # Replacement strings
     REPLACEMENTS: Dict[str, str] = {
         'uspto_api_key': '[USPTO_API_KEY]',
+        'mistral_api_key_v2': '[MISTRAL_API_KEY]',
         'mistral_api_key': '[MISTRAL_API_KEY]',
         'jwt_token': '[FILTERED]',
         'api_key_sk': '[API_KEY]',

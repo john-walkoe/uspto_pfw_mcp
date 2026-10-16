@@ -1046,7 +1046,7 @@ PFW_get_document_content_with_ocr(app_number='...', document_identifier='...')
 
 ### 📋 Example 8: Office Action API Analysis
 
-PFW MCP provides two tools that tap directly into USPTO's Office Action APIs — separate from the prosecution document download chain.
+PFW MCP provides two tools that read USPTO's ODP Office Action API (its search plus the per-record full-text download), separate from the prosecution document download chain.
 
 Both tools are scoped to ONE application. They take `application_number`, not a
 Solr `criteria` string: there is no cross-application search on this surface. To
@@ -1054,10 +1054,11 @@ study an examiner's or art unit's rejection patterns, discover the applications
 first with `PFW_search_applications_minimal(art_unit=..., examiner_name=...)`,
 then call the OA tools per application.
 
-#### `PFW_get_oa_rejections` — Rejection Type Indicators (OA Rejections API v2)
+#### `PFW_get_oa_rejections` — Rejection Type Indicators (ODP Office Action API)
 
 Use this to quickly identify what kinds of rejections an application received.
-It is the cheap triage step: small, structured, no document text.
+It is the triage step: small and structured. The server downloads the full text of
+each returned action to count its rejection statements, but returns only the counts.
 
 ```python
 # Rejection triage for one application
@@ -1065,10 +1066,12 @@ PFW_get_oa_rejections(
     application_number='18/823,722',
     rows=5,        # 1-100; the response reports rows_requested / rows_applied
 )
-# → summary: has_102=True, has_103=True, has_112=True, office_actions_count=14
-# → rejections[]: one row PER REJECTION GROUP (submission_date, doc_code,
-#   art_unit, has_101/102/103/112, alice/mayo/bilski/myriad, cite_103_max,
-#   allowed_claims, claims). Several rows can share one office action.
+# → summary: has_101/102/103/112, section_counts totals, rejection_rows_total
+# → rejections[]: one row PER OFFICE ACTION (each CTNF or CTFR), newest first:
+#   submission_date, doc_code, art_unit, rejection_types, section_counts,
+#   has_101/102/103/112, has_double_patenting, office_action_id,
+#   document_identifier. alice/mayo/bilski/myriad, cite_103_max,
+#   allowed_claims and claims are null (no longer published by USPTO).
 
 # Force the application-serial lane for a bare 8-digit number
 PFW_get_oa_rejections(
@@ -1078,16 +1081,29 @@ PFW_get_oa_rejections(
 ```
 
 **Key summary and row fields:**
-- `has_101` / `has_102` / `has_103` / `has_112` - statutory basis of the rejection
-- `alice` / `mayo` / `bilski` / `myriad` - eligibility-framework indicators
-- `office_actions_count` - the true office-action count (rows are per rejection group)
+- `rejection_types` - USPTO's rejectionTypeBag for the action: `'101'`, `'102'`,
+  `'103'`, `'112'`, `'DoublePatent'`, `'Other'`
+- `section_counts` - the "rejected under 35 U.S.C. <n>" statements in the action's
+  full text, per section
+- `has_101` / `has_102` / `has_112` - from the bag; `has_103` needs both the bag and
+  at least one § 103 statement in the text (`has_103_indicator_raw` is the bag alone)
+- `office_action_id` / `document_identifier` - the index record and the Patent
+  Center document id
+- `rejection_rows_total` (alias `office_actions_count`) - CTNF and CTFR actions the
+  index holds for the application
+- `latest_only=True` returns one row
+- The bag and the text can disagree; the tool returns both, so read the text with
+  `PFW_get_oa_text` before relying on either
+- `alice` / `mayo` / `bilski` / `myriad`, `cite_103_max`, `allowed_claims` and
+  `claims` are no longer published by USPTO and come back null with a note
 
-**Coverage:** office actions mailed Oct 1, 2017 through roughly 30 days before
-today. An empty result on an older application is a coverage gap, not an
-application without rejections - `PFW_get_oa_text` reaches considerably
-further back.
+**Coverage:** office actions mailed from 2007-07-27 onward, almost all for
+applications filed 2001 or later. An empty result (`num_found=0`) means the index
+holds no non-final or final rejection for that application; use
+`PFW_get_application_documents(document_code='CTNF'|'CTFR')` for actions mailed
+before the index starts.
 
-#### `PFW_get_oa_text` — Full Office Action Text (OA Actions API v1)
+#### `PFW_get_oa_text` — Full Office Action Text (ODP Office Action API)
 
 Use this to retrieve the actual body text of an office action, or just a specific rejection section.
 
@@ -1119,15 +1135,16 @@ PFW_get_oa_text(
 )
 ```
 
-**`action_type` values the dataset actually serves:** `CTNF`, `CTFR`, `NOA`,
+**`action_type` values the tool serves:** `CTNF`, `CTFR`, `NOA`,
 `CTRS`, `CTEQ`, `CTAV`, `NRES`, `CTMS`, `EXIN`, `ABN`. Anything else is
 rejected with the served set in the error, rather than returning an empty
 result that reads as "no such action".
 
 **Available `section` values:** `'101'`, `'102'`, `'103'`, `'112'`, or `'all'`
-(the default) for full body text. USPTO populates the section sub-documents
-sparsely; when the requested section is empty the tool falls back to the full
-body and says so via `section_requested` / `section_returned` / `section_note`.
+(the default) for the full text. A section is the text under the action's own
+"Claim Rejections - 35 USC § <n>" heading; when the action has no such heading the
+tool returns the full text and says so via `section_requested` /
+`section_returned='all'` / `section_note`.
 
 #### Combined OA + Document Workflow
 
@@ -1149,7 +1166,7 @@ PFW_get_application_documents(app_number='11/752,072', document_code='CTNF')
 PFW_get_document_download(app_number='11/752,072', document_identifier='...')
 ```
 
-**When to use OA APIs vs document extraction:**
+**When to use the OA tools vs document extraction:**
 | Use Case | Tool |
 |----------|------|
 | Rejection type summary (§101/§102/§103/§112?) | `PFW_get_oa_rejections` |
@@ -1189,8 +1206,8 @@ For testing cross-MCP integration:
 *   `PFW_get_application_documents` - Prosecution document metadata with filtering
 *   `PFW_get_document_content_with_ocr` - 4-tier text extraction: USPTO free-text variants → pypdf native text layer → Mistral OCR → Docling OCR
 *   `PFW_get_document_download` - Secure browser downloads
-*   `PFW_get_oa_rejections` - USPTO OA Rejections API v2 (rejection type indicators)
-*   `PFW_get_oa_text` - USPTO OA Actions API v1 (full OA body text + section excerpts)
+*   `PFW_get_oa_rejections` - ODP Office Action API (rejection types and statement counts per non-final/final rejection)
+*   `PFW_get_oa_text` - ODP Office Action API (full office action text + section excerpts)
 *   `PFW_get_family` - Normalized continuity graph (parents, children, CON/CIP/DIV) plus foreign priority
 *   `PFW_get_term_adjustment` - Patent Term Adjustment days and event history
 *   `PFW_get_guidance` - Context-efficient selective guidance (see quick reference chart)

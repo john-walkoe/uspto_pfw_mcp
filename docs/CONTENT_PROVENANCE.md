@@ -12,7 +12,7 @@ the server-instructions posture paragraph is in
 
 Every document served by this system originates from USPTO Open Data Portal
 APIs at `api.uspto.gov`: the Patent File Wrapper API (prosecution documents and
-metadata), the Office Action text and rejections APIs, and USPTO-published
+metadata), the Office Action API (office-action search and full text), and USPTO-published
 patent/application XML. Filers are identified applicants and practitioners, and
 prosecution documents are filed under the USPTO's duty of candor and signature
 rules and carry legal effect. This is a curated regulatory corpus, not the open

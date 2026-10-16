@@ -1,6 +1,14 @@
 """Admin tool: pfw_manage_users (audit F2 split from main.py).
 
-Registration-gated by PFW_ENABLE_USER_MANAGEMENT (default off — audit H1)."""
+Registration-gated by PFW_ENABLE_USER_MANAGEMENT (default off — audit H1).
+
+Owner-only: with PFW_OWNER_EMAILS set, the provider withholds pfw:admin from
+every non-owner token, so only an owner (or the operator's
+PFW_AUTH_INTERNAL_ADMIN_TOKEN) reaches this tool at all. One rule is restated
+here at the action: only an owner EMAIL may grant the admin role (PFW hosts
+the roster PTAB and FPD read, so a row written here is admin on every sibling
+that reads it). Under stdio there is no per-identity caller; the OS process
+boundary is the gate."""
 
 import os
 from typing import Any, Dict, Optional
@@ -29,6 +37,10 @@ _auth_provider = None
 
 _EMAIL_RE = None  # compiled lazily
 
+_ROLES = ("user", "admin")
+
+_OWNER_GRANT_ERROR = "only an owner of this deployment may grant the admin role"
+
 
 def _get_user_store():
     """User store for the management tool: reuse the auth provider's store in
@@ -56,6 +68,36 @@ def _actor() -> str:
     except Exception:
         pass
     return "local-process"
+
+
+def _caller_is_owner() -> bool:
+    """Is the caller an owner of this deployment?
+
+    True outside OAuth (no per-identity caller) and when no owner list is
+    configured (the scope gate already decided). Otherwise the caller's email
+    must be on PFW_OWNER_EMAILS.
+    """
+    if _auth_provider is None:
+        return True
+    owners = getattr(_auth_provider, "owner_emails", None) or frozenset()
+    if not owners:
+        return True
+    caller = (_actor() or "").strip().lower()
+    return caller in owners
+
+
+def _role_error(action: str, role: str, actor: str, email: str) -> Optional[str]:
+    """Why an add / set_role may not proceed, or None. Only an owner email
+    may grant the admin role; that refusal is audited like any failed
+    mutation."""
+    if action not in ("add", "set_role"):
+        return None
+    if role not in _ROLES:
+        return f"role must be 'user' or 'admin', got {role!r}"
+    if role == "admin" and not _caller_is_owner():
+        _audit_user_management(actor, action, email, role, False, "not an owner")
+        return _OWNER_GRANT_ERROR
+    return None
 
 
 def _audit_user_management(actor: str, action: str, target: str, role: str,
@@ -91,8 +133,10 @@ async def pfw_manage_users(
 
     Lists, adds, activates, deactivates, or changes the role of registered
     users. A user may sign in via Google / Microsoft only while their row is
-    active; role 'admin' additionally grants this user-management tool.
-    PFW hosts the SHARED paid-tier user file — PTAB and FPD read the same
+    active; role 'admin' additionally grants this user-management tool (on a
+    deployment with an owner list, only to an owner, and only an owner may
+    grant it).
+    PFW hosts the SHARED user file — PTAB and FPD read the same
     database, so changes here apply to all three servers. Changes take
     effect at the user's next token refresh (up to 1 hour).
 
@@ -124,10 +168,11 @@ async def pfw_manage_users(
             email = email.strip().lower()
             if not _EMAIL_RE.match(email):
                 return {"error": f"invalid email address: {email!r}"}
+        role_error = _role_error(action, role, actor, email)
+        if role_error:
+            return {"error": role_error}
 
         if action == "add":
-            if role not in ("user", "admin"):
-                return {"error": f"role must be 'user' or 'admin', got {role!r}"}
             await store.upsert_user(
                 email,
                 role=role,
@@ -136,8 +181,6 @@ async def pfw_manage_users(
             )
             message = f"Added/updated {email} with role '{role}'."
         elif action == "set_role":
-            if role not in ("user", "admin"):
-                return {"error": f"role must be 'user' or 'admin', got {role!r}"}
             existing = await store.get_user(email)
             if existing is None:
                 _audit_user_management(actor, action, email, role, False, "no such user")

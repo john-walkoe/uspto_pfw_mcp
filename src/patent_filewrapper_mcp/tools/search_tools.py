@@ -9,6 +9,7 @@ from ..api.enhanced_client import EnhancedPatentClient
 from ..api.helpers import (
     annotate_earliest_priority,
     create_error_response,
+    escape_lucene_free_query,
     escape_lucene_query_term,
     format_error_response,
     map_query_field_names,
@@ -22,6 +23,7 @@ from ..models.search_params import (
     SearchParameters,
 )
 from ..shared.safe_logger import get_safe_logger
+from ..util.citation_links import CITATION_NOTE, attach_application_cite_as
 from ..util.error_handlers import mcp_error_handler
 from ..app_uris import _SEARCH_URI
 
@@ -76,6 +78,25 @@ def _stamp_limit_clamp(result, clamp_marker):
         paging = result.get("paging")
         if isinstance(paging, dict):
             paging["limit_requested"] = clamp_marker["limit_clamped"]["requested"]
+    return result
+
+
+def _stamp_search_citations(result):
+    """Attach `cite_as` to every search hit and `citation_note` to the envelope.
+
+    CITATIONS ARE LINKS (2026-09-05): the walkthrough answers cited applications
+    by number with nothing to click, because the JSON carried no link while the
+    MCP App panel built one client-side. A granted hit cites Google Patents, an
+    ungranted one its Patent Center application page. No-op on an error envelope
+    and on a response with no hits, so `citation_note` never promises links that
+    are not there.
+    """
+    if not isinstance(result, dict) or not result.get("success"):
+        return result
+    stamped = attach_application_cite_as(result.get("applications"))
+    stamped += attach_application_cite_as(result.get("unique_applications"))
+    if stamped:
+        result["citation_note"] = CITATION_NOTE
     return result
 
 
@@ -191,6 +212,15 @@ def _require_iso_dates(**dates) -> None:
             )
 
 
+def _join_query_parts(query_parts: List[str], has_free_query: bool) -> str:
+    """AND the parts together. A free query (always first) is parenthesised
+    when filters follow it, so one with OR in it binds before them: "A OR B AND
+    art" would otherwise read as "A OR (B AND art)"."""
+    if has_free_query and len(query_parts) > 1:
+        query_parts = [f"({query_parts[0]})", *query_parts[1:]]
+    return " AND ".join(query_parts)
+
+
 def _build_query_from_params(
     query: str = "",
     art_unit: Optional[str] = None,
@@ -235,9 +265,9 @@ def _build_query_from_params(
     if query and query.strip():
         # Map user-friendly field names to API field names (e.g., patentNumber -> applicationMetaData.patentNumber)
         mapped_query = map_query_field_names(query.strip())
-        # Then escape special characters in the VALUES
-        escaped_query = escape_lucene_query_term(mapped_query)
-        # No parentheses - API examples show queries without them
+        # Then escape special characters, keeping the caller's grouping
+        # parentheses (escaping them broke `field:(A OR B)`, 2026-10-07)
+        escaped_query = escape_lucene_free_query(mapped_query)
         query_parts.append(escaped_query)
 
     if art_unit:
@@ -291,7 +321,7 @@ def _build_query_from_params(
         raise ValidationError("Must provide either 'query' parameter or at least one convenience parameter")
 
     # Combine all query parts with AND
-    return " AND ".join(query_parts)
+    return _join_query_parts(query_parts, has_free_query=bool(query and query.strip()))
 
 
 async def _search_applications_with_params(params: SearchParameters) -> Dict[str, Any]:
@@ -429,6 +459,12 @@ def register(mcp) -> None:
     PFW_search_applications(query='artificial intelligence', art_unit='2128', fields=['applicationNumberText', 'patentNumber', 'inventionTitle'], limit=50)
     ```
 
+    CITATIONS ARE LINKS: every hit carries `cite_as`, a ready-made markdown link
+    (a granted patent points at Google Patents, anything else at the application's
+    Patent Center page). Paste it after each sentence, table row or memo line that
+    rests on that hit. An application number, a patent number or a date with no
+    link is not a citation here.
+
     For complex search strategies and cross-MCP workflows, use PFW_get_guidance (see quick reference chart for section selection)."""
 
         # Create SearchParameters object and delegate to helper function
@@ -451,9 +487,9 @@ def register(mcp) -> None:
                 grant_date_start=grant_date_start,
                 grant_date_end=grant_date_end
             )
-            return _stamp_limit_clamp(
+            return _stamp_search_citations(_stamp_limit_clamp(
                 await _search_applications_with_params(params), limit_clamp
-            )
+            ))
         except ParameterValidationError as e:
             # Typed field mapping (audit F24 — no more substring-matching the
             # exception text, which misfiled e.g. "rate limit exceeded")
@@ -488,6 +524,24 @@ def register(mcp) -> None:
 
     Supports exact, fuzzy, and comprehensive name matching strategies. Returns customizable field sets.
 
+    ⚠️ COMMON GIVEN NAME + FUZZY MATCHING = NOISE. The comprehensive/fuzzy
+    strategy fans a full "Surname, Given" query out into several sub-queries
+    and unions the hits — on a common or short given name (John, Michael,
+    David, etc.) paired with a real surname, this can pull in unrelated
+    applications where the given name matched some other field loosely
+    rather than a genuine inventor record. Observed: name="Walkoe, John"
+    returned 5 unrelated applications with no actual "John Walkoe" inventor
+    among them; name="Walkoe" alone returned exactly the correct 3 (target
+    patent + its own provisional + one distinguishable same-surname match).
+
+    WORKAROUND: when a first search on "Surname, Given" returns results that
+    don't look right, or the given name is common, re-run with the SURNAME
+    ALONE first. A rare/distinctive surname alone is usually precise enough
+    on its own; add art_unit, filing_date_start/end, or applicant_name to
+    narrow further if the bare surname returns too many hits. Only fall back
+    to the full "Surname, Given" query when the surname alone is itself
+    common (Smith, Kim, etc.).
+
     **Convenience parameters - see PFW_search_inventor_minimal for details:**
     - `art_unit`, `examiner_name`, `applicant_name`, `customer_number`, `status_code`, `filing_date_start/end`, `grant_date_start/end`
 
@@ -511,6 +565,12 @@ def register(mcp) -> None:
     filing_date_end=, applicant_name=), or take a known application number to
     PFW_search_applications, which DOES page with `offset=` and reports a true
     `paging.total`.
+
+    CITATIONS ARE LINKS: every hit carries `cite_as`, a ready-made markdown link
+    (a granted patent points at Google Patents, anything else at the application's
+    Patent Center page). Paste it after each sentence, table row or memo line that
+    rests on that hit. An application number, a patent number or a date with no
+    link is not a citation here.
 
     For advanced inventor analysis and cross-MCP workflows, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
@@ -585,7 +645,7 @@ def register(mcp) -> None:
                     'results_after_filter': len(filtered_apps)
                 }
 
-            return _stamp_limit_clamp(result, limit_clamp)
+            return _stamp_search_citations(_stamp_limit_clamp(result, limit_clamp))
         except Exception as e:
             return format_error_response(f"Inventor search failed: {str(e)}")
 
@@ -677,6 +737,12 @@ def register(mcp) -> None:
     3. Use PFW_search_applications_balanced for detailed analysis (10-20 selected)
     4. Use PFW_get_application_documents for document access (1-5 applications)
 
+    CITATIONS ARE LINKS: every hit carries `cite_as`, a ready-made markdown link
+    (a granted patent points at Google Patents, anything else at the application's
+    Patent Center page). Paste it after each sentence, table row or memo line that
+    rests on that hit. An application number, a patent number or a date with no
+    link is not a citation here.
+
     For complex workflows and cross-MCP integration, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
             # Build query from convenience parameters using centralized helper
@@ -730,7 +796,7 @@ def register(mcp) -> None:
                     'recommended_workflow': {
                         'full_analysis': 'minimal → PFW_get_patent_or_application_xml',
                         'claims_analysis': 'minimal → PFW_get_application_documents(document_code=CLM) → PFW_get_document_content_with_ocr (both initial and final claims)',
-                        'office_action_analysis': 'minimal → PFW_get_oa_rejections (triage which OAs matter) → PFW_get_oa_text(action_type=CTFR|CTNF, section=101|102|103|112) — one call, no OCR. Fall back to PFW_get_application_documents(document_code=CTFR|CTNF) → PFW_get_document_content_with_ocr only for OAs older than ~2008 or when a PDF is needed',
+                        'office_action_analysis': 'minimal → PFW_get_oa_rejections (triage which OAs matter) → PFW_get_oa_text(action_type=CTFR|CTNF, section=101|102|103|112) — one call, no OCR. Fall back to PFW_get_application_documents(document_code=CTFR|CTNF) → PFW_get_document_content_with_ocr only for OAs mailed before 2007-07-27 or when a PDF is needed',
                         'examiner_citations': 'minimal → Citations_search_oa_citations_minimal (raw Form 892 list, broadest coverage) → PFW_get_application_documents(document_code=892) → PFW_get_document_content_with_ocr only if the form image itself is needed',
                         'applicant_citations': 'minimal → Citations_search_oa_citations_minimal (raw Form 1449/IDS list) → PFW_get_application_documents(document_code=IDS|1449) → PFW_get_document_content_with_ocr only if the form image itself is needed',
                         'noa_analysis': 'minimal → PFW_get_oa_text(action_type=NOA) for the allowance reasoning — no OCR. PFW_get_application_documents(document_code=NOA) → PFW_get_document_content_with_ocr is the fallback',
@@ -739,7 +805,7 @@ def register(mcp) -> None:
                     }
                 }
 
-            return _stamp_limit_clamp(enhanced_results, limit_clamp)
+            return _stamp_search_citations(_stamp_limit_clamp(enhanced_results, limit_clamp))
 
         except Exception as e:
             return format_error_response(f"Minimal search failed: {str(e)}")
@@ -781,6 +847,12 @@ def register(mcp) -> None:
     2. User selects 10 interesting applications
     3. Optional Get additional fields: PFW_search_applications_balanced(query='applicationNumberText:X OR ...', limit=10)
     4. Analysis - Use cross-reference fields for other USPTO MCP integrations or PFW_get_patent_or_application_xml to pull the text of the application or patent into context for Analysis
+
+    CITATIONS ARE LINKS: every hit carries `cite_as`, a ready-made markdown link
+    (a granted patent points at Google Patents, anything else at the application's
+    Patent Center page). Paste it after each sentence, table row or memo line that
+    rests on that hit. An application number, a patent number or a date with no
+    link is not a citation here.
 
     For complex workflows and cross-MCP integration, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
@@ -841,9 +913,9 @@ def register(mcp) -> None:
                     'search_tier': 'balanced'
                 }
 
-                return _stamp_limit_clamp(enhanced_results, limit_clamp)
+                return _stamp_search_citations(_stamp_limit_clamp(enhanced_results, limit_clamp))
             else:
-                return _stamp_limit_clamp(search_results, limit_clamp)
+                return _stamp_search_citations(_stamp_limit_clamp(search_results, limit_clamp))
 
         except Exception as e:
             return format_error_response(f"Balanced search failed: {str(e)}")
@@ -870,6 +942,24 @@ def register(mcp) -> None:
     Find applications by inventor name, who invented, inventor portfolio, name variants and spelling variations, filings by a person.
 
     **RECOMMENDED: Use this tool first with convenience parameters for high-volume inventor discovery.**
+
+    ⚠️ COMMON GIVEN NAME + FUZZY MATCHING = NOISE. The comprehensive/fuzzy
+    strategy fans a full "Surname, Given" query out into several sub-queries
+    and unions the hits — on a common or short given name (John, Michael,
+    David, etc.) paired with a real surname, this can pull in unrelated
+    applications where the given name matched some other field loosely
+    rather than a genuine inventor record. Observed: name="Walkoe, John"
+    returned 5 unrelated applications with no actual "John Walkoe" inventor
+    among them; name="Walkoe" alone returned exactly the correct 3 (target
+    patent + its own provisional + one distinguishable same-surname match).
+
+    WORKAROUND: when a first search on "Surname, Given" returns results that
+    don't look right, or the given name is common, re-run with the SURNAME
+    ALONE first. A rare/distinctive surname alone is usually precise enough
+    on its own; add art_unit, filing_date_start/end, or applicant_name to
+    narrow further if the bare surname returns too many hits. Only fall back
+    to the full "Surname, Given" query when the surname alone is itself
+    common (Smith, Kim, etc.).
 
     Use for high-volume inventor discovery (20-50 results) when exploring inventor portfolios
     or finding applications to analyze in detail later. Default returns 15 core fields per application
@@ -936,6 +1026,12 @@ def register(mcp) -> None:
     3. Use PFW_search_inventor_balanced for detailed analysis (10-20 selected)
     4. Use PFW_get_application_documents for document access (1-5 applications)
 
+    CITATIONS ARE LINKS: every hit carries `cite_as`, a ready-made markdown link
+    (a granted patent points at Google Patents, anything else at the application's
+    Patent Center page). Paste it after each sentence, table row or memo line that
+    rests on that hit. An application number, a patent number or a date with no
+    link is not a citation here.
+
     For advanced inventor research workflows, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
             # Input validation (audit: the inventor tiers had NO limit check of
@@ -998,7 +1094,7 @@ def register(mcp) -> None:
                     search_results['query_info'] = {}
                 search_results['query_info']['search_tier'] = 'inventor_minimal'
 
-            return _stamp_limit_clamp(search_results, limit_clamp)
+            return _stamp_search_citations(_stamp_limit_clamp(search_results, limit_clamp))
 
         except Exception as e:
             return format_error_response(f"Minimal inventor search failed: {str(e)}")
@@ -1026,6 +1122,24 @@ def register(mcp) -> None:
 
     **Use for detailed inventor portfolio analysis after minimal search.**
 
+    ⚠️ COMMON GIVEN NAME + FUZZY MATCHING = NOISE. The comprehensive/fuzzy
+    strategy fans a full "Surname, Given" query out into several sub-queries
+    and unions the hits — on a common or short given name (John, Michael,
+    David, etc.) paired with a real surname, this can pull in unrelated
+    applications where the given name matched some other field loosely
+    rather than a genuine inventor record. Observed: name="Walkoe, John"
+    returned 5 unrelated applications with no actual "John Walkoe" inventor
+    among them; name="Walkoe" alone returned exactly the correct 3 (target
+    patent + its own provisional + one distinguishable same-surname match).
+
+    WORKAROUND: when a first search on "Surname, Given" returns results that
+    don't look right, or the given name is common, re-run with the SURNAME
+    ALONE first. A rare/distinctive surname alone is usually precise enough
+    on its own; add art_unit, filing_date_start/end, or applicant_name to
+    narrow further if the bare surname returns too many hits. Only fall back
+    to the full "Surname, Given" query when the surname alone is itself
+    common (Smith, Kim, etc.).
+
     Returns 24 key fields including all minimal fields plus applicantBag, assignmentBag, and application
     status description for detailed portfolio analysis.
 
@@ -1052,6 +1166,12 @@ def register(mcp) -> None:
     2. User selects 10 interesting applications
     3. Optional Get additional fields: PFW_search_inventor_balanced(name='John Smith', limit=10)
     4. Analysis - Use cross-reference fields for other USPTO MCP integrations or PFW_get_patent_or_application_xml to pull the text of the application or patent into context for Analysis
+
+    CITATIONS ARE LINKS: every hit carries `cite_as`, a ready-made markdown link
+    (a granted patent points at Google Patents, anything else at the application's
+    Patent Center page). Paste it after each sentence, table row or memo line that
+    rests on that hit. An application number, a patent number or a date with no
+    link is not a citation here.
 
     For complex workflows and cross-MCP integration, use PFW_get_guidance (see quick reference chart for section selection)."""
         try:
@@ -1119,7 +1239,7 @@ def register(mcp) -> None:
                     search_results['query_info'] = {}
                 search_results['query_info']['search_tier'] = 'inventor_balanced'
 
-            return _stamp_limit_clamp(search_results, limit_clamp)
+            return _stamp_search_citations(_stamp_limit_clamp(search_results, limit_clamp))
 
         except Exception as e:
             return format_error_response(f"Enhanced inventor balanced search failed: {str(e)}")

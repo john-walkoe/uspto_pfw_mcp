@@ -15,7 +15,7 @@ token refresh (access tokens live PFW_AUTH_ACCESS_TTL seconds, 1h).
 The SQLite file is PFW_AUTH_DB_PATH (default data/mcp_auth.db). On the
 deployment box run inside the container against the mounted DB:
 `docker exec pfw-mcp python scripts/manage_mcp_users.py list`.
-PFW hosts the SHARED paid-tier user file (PTAB/FPD mount the same DB).
+PFW hosts the SHARED user file (PTAB/FPD mount the same DB).
 This is the bootstrap surface — the first admin must be seeded here before
 the pfw_manage_users MCP tool can be used.
 """

@@ -31,6 +31,17 @@ class AuthSettings:
     auth_access_ttl: int = 900
     auth_refresh_ttl: int = 2592000  # 30 d idle timeout
     auth_db_path: str = "data/mcp_auth.db"  # SQLite: users + OAuth AS state
+    # Comma-separated owner emails (PFW_OWNER_EMAILS). When set, only these
+    # accounts can hold pfw:admin, and only they can grant the admin role.
+    # Empty keeps the pre-2026-10 behavior (any roster admin is admin here).
+    auth_owner_emails: str = ""
+
+    @property
+    def owner_emails(self) -> frozenset:
+        """PFW_OWNER_EMAILS parsed (lowercased); empty when unset."""
+        return frozenset(
+            e.strip().lower() for e in self.auth_owner_emails.split(",") if e.strip()
+        )
 
     @classmethod
     def from_env(cls) -> "AuthSettings":
@@ -49,4 +60,5 @@ class AuthSettings:
             auth_access_ttl=int(os.getenv("PFW_AUTH_ACCESS_TTL", "900")),
             auth_refresh_ttl=int(os.getenv("PFW_AUTH_REFRESH_TTL", "2592000")),
             auth_db_path=os.getenv("PFW_AUTH_DB_PATH", "data/mcp_auth.db"),
+            auth_owner_emails=os.getenv("PFW_OWNER_EMAILS", ""),
         )

@@ -269,8 +269,10 @@ class PTABDocumentStore:
     def cleanup_expired_documents(self, max_age_days: int = 7) -> int:
         """Delete registrations older than max_age_days (audit L8): rows hold
         encrypted API keys and should not accumulate indefinitely. Mirrors
-        SecureLinkCache.cleanup_expired_links; 7 days matches the persistent
-        link lifetime."""
+        SecureLinkCache.cleanup_expired_links, but on its OWN 7-day window --
+        that no longer matches the persistent-link TTL (PFW_LINK_TTL_DAYS,
+        currently 1 day / PFW_LINK_MAX_USES uses, currently 25, since
+        ae7ac0e; review 2026-09-28) and was never wired to it."""
         try:
             conn = create_secure_connection(self.db_path)
             try:

@@ -11,6 +11,7 @@ import httpx
 
 from ...api.helpers import validate_app_number, generate_request_id
 from ...shared.safe_logger import get_safe_logger
+from ...util.client_ip import resolve_client_ip
 from ...util.security_logger import security_logger
 from ..fpd_document_store import get_fpd_store
 from ..ptab_document_store import get_ptab_store
@@ -222,7 +223,9 @@ async def download_document(
         document_identifier: Document ID from documentBag (e.g., 'L7AJVPB2GREENX5')
         request: FastAPI request object (for client IP)
     """
-    client_ip = request.client.host if request.client else "unknown"
+    # Resolved, not the raw peer: behind a reverse proxy the raw peer is the
+    # proxy's own address for every caller.
+    client_ip = resolve_client_ip(request)
     request_id = generate_request_id()
 
     # Apply rate limiting. Charged HERE only: the persistent-link resolver
@@ -460,8 +463,10 @@ async def download_document_persistent(link_hash: str, request: Request):
     try:
         from ..secure_link_cache import get_link_cache
 
-        # Get client IP for rate limiting
-        client_ip = request.client.host if request.client else "unknown"
+        # Get client IP for rate limiting. Resolved, not the raw peer: behind
+        # a reverse proxy the raw peer is the proxy's own address for every
+        # caller.
+        client_ip = resolve_client_ip(request)
         request_id = generate_request_id()
 
         # Apply rate limiting

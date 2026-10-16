@@ -116,6 +116,36 @@ def escape_lucene_query_term(term: str) -> str:
     return escaped
 
 
+def escape_lucene_free_query(query: str) -> str:
+    """Escape a caller's free-text Lucene query, keeping its grouping.
+
+    Like escape_lucene_query_term, but parentheses pass through so that
+    ``applicationNumberText:(11752072 OR 11478856)`` groups as written.
+    Escaping them turned the group into literal text that matched other fields
+    (it returned application 16/409,911 via patent 11,478,856; skills re-test
+    2026-10-07). The index is public USPTO data with no per-user filter, so a
+    query can only narrow or widen its own results. Unbalanced parentheses are
+    refused here with a clear message instead of an upstream 400.
+    """
+    if not query:
+        return query
+    depth = 0
+    for ch in str(query):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                break
+    if depth != 0:
+        raise ValidationError("Unbalanced parentheses in query: every '(' needs a matching ')'.")
+    specials = r'[\\\+&|\!\{\}\^~]'
+    escaped = re.sub(specials, lambda m: '\\' + m.group(0), str(query))
+    if len(escaped) > 1000:
+        raise ValidationError(f"Query term too long after escaping: {len(escaped)} characters")
+    return escaped
+
+
 def sanitize_traceback(tb_str: str) -> str:
     """
     Remove sensitive information from tracebacks
@@ -214,6 +244,163 @@ def format_error_response(
         }
 
     return response
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting (2026-09-05)
+# ---------------------------------------------------------------------------
+#
+# Five back-to-back PFW_get_document_download calls made the fifth fail three
+# times with the client reporting "connector's server isn't responding" before
+# it finally succeeded. Two separate defects produced that:
+#
+#   1. A 429 came back through the generic 4xx path as
+#      `{"message": "API error: <raw USPTO body>"}`. Fast, but the model has no
+#      way to see that WAITING is the fix, so it retried immediately and made
+#      the queue worse.
+#   2. The shared cross-process limiter raises TimeoutError after
+#      USPTO_SHARED_MAX_WAIT_SECONDS (45 s since the 2026-10-11 ODP wave; 30 s
+#      then), which landed in the transport's generic `except Exception` and
+#      was RETRIED. Three attempts at up to 30s of acquire wait each, plus
+#      backoff, is ~93 seconds of silence, past the client's own patience,
+#      which is exactly what "isn't responding" means.
+#
+# Both now answer with this envelope: it says a wait is the remedy, how long,
+# and which limiter imposed it. Waiting is a fact about the NEXT call, so it is
+# stated as data rather than buried in prose.
+#
+# ODP rate-limit wave (PLAN-odp-rate-limit-wave-2026-10-11, sections 2c and
+# 4a, decision D4): the 429 rule for every ODP call site is now
+# `planned_429_wait` below. On a 429 the call site records the 429 on the
+# shared key cooldown (`note_429`), then waits max(5 s, Retry-After) and sends
+# ONCE more, but only when that wait is at most 10 s and fits the call's
+# remaining budget; otherwise it answers with this envelope carrying
+# retry_after_seconds = max(5, Retry-After). Never a second retry. The wait
+# holds no shared slot. This replaced the 3.0 s self-paced cap: that cap
+# existed to keep tool calls from hanging, and a single 5 to 10 s wait under
+# the limiter's 45 s queue ceiling does not hang them. Waiting 5 s with no
+# Retry-After is not sleeping blind: 5 s is USPTO's own published floor.
+
+#: Value of `rate_limit_source`, naming which limiter refused the call. They
+#: have different remedies: `uspto_api` is USPTO's own quota (spacing calls
+#: fixes it), `shared_uspto_limiter` is this fleet's cross-process limiter
+#: (another USPTO MCP on the same box is holding the slots).
+RATE_LIMIT_SOURCE_UPSTREAM = "uspto_api"
+RATE_LIMIT_SOURCE_SHARED_LIMITER = "shared_uspto_limiter"
+
+#: USPTO's published floor: no retry within 5 s of a 429. The single 429
+#: retry never waits less than this, and the envelope's retry_after_seconds
+#: is never below it, Retry-After header or not.
+RATE_LIMIT_WAIT_FLOOR_SECONDS = 5.0
+
+#: Longest single 429 wait this server absorbs on the caller's behalf (plan
+#: 2c, D4). A Retry-After above it is REPORTED in the envelope and the call
+#: returns at once: holding a tool call open for a minute is the hang this
+#: work exists to end.
+RATE_LIMIT_ABSORB_CEILING_SECONDS = 10.0
+
+#: The envelope's wait whenever no Retry-After header says otherwise: the
+#: published floor. (Until 2026-10-13 this was 10.0, the download proxy's
+#: "5 downloads per 10s" figure; the plan's rule is max(5, Retry-After).)
+DEFAULT_RETRY_AFTER_SECONDS = RATE_LIMIT_WAIT_FLOOR_SECONDS
+
+_RATE_LIMIT_NOTE = (
+    "Rate limited, not broken: this same call should succeed after the wait. "
+    "Retry it ONCE after retry_after_seconds, and space the calls that follow "
+    "out rather than issuing them back to back. Do not retry immediately and "
+    "do not fan the remaining calls out in parallel: that is what produced "
+    "this refusal."
+)
+
+_SHARED_LIMITER_NOTE = (
+    " The refusal came from this deployment's shared USPTO rate limiter, not "
+    "from USPTO itself, so another USPTO MCP on the same host was holding the "
+    "request slots. Nothing is wrong with this document or this application."
+)
+
+
+def parse_retry_after(value: Any) -> Optional[float]:
+    """Seconds from a Retry-After header, or None.
+
+    Only the delta-seconds form is honored. The HTTP-date form is legal but
+    USPTO does not send it, and a mis-parsed date would produce a wait of
+    decades or a negative one, either of which is worse than no number at all.
+    """
+    if value is None:
+        return None
+    try:
+        seconds = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    if seconds != seconds or seconds < 0:  # NaN or negative
+        return None
+    return seconds
+
+
+def retry_after_from(response: Any) -> Optional[float]:
+    """The Retry-After header of a 429 response as seconds, or None."""
+    headers = getattr(response, "headers", None) or {}
+    return parse_retry_after(headers.get("Retry-After"))
+
+
+def planned_429_wait(
+    retry_after: Optional[float], already_retried: bool, remaining_budget: float
+) -> Optional[float]:
+    """Seconds to wait before the single 429 retry, or None for "answer with
+    the rate-limit envelope now".
+
+    One rule for every ODP client (USPTOTransport, the Office Action client,
+    the direct downloads): the wait is max(5 s, Retry-After); None whenever a
+    retry was already made for this call (one is pacing, a series is the
+    hang), whenever the wait exceeds RATE_LIMIT_ABSORB_CEILING_SECONDS, and
+    whenever it does not fit the call's remaining budget. Pure, so the rule
+    is testable without a network.
+    """
+    if already_retried:
+        return None
+    wait = max(RATE_LIMIT_WAIT_FLOOR_SECONDS, retry_after or 0.0)
+    if wait > RATE_LIMIT_ABSORB_CEILING_SECONDS or wait > remaining_budget:
+        return None
+    return wait
+
+
+def rate_limited_response(
+    retry_after_seconds: Optional[float] = None,
+    source: str = RATE_LIMIT_SOURCE_UPSTREAM,
+    request_id: Optional[str] = None,
+    message: Optional[str] = None,
+) -> Dict[str, Any]:
+    """The structured answer to a refused-for-pacing call.
+
+    `rate_limited: True` is the key a caller can branch on without parsing
+    prose, and `retry_after_seconds` is always a number, so the model never has
+    to guess how long "later" is.
+    """
+    # Never below USPTO's published floor, whatever the header said.
+    wait = max(RATE_LIMIT_WAIT_FLOOR_SECONDS, retry_after_seconds or 0.0)
+    note = _RATE_LIMIT_NOTE
+    if source == RATE_LIMIT_SOURCE_SHARED_LIMITER:
+        note += _SHARED_LIMITER_NOTE
+    response = format_error_response(
+        message=message or (
+            f"Rate limited. Retry this call once in {wait:.0f} seconds."
+        ),
+        status_code=429,
+        request_id=request_id,
+        error_type="rate_limited",
+        actionable_guidance=note,
+    )
+    response["rate_limited"] = True
+    response["retry_after_seconds"] = round(float(wait), 2)
+    response["rate_limit_source"] = source
+    response["rate_limit_note"] = note
+    return response
+
+
+def is_rate_limited(result: Any) -> bool:
+    """True when a response is the rate-limit envelope above. Lets a tool pass
+    the refusal through unchanged instead of restating it as its own failure."""
+    return isinstance(result, dict) and result.get("rate_limited") is True
 
 
 def import_time():

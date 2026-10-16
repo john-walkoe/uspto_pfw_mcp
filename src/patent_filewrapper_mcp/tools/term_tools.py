@@ -8,6 +8,11 @@ from ..api.helpers import (
 )
 from ..client_registry import _client
 from ..shared.safe_logger import get_safe_logger
+from ..util.citation_links import (
+    CITATION_NOTE,
+    application_cite_as,
+    single_citation_block,
+)
 from ..util.error_handlers import mcp_error_handler
 from ..util.identifier_resolution import resolve_or_error
 
@@ -35,6 +40,11 @@ def register(mcp) -> None:
     overlap figures, and a capped, most-recent-first history of the PTA events behind
     the number.
 
+    CITATIONS ARE LINKS: the response carries `cite_as`, a ready-made markdown link to
+    the application's Patent Center page (PTA is a fact of the prosecution record, so
+    the citation opens the file wrapper rather than the issued document). Paste it after
+    any sentence that states a PTA figure. A day count with no link is not a citation.
+
     Args:
         application_number: Patent application number (e.g., '15992176') or the granted
                     patent number. WARNING: a bare 8-digit number is ambiguous. It is a
@@ -42,8 +52,11 @@ def register(mcp) -> None:
                     US 10,000,000 in mid-2018, also a valid patent number, and
                     resolution is patent-number-first, so an 8-digit serial can be
                     captured by an unrelated granted patent. For an application serial,
-                    use the slash-comma format (e.g. '11/752,072') or pass
-                    content_type='application'; the response reports
+                    use the slash-comma format (e.g. '11/752,072', '29/328,018'; unambiguous in every era) or pass
+ content_type='application'. Design (29/), Hague (35/), provisional
+ (60/ to 63/) and reexamination (90/, 95/, 96/) serials are read as
+ applications even when bare; a bare 8-digit number is never a
+ pre-grant publication number (those are 11 digits); the response reports
                     identifier_resolved_as, identifier_note and
                     identifier_lanes_tried.
         max_events: How many history events to return, most recent first (default 20,
@@ -103,10 +116,16 @@ def register(mcp) -> None:
                 max_events=capped,
             )
 
+            # CITATIONS ARE LINKS (2026-09-05). PTA is a fact of the PROSECUTION
+            # record, so the citation opens the application in Patent Center
+            # rather than the issued document on Google Patents.
+            cite_as = application_cite_as(app_number, prefer_patent_center=True)
+
             return {
                 "success": True,
                 **resolution.response_fields(),
                 "application_number": app_number,
+                **single_citation_block(cite_as, CITATION_NOTE),
                 **normalized,
                 "data_note": "Source: USPTO ODP /adjustment endpoint. No expiration date is "
                              "computed — combine with filing/priority dates and check for "

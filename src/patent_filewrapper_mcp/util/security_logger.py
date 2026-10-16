@@ -26,15 +26,19 @@ class SecurityLogger:
     Structured security logger with JSON formatting, rotation policies, and alerting
     """
 
-    def __init__(self, log_dir: str = _DEFAULT_LOG_DIR, enable_alerting: bool = True):
+    def __init__(self, log_dir: Optional[str] = None, enable_alerting: bool = True):
         """
         Initialize security logger with rotation and alerting
 
         Args:
-            log_dir: Directory for log files
+            log_dir: Directory for log files. Default: LOG_DIR when set (as
+                config/log_config.py does), else ~/.uspto_pfw_mcp/logs. Before
+                2026-10-12 this ignored LOG_DIR, so in the containers every
+                event went to the ephemeral home directory while the mounted
+                /app/logs/security.log that log_config announces stayed empty.
             enable_alerting: Enable threshold-based alerting for security events
         """
-        self.log_dir = log_dir
+        self.log_dir = log_dir or os.environ.get("LOG_DIR", "").strip() or _DEFAULT_LOG_DIR
         self.enable_alerting = enable_alerting
         self._ensure_log_directory()
 
@@ -140,7 +144,7 @@ class SecurityLogger:
                          request_id: Optional[str] = None):
         """Log a privileged mcp_users mutation.
 
-        PFW hosts the SHARED paid-tier user file that PTAB and FPD also read,
+        PFW hosts the SHARED user file that PTAB and FPD also read,
         so a grant made here is a grant on three servers. Every
         add / set_role / activate / deactivate needs a record naming who made
         it. Emails are masked by the sink filter.

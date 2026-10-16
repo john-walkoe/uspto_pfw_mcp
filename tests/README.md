@@ -29,9 +29,9 @@ The server provides these tools for patent research:
 - **`PFW_get_patent_or_application_xml`** - Clean XML content for patents/applications with 91-99% token reduction
 - **`PFW_get_granted_patent_documents_download`** - All granted patent components (abstract, claims, drawings, spec)
 
-### Office Action Tools (OA APIs)
-- **`PFW_get_oa_rejections`** - Rejection indicators from OA Rejections API (§101/§102/§103/§112, Alice, Bilski, etc.) — coverage from Oct 1, 2017
-- **`PFW_get_oa_text`** - Full office action body text or section-filtered rejection text, directly from USPTO ODP text API
+### Office Action Tools (ODP Office Action API)
+- **`PFW_get_oa_rejections`** - One row per non-final/final rejection: rejection types from USPTO's rejectionTypeBag (§101/§102/§103/§112, DoublePatent, Other) plus statement counts from the action's text; coverage is office actions mailed from 2007-07-27
+- **`PFW_get_oa_text`** - Full office action text or the section under its own "Claim Rejections - 35 USC § n" heading, from the ODP Office Action API's full-text download
 
 ### Family & Term Tools
 - **`PFW_get_family`** - Normalized continuity graph (parents, children, CON/CIP/DIV) plus foreign priority claims

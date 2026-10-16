@@ -29,6 +29,16 @@ logger = get_safe_logger(__name__)
 _DEFAULT_CACHE_DURATION_DAYS = int(os.getenv("PFW_LINK_TTL_DAYS", "1"))
 _DEFAULT_MAX_USES = int(os.getenv("PFW_LINK_MAX_USES", "25"))
 
+# Public aliases (review 2026-09-28): every customer-visible string that
+# names the link lifetime — tool descriptions, notes, the downloads panel —
+# used to hard-code "7 days" from before ae7ac0e dropped the default to 1
+# day / 25 uses, and 21 of those strings drifted from the real default with
+# no shared source of truth to catch it. Other modules import THESE names
+# (never the underscore-prefixed originals) so the served text always
+# matches whatever PFW_LINK_TTL_DAYS / PFW_LINK_MAX_USES resolve to.
+LINK_TTL_DAYS = _DEFAULT_CACHE_DURATION_DAYS
+LINK_MAX_USES = _DEFAULT_MAX_USES
+
 
 class SecureLinkCache:
     """

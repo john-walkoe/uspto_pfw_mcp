@@ -114,6 +114,19 @@ class APIKeyAuthMiddleware:
         if not _matches_any_candidate(key, candidates):
             # Log the event only — never the presented key or the path
             logger.warning("HTTP auth failed (x-api-key missing or mismatch)")
+            # The security log too, with the client
+            # address, so the per-IP threshold alert sees it.
+            try:
+                from .util.client_ip import resolve_client_ip_from_scope
+                from .util.security_logger import security_logger
+
+                security_logger.log_auth_failure(
+                    endpoint="/mcp" if request.url.path.startswith("/mcp") else "http",
+                    client_ip=resolve_client_ip_from_scope(scope),
+                    reason="missing_api_key" if not key else "bad_api_key",
+                )
+            except Exception as exc:  # noqa: BLE001 - never turn a 401 into a 500
+                logger.warning("auth-failure security logging failed: %s", type(exc).__name__)
             from starlette.responses import JSONResponse
             response = JSONResponse({"error": "Unauthorized"}, status_code=401)
             await response(scope, receive, send)

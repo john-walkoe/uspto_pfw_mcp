@@ -23,7 +23,7 @@ must never log the matched text, only the kind labels.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Iterator
 
 # Data-not-instructions labeling note, attached as `provenance_note` on every
 # tool response that returns retrieved file-wrapper text (OCR content,
@@ -113,6 +113,25 @@ def scan_text(text: str) -> list[str]:
     return kinds
 
 
+def _iter_strings(value: Any) -> Iterator[str]:
+    """Yield every string leaf in `value`, walking dicts and lists/tuples of
+    any depth — the same unbounded walk `tools/document_tools.py`'s
+    `_iter_strings` already uses to scan `structured_content`. Fleet-wide
+    pattern 9 (review 2026-09-28): `scan_hits` below used to check
+    `isinstance(h.get(k), str)`, so a LIST-valued text field (a list of
+    strings, or of dicts holding strings) was skipped outright rather than
+    scanned — the same line in all four USPTO MCPs, named for Citations'
+    list-valued `passageLocationText`."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _iter_strings(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _iter_strings(v)
+
+
 def scan_hits(
     hits: list[dict[str, Any]],
     text_keys: tuple[str, ...] = _DEFAULT_TEXT_KEYS,
@@ -125,9 +144,7 @@ def scan_hits(
     when clean."""
     flagged: list[dict[str, Any]] = []
     for i, h in enumerate(hits):
-        joined = " ".join(
-            str(h[k]) for k in text_keys if isinstance(h.get(k), str)
-        )
+        joined = " ".join(s for k in text_keys for s in _iter_strings(h.get(k)))
         kinds = scan_text(joined)
         if kinds:
             flagged.append({

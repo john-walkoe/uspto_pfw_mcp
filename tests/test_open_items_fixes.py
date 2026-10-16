@@ -523,18 +523,20 @@ def oa_tools(monkeypatch):
 
 
 class _FakeOATextClient:
+    """Stands in for OfficeActionClient (api/office_action_client.py)."""
+
     def __init__(self, docs):
         self._docs = docs
         self.calls = []
 
-    async def search(self, criteria, start=0, rows=10):
-        self.calls.append(criteria)
-        return {"response": {"docs": self._docs, "numFound": len(self._docs)}}
+    async def search_office_actions(self, application_number, document_codes=None,
+                                    offset=0, limit=10, fields=None):
+        self.calls.append({"application_number": application_number,
+                           "document_codes": list(document_codes or [])})
+        return {"count": len(self._docs), "officeActionDataBag": list(self._docs)}
 
-    def extract_body_text(self, doc):
-        return doc.get("bodyText", "")
-
-    def extract_section_text(self, doc, section):
+    async def get_office_action_text(self, record_id):
+        self.calls.append({"text": record_id})
         return ""
 
 
@@ -542,7 +544,7 @@ class _FakeOATextClient:
 async def test_oa_text_rejects_an_unserved_action_type_before_any_call(oa_tools, monkeypatch):
     tools, mod = oa_tools
     client = _FakeOATextClient([])
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: client)
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: client)
 
     result = await tools["PFW_get_oa_text"]("15992176", action_type="ZZZZ")
 
@@ -572,7 +574,7 @@ async def test_oa_text_returns_the_document_bag_census(oa_tools, monkeypatch):
     """A CTRS in the file wrapper that the OA text dataset does not serve used
     to read exactly like an application that never had one."""
     tools, mod = oa_tools
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: _FakeOATextClient([]))
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOATextClient([]))
     monkeypatch.setattr(
         mod, "_client", lambda: _CensusClient(["CTNF", "CTNF", "CTRS", "REM"])
     )
@@ -594,7 +596,7 @@ async def test_the_census_failing_does_not_fail_the_office_action_read(oa_tools,
         async def get_documents(self, app_number, **kwargs):
             raise RuntimeError("documentBag unavailable")
 
-    monkeypatch.setattr(mod, "_get_oa_text_client", lambda: _FakeOATextClient([]))
+    monkeypatch.setattr(mod, "_get_office_action_client", lambda: _FakeOATextClient([]))
     monkeypatch.setattr(mod, "_client", lambda: _Broken())
 
     result = await tools["PFW_get_oa_text"]("15992176")
@@ -744,7 +746,7 @@ def test_effective_filing_date_is_documented_in_the_field_docs():
 
 @pytest.mark.asyncio
 async def test_pre2005_grant_coverage_message_survives_the_sanitizing_catch_all(monkeypatch):
-    """Freddie eval tr-cov-43: after 0d81c91 sanitized the XML catch-all, the
+    """Eval tr-cov-43: after 0d81c91 sanitized the XML catch-all, the
     authored PTGRXML coverage message came back as a generic 500. Authored
     messages must reach the caller verbatim, as a 404 (agents retry 500s)."""
     monkeypatch.setenv("USPTO_API_KEY", "test-uspto-key-0123456789")

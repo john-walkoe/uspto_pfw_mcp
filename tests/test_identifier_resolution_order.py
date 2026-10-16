@@ -103,20 +103,18 @@ class _FakeClient:
 
 
 class _FakeOAClient:
-    """Stands in for OARejectionClient / OATextClient."""
+    """Stands in for OfficeActionClient (api/office_action_client.py)."""
 
     def __init__(self):
-        self.criteria = []
+        self.app_numbers = []
 
-    async def search(self, criteria, start=0, rows=10):
-        self.criteria.append(criteria)
-        return {"response": {"docs": [], "numFound": 0}}
+    async def search_office_actions(self, application_number, document_codes=None,
+                                    offset=0, limit=10, fields=None):
+        self.app_numbers.append(application_number)
+        return {"count": 0, "officeActionDataBag": []}
 
-    def extract_body_text(self, doc):
-        return doc.get("_body", "")
-
-    def extract_section_text(self, doc, section):
-        return ""
+    async def get_office_action_text(self, record_id):
+        return None
 
 
 @pytest.fixture
@@ -138,8 +136,8 @@ def tool_modules(monkeypatch):
         mod.register(fake)
         tools.update(fake.tools)
         monkeypatch.setattr(mod, "_client", lambda c=client: c)
-    monkeypatch.setattr(oa_tools, "_get_oa_rejection_client", lambda: oa_client)
-    monkeypatch.setattr(oa_tools, "_get_oa_text_client", lambda: oa_client)
+    monkeypatch.setattr(oa_tools, "_get_office_action_client", lambda: oa_client)
+    client.oa_client = oa_client
     return tools, client
 
 
@@ -215,10 +213,9 @@ async def test_the_resolved_number_is_what_reaches_the_api(tool_modules, tool_na
 
     await _call(tools, tool_name, "11/752,072")
 
-    if oa:
-        return  # the OA tools query Solr, asserted in the lanes check above
-    assert client.app_numbers, f"{tool_name} made no downstream call"
-    assert all(n == "11752072" for n in client.app_numbers)
+    numbers = client.oa_client.app_numbers if oa else client.app_numbers
+    assert numbers, f"{tool_name} made no downstream call"
+    assert all(n == "11752072" for n in numbers)
 
 
 # ---------------------------------------------------------------------------
@@ -309,8 +306,10 @@ _RESOLVING_TOOLS = [
     ("tools/document_tools.py", "pfw_get_granted_patent_documents_download"),
     ("tools/family_tools.py", "pfw_get_family"),
     ("tools/term_tools.py", "pfw_get_term_adjustment"),
-    ("tools/oa_tools.py", "pfw_get_oa_rejections"),
-    ("tools/oa_tools.py", "pfw_get_oa_text"),
+    # The two OA tools delegate to module-level implementations (kept out of
+    # register() for its complexity budget); those are where resolution runs.
+    ("tools/oa_tools.py", "_get_oa_rejections"),
+    ("tools/oa_tools.py", "_get_oa_text"),
 ]
 
 

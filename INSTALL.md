@@ -596,7 +596,7 @@ The n8n integration enables powerful automation workflows combining USPTO patent
 - `PFW_PROXY_BASE_URL`: Base URL the MCP tools use to build document-download links (Default: `http://localhost:{PROXY_PORT}`) — set to your public/reverse-proxy origin when the proxy is reachable externally
 - `PROXY_BIND_HOST`: Interface the download proxy binds to (Default: "127.0.0.1")
 - `PROXY_ALLOWED_IPS`: Extra comma-separated IPs allowed to reach operational proxy endpoints, in addition to loopback (Default: none)
-- `PROXY_TRUSTED_IPS`: Reverse-proxy peer IPs/CIDRs (or `*`) whose `X-Forwarded-For` is trusted for client-IP attribution in rate limiting and the security audit log (Default: "127.0.0.1")
+- `PROXY_TRUSTED_IPS`: Reverse-proxy peer IPs/CIDRs whose `CF-Connecting-IP` (falling back to the right-most untrusted `X-Forwarded-For` hop) is trusted for client-IP attribution in rate limiting and the security audit log (Default: none — trust nobody, key on the raw peer). Behind a containerised reverse proxy, name its Docker network (for example `172.18.0.0/16`). No `*` wildcard — an unparseable entry is dropped, not treated as "trust everything".
 - `PROXY_TOKEN`: Shared secret required as `X-Proxy-Token` on operational proxy endpoints (recent-downloads, cache/rate-limit admin routes); auto-generated per-process if unset
 - `PFW_DATA_DIR`: Hardened data directory (0700) for encryption keys and proxy SQLite files (Default: `~/.uspto_pfw_mcp/data`; legacy project-root files migrate on start)
 - `LOG_DIR`: Directory for rotating log files (Default: `~/.uspto_pfw_mcp/logs`)
@@ -624,8 +624,8 @@ accept every listed value. Two-step rotation:
 **Advanced (for development/testing):**
 - `USPTO_TIMEOUT`: API request timeout in seconds (Default: "30.0")
 - `USPTO_DOWNLOAD_TIMEOUT`: Document download timeout in seconds (Default: "60.0")
-- `USPTO_OA_TIMEOUT`: Office Action (rejections/text) API timeout in seconds (Default: "30.0"–"60.0" depending on endpoint)
-- `USPTO_OA_MAX_RETRIES`: Max retries for Office Action API calls (Default: "2")
+- `USPTO_OA_TIMEOUT`: ODP Office Action API timeout in seconds, for the search and the full-text download behind `PFW_get_oa_rejections` and `PFW_get_oa_text` (Default: "60.0")
+- `USPTO_OA_MAX_RETRIES`: Max retries for ODP Office Action API calls (Default: "2")
 - `USPTO_MAX_RETRIES_PER_HOUR`: Per-hour retry budget for the enhanced USPTO client (Default: "100")
 - `FASTMCP_TRANSPORT`: `stdio` (default) or `http`
 - `FASTMCP_HOST` / `FASTMCP_PORT`: Bind interface/port in HTTP transport mode (Default: "127.0.0.1" / "8000")

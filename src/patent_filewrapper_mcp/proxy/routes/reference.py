@@ -147,12 +147,21 @@ async def get_reflection_stats():
 
 
 @router.get("/doc-codes")
-async def get_doc_codes():
+async def get_doc_codes(offset: int = 0):
     """
     Serve USPTO Document Code Decoder Table
 
     This endpoint provides a formatted markdown table of USPTO document codes
-    for patent prosecution, PTAB proceedings, and FPD petitions.
+    for patent prosecution, PTAB proceedings, and FPD petitions. Applicant-filed
+    rows come from the EFS-Web list; office-issued rows (CTNF, CTFR, NOA, CTAV,
+    CTRS, 892, N417, PETDEC and the rest of the outgoing examiner codes) come
+    from the curated decoder behind `PFW_get_guidance(section='document_codes')`.
+    Every row has an Origin column saying which. The office-issued table is
+    printed whole on every page; `offset` pages only the applicant-filed table.
+
+    `offset` pages the applicant-filed prosecution table, which is 367 rows against a display
+    window of 60. Without it the table stopped at the sixtieth code by
+    alphabetical order and named no way to reach the other 307.
 
     Source: https://www.uspto.gov/patents/apply/filing-online/efs-info-document-description
     """
@@ -162,7 +171,7 @@ async def get_doc_codes():
         # same CSV rendered differently per endpoint (audit D-1).
         from ...reference.doc_codes import build_doc_code_table
 
-        result = build_doc_code_table()
+        result = build_doc_code_table(offset=max(0, int(offset or 0)))
         result += (
             "\n"
             f"\n**Generated**: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}"

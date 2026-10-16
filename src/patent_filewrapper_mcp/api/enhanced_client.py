@@ -5,9 +5,11 @@ This client provides access to the USPTO Patent File Wrapper API for searching
 applications, getting detailed application data, retrieving documents, and
 downloading PDFs.
 """
+import asyncio
 import httpx
 import os
 import re
+import time
 # defusedxml: hardens against XXE / entity-expansion in USPTO-served XML (audit L12)
 from typing import Dict, Any, List, Optional
 from .helpers import validate_app_number, format_error_response, generate_request_id, create_inventor_queries, map_user_fields_to_api_fields, parse_document_codes
@@ -19,10 +21,33 @@ from .free_text_variants import (
     extract_docx,
     extract_xmlarchive,
 )
-from ..exceptions import AuthenticationError, NotFoundError, ValidationError
+from .helpers import (
+    RATE_LIMIT_SOURCE_SHARED_LIMITER,
+    RATE_LIMIT_SOURCE_UPSTREAM,
+    planned_429_wait,
+    rate_limited_response,
+    retry_after_from,
+)
+from ..exceptions import (
+    AuthenticationError,
+    NotFoundError,
+    UpstreamRateLimitedError,
+    ValidationError,
+)
 from ..shared.safe_logger import get_safe_logger
-from ..shared.uspto_shared_rate_limiter import get_shared_limiter
 from ..shared.uspto_hosts import USPTO_KEY_EVENT_HOOKS
+from ..shared.uspto_shared_rate_limiter import (
+    SharedLimiterTimeoutError,
+    get_shared_limiter,
+    note_429,
+)
+from ..util.deadline import (
+    DEADLINE_ERROR,
+    DeadlineExceeded,
+    current_deadline,
+    deadline_exceeded_fields,
+    run_within,
+)
 
 try:
     import pypdf  # noqa: F401 — availability probe; used lazily in extract_with_pypdf2
@@ -71,6 +96,29 @@ def pypdf_max_pages() -> int:
     except (TypeError, ValueError):
         logger.warning("Invalid PYPDF_MAX_PAGES; using default 200")
         return _DEFAULT_PYPDF_MAX_PAGES
+
+
+#: Seconds one pypdf parse may take before the call stops waiting for it
+#: (PFW_PDF_PARSE_TIMEOUT_S, default 60). Applicant-filed PDFs reach pypdf, and
+#: pypdf's denial-of-service advisories (audit 2026-10-12 M3) turn a crafted
+#: file into a stalled event loop when the parse runs on it, so every parse
+#: runs in a worker thread under this ceiling (`run_pdf_parse`).
+_DEFAULT_PDF_PARSE_TIMEOUT_S = 60.0
+
+
+def pdf_parse_timeout() -> float:
+    try:
+        value = float(os.getenv("PFW_PDF_PARSE_TIMEOUT_S", str(_DEFAULT_PDF_PARSE_TIMEOUT_S)))
+    except (TypeError, ValueError):
+        return _DEFAULT_PDF_PARSE_TIMEOUT_S
+    return value if 0 < value < float("inf") else _DEFAULT_PDF_PARSE_TIMEOUT_S
+
+
+async def run_pdf_parse(fn, *args):
+    """`fn(*args)` (a synchronous pypdf parse) in a worker thread, bounded by
+    pdf_parse_timeout(). A timeout raises asyncio.TimeoutError; the thread
+    finishes on its own, but the event loop never waited on it."""
+    return await asyncio.wait_for(asyncio.to_thread(fn, *args), timeout=pdf_parse_timeout())
 
 
 #: Ceiling on a single document buffered for extraction. 100 MB by default:
@@ -141,7 +189,7 @@ class AuthoredClientError(ValueError):
     exception text that may embed upstream URLs, paths or provider output. It
     was wrong to hide THESE: fixed strings authored here (the pre-2005 grant
     coverage boundary, "no application XML available") that carry nothing
-    sensitive and exist precisely so the caller learns why. Freddie eval
+    sensitive and exist precisely so the caller learns why. Eval
     tr-cov-43 caught the regression: the coverage message came back as a
     generic 500, which is what an agent retries. Raise this class for such
     messages and the XML error path returns them verbatim as a 404.
@@ -296,6 +344,18 @@ def _resolve_page_count(pdf_option: Dict[str, Any], pdf_content: bytes):
     return None, "unknown"
 
 
+async def _resolve_page_count_async(pdf_option: Dict[str, Any], pdf_content: bytes):
+    """`_resolve_page_count` with any PDF parse off the event loop; a parse
+    that times out reads as an unknown count, never a guess."""
+    if not pdf_content or _resolve_page_count(pdf_option, b"")[0] is not None:
+        return _resolve_page_count(pdf_option, b"")
+    try:
+        return await run_pdf_parse(_resolve_page_count, pdf_option, pdf_content)
+    except asyncio.TimeoutError:
+        logger.warning("Page count parse timed out; page count unknown")
+        return None, "unknown"
+
+
 def slice_pdf_pages(pdf_content: bytes, page_from: int, page_to: Optional[int]):
     """Return ``(sliced_bytes, first_page, last_page, total_pages)`` for the
     requested 1-based inclusive page window.
@@ -335,6 +395,106 @@ def slice_pdf_pages(pdf_content: bytes, page_from: int, page_to: Optional[int]):
     buffer = io.BytesIO()
     writer.write(buffer)
     return buffer.getvalue(), first, last, total
+
+
+def _pypdf_extract_sync(pdf_content: bytes, page_offset: int, cap: int):
+    """The pypdf text tier's parse (see EnhancedPatentClient.extract_with_pypdf2),
+    synchronous so it runs in a worker thread. Returns (text, status fields)."""
+    import io
+
+    import pypdf
+
+    status: Dict[str, Any] = {}
+    pdf_reader = pypdf.PdfReader(io.BytesIO(pdf_content))
+    total_pages = len(pdf_reader.pages)
+    truncated = total_pages > cap
+    pages_to_extract = pdf_reader.pages[:cap] if truncated else pdf_reader.pages
+
+    text_parts: List[str] = []
+    pages_with_text = 0
+    for index, page in enumerate(pages_to_extract, start=1 + page_offset):
+        page_text = page.extract_text() or ""
+        if page_text.strip():
+            pages_with_text += 1
+            text_parts.append(f"=== PAGE {index} ===\n{page_text}")
+        else:
+            # Keep the header so page offsets stay aligned with the document.
+            text_parts.append(f"=== PAGE {index} ===\n{PYPDF_EMPTY_PAGE_PLACEHOLDER}")
+
+    status["page_count"] = total_pages
+    status["page_count_source"] = "pypdf"
+    status["page_offset"] = page_offset
+    status["pages_extracted"] = len(text_parts)
+    status["pages_with_text"] = pages_with_text
+    if truncated:
+        status["pages_truncated"] = total_pages - cap
+        status["truncation_note"] = (
+            f"Document has {total_pages} pages; the native text-layer (pypdf) tier extracted "
+            f"the first {cap} (PYPDF_MAX_PAGES limit). The text is incomplete."
+        )
+    return "\n\n".join(text_parts).strip(), status
+
+
+#: PFW_get_granted_patent_documents_download's component names by document code.
+_GRANTED_COMPONENT_NAMES = {"ABST": "abstract", "DRW": "drawings", "SPEC": "specification", "CLM": "claims"}
+
+
+def _granted_component_entry(doc_code: str, documents: List[Dict[str, Any]], versions_available: Any,
+                             include_original_claims: bool, app_number: str, proxy_port: int):
+    """(component name, entry) for one component of the granted-patent package
+    (split out of get_granted_patent_documents_download for the C901 ceiling)."""
+    # How many versions the min()/max() selection below actually saw, vs how
+    # many exist. A 12-amendment claims history was decided from the 5 the
+    # fetch happened to return, and the response said nothing about the other 7.
+    versions_considered = len(documents)
+
+    if doc_code == 'CLM':
+        # Oldest (originally filed) or newest (granted/final) claims
+        pick = min if include_original_claims else max
+        selected_doc = pick(documents, key=lambda d: d.get("officialDate", ""))
+    else:
+        # ABST/DRW/SPEC can carry several versions too: a replacement-paragraphs
+        # amendment is coded SPEC just like the original filing, and the API
+        # returns newest first, so documents[0] can be a 2-page delta while the
+        # 21-page original sits behind it (seen live on 11/752,072). Prefer the
+        # complete document: most PDF pages wins, earliest officialDate breaks ties.
+        selected_doc = _select_complete_version(documents)
+
+    component_name = _GRANTED_COMPONENT_NAMES.get(doc_code, doc_code.lower())
+    download_options = selected_doc.get("downloadOptionBag", [])
+    pdf_option = next((opt for opt in download_options if opt.get("mimeTypeIdentifier") == "PDF"), None)
+
+    component_entry = {
+        "document_identifier": selected_doc.get("documentIdentifier"),
+        "document_code": selected_doc.get("documentCode"),
+        "document_description": selected_doc.get("documentCodeDescriptionText"),
+        "official_date": selected_doc.get("officialDate"),
+        "page_count": pdf_option.get("pageTotalQuantity", 0) if pdf_option else 0,
+        "direct_download_url": pdf_option.get("downloadUrl") if pdf_option else None,
+        "proxy_download_url": f"{os.getenv('PFW_PROXY_BASE_URL', f'http://localhost:{proxy_port}')}/download/{app_number}/{selected_doc.get('documentIdentifier')}",
+        "direction_category": selected_doc.get("directionCategory"),
+        "versions_considered": versions_considered,
+        "versions_available": versions_available,
+        "versions_fetch_limit": GRANTED_COMPONENT_FETCH_LIMIT,
+    }
+    if doc_code != 'CLM' and versions_considered > 1:
+        component_entry["version_selection_note"] = (
+            f"{versions_considered} '{doc_code}' documents exist; chose the "
+            f"most complete ({component_entry['page_count']} pages, "
+            f"{component_entry['official_date']}) since amendment papers share "
+            "this document code. Use PFW_get_application_documents("
+            f"app_number=..., document_code='{doc_code}') for the full history."
+        )
+    if isinstance(versions_available, int) and versions_available > versions_considered:
+        component_entry["selection_note"] = (
+            f"This application has {versions_available} '{doc_code}' documents; "
+            f"only the first {versions_considered} were fetched "
+            f"(versions_fetch_limit={GRANTED_COMPONENT_FETCH_LIMIT}) and the "
+            "earliest/latest was chosen from those. Use "
+            f"PFW_get_application_documents(app_number=..., document_code='{doc_code}') "
+            "to see the full version history."
+        )
+    return component_name, component_entry
 
 
 def _extraction_failure_advice(mistral_key_present: bool, docling_client, page_count) -> str:
@@ -384,6 +544,43 @@ def _extraction_failure_advice(mistral_key_present: bool, docling_client, page_c
     if not mistral_key_present:
         advice += " Or add MISTRAL_API_KEY to enable Mistral OCR."
     return advice
+
+
+#: Below this many seconds left in the call's budget the Docling tier is not
+#: started: EasyOCR cannot finish a page in less.
+_DOCLING_MIN_SECONDS = 5.0
+
+
+def _content_deadline_update() -> Dict[str, Any]:
+    """The PFW_get_document_content_with_ocr result for a spent time budget
+    (util/deadline.py): an error the caller can act on, never a cost."""
+    return {
+        **deadline_exceeded_fields(
+            "Extraction did not finish within this call's time limit. Try the call "
+            "again, or read fewer pages at a time with page_from/page_to; "
+            "PFW_get_document_download gives the PDF directly."
+        ),
+        "extracted_content": "",
+        "extraction_method": "deadline_exceeded",
+    }
+
+
+def _hybrid_failure(exc: Exception, app_number: str, document_identifier: str) -> Dict[str, Any]:
+    """extract_document_content_hybrid's failure result. A USPTO 429 is the
+    transport's rate-limit envelope and a spent call budget is "Deadline
+    exceeded"; anything else keeps the generic "failed" shape."""
+    identity = {"application_number": app_number, "document_identifier": document_identifier}
+    if isinstance(exc, UpstreamRateLimitedError):
+        return {**exc.envelope, **identity, "extracted_content": "", "extraction_method": "rate_limited"}
+    if isinstance(exc, DeadlineExceeded):
+        return {**identity, **_content_deadline_update()}
+    return {
+        "success": False,
+        **identity,
+        "error": str(exc),
+        "extracted_content": "",
+        "extraction_method": "failed"
+    }
 
 
 def _page_window_markers(first, last, total, applied: bool, note: str) -> Dict[str, Any]:
@@ -464,6 +661,14 @@ _NO_MATCH_NOTE = (
 )
 
 
+def _docling_update(text: str) -> Dict[str, Any]:
+    return {
+        "extracted_content": text,
+        "extraction_method": "Docling OCR",
+        "auto_optimization": "Docling OCR used - PyPDF2 insufficient, no Mistral key",
+    }
+
+
 def _is_no_matches_error(result: Dict[str, Any]) -> bool:
     """True when a raw search_applications error response is the USPTO
     no-matching-records 404 (as opposed to a real error — auth failure,
@@ -507,6 +712,11 @@ class EnhancedPatentClient:
     #: several name-variant queries and de-duplicates). Reported as
     #: `sub_query_limit` so a short result set is never mistaken for exhaustion.
     INVENTOR_SUBQUERY_LIMIT = 50
+    #: Local in-memory bulkhead for THIS process only (USPTOTransport holds
+    #: the semaphore that enforces its own copy; this mirror is read by
+    #: callers that inspect the client). Not the USPTO limit: burst 1 per
+    #: key and cross-process fairness are the shared FIFO limiter's job
+    #: (shared/uspto_shared_rate_limiter.py).
     MAX_CONCURRENT_REQUESTS = 10
     MAX_QUERY_LENGTH = 1000
     MAX_NAME_LENGTH = 200
@@ -809,6 +1019,35 @@ class EnhancedPatentClient:
         except Exception as e:
             return _handle_client_error("Inventor search failed", e)
 
+    async def _associated_documents_block(self, app: Dict[str, Any]) -> Dict[str, Any]:
+        """One search result's `associatedDocuments` block (split out of
+        enhance_search_results_with_associated_docs for the C901 ceiling)."""
+        app_number = app.get("applicationNumberText")
+        if not app_number:
+            # Try to get from metadata
+            app_number = app.get("applicationMetaData", {}).get("applicationNumberText")
+        if not app_number:
+            return {"count": 0, "documents": [], "xmlContentAvailable": False,
+                    "error": "No application number found"}
+
+        assoc_docs_result = await self.get_associated_documents(app_number)
+        if not assoc_docs_result.get("success"):
+            return {"count": 0, "documents": [], "xmlContentAvailable": False,
+                    "error": "Failed to retrieve associated documents"}
+
+        block = {
+            "count": assoc_docs_result.get("count", 0),
+            "documents": assoc_docs_result.get("associated_documents", []),
+            "xmlContentAvailable": assoc_docs_result.get("count", 0) > 0
+        }
+        # Convenience flags for XML availability
+        for doc in assoc_docs_result.get("associated_documents", []) or []:
+            if doc.get("grantDocumentMetaData"):
+                block["ptgrXmlAvailable"] = True
+            if doc.get("pgpubDocumentMetaData"):
+                block["appXmlAvailable"] = True
+        return block
+
     async def enhance_search_results_with_associated_docs(self, search_results: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enhance search results by adding associated documents metadata for each application
@@ -826,46 +1065,7 @@ class EnhancedPatentClient:
             enhanced_applications = []
 
             for app in search_results["applications"]:
-                # Get application number
-                app_number = app.get("applicationNumberText")
-                if not app_number:
-                    # Try to get from metadata
-                    app_number = app.get("applicationMetaData", {}).get("applicationNumberText")
-
-                if app_number:
-                    # Get associated documents for this application
-                    assoc_docs_result = await self.get_associated_documents(app_number)
-
-                    if assoc_docs_result.get("success"):
-                        app["associatedDocuments"] = {
-                            "count": assoc_docs_result.get("count", 0),
-                            "documents": assoc_docs_result.get("associated_documents", []),
-                            "xmlContentAvailable": assoc_docs_result.get("count", 0) > 0
-                        }
-
-                        # Add convenience flags for XML availability
-                        docs = assoc_docs_result.get("associated_documents", [])
-                        if docs:
-                            for doc in docs:
-                                if doc.get("grantDocumentMetaData"):
-                                    app["associatedDocuments"]["ptgrXmlAvailable"] = True
-                                if doc.get("pgpubDocumentMetaData"):
-                                    app["associatedDocuments"]["appXmlAvailable"] = True
-                    else:
-                        app["associatedDocuments"] = {
-                            "count": 0,
-                            "documents": [],
-                            "xmlContentAvailable": False,
-                            "error": "Failed to retrieve associated documents"
-                        }
-                else:
-                    app["associatedDocuments"] = {
-                        "count": 0,
-                        "documents": [],
-                        "xmlContentAvailable": False,
-                        "error": "No application number found"
-                    }
-
+                app["associatedDocuments"] = await self._associated_documents_block(app)
                 enhanced_applications.append(app)
 
             # Update the search results
@@ -1368,12 +1568,63 @@ class EnhancedPatentClient:
         raise ValueError(f"Unknown XML type: {target_xml}")
 
     async def _download_once(self, url: str) -> "httpx.Response":
-        """Perform exactly one direct USPTO download GET (XML or PDF),
-        gated by the shared cross-process rate limiter (token + concurrency
-        slot) — off unless USPTO_SHARED_RATE_LIMIT_DIR is set. Single choke
-        point for the two download paths that don't route through
-        USPTOTransport (fetch_xml_from_url and the OCR-extraction PDF
-        fetch); both are api.uspto.gov fetches under the same ODP key."""
+        """One direct USPTO download (XML or PDF): the single choke point for
+        the download paths that don't route through USPTOTransport
+        (fetch_xml_from_url, the OCR-extraction PDF fetch and the free-text
+        variants); all are
+        api.uspto.gov fetches under the same ODP key.
+
+        A 429 gets the transport's rule (helpers.planned_429_wait,
+        2026-10-13): every 429 is noted on the shared key cooldown; one retry
+        after max(5 s, Retry-After) when that wait is at most 10 s and fits
+        the download timeout, with no shared slot held during the wait;
+        otherwise UpstreamRateLimitedError carries the same rate-limit
+        envelope USPTOTransport returns. The shared limiter's refusal raises
+        the same error at once, no retry. Every other status comes back as
+        the response, for the caller's raise_for_status."""
+        call_started = time.monotonic()
+        response = await self._download_send_or_refusal(url)
+        if response.status_code != 429:
+            return response
+        retry_after = retry_after_from(response)
+        note_429(retry_after)
+        wait = planned_429_wait(
+            retry_after, False, self.download_timeout - (time.monotonic() - call_started)
+        )
+        if wait is not None:
+            logger.warning(f"Download rate limited (429); one retry in {wait:.0f}s")
+            await asyncio.sleep(wait)
+            response = await self._download_send_or_refusal(url)
+            if response.status_code != 429:
+                return response
+            retry_after = retry_after_from(response)
+            note_429(retry_after)
+        logger.error("Download rate limited by USPTO (429); answering with the envelope")
+        raise UpstreamRateLimitedError(rate_limited_response(
+            retry_after_seconds=retry_after,
+            source=RATE_LIMIT_SOURCE_UPSTREAM,
+        ))
+
+    async def _download_send_or_refusal(self, url: str) -> "httpx.Response":
+        """`_download_send`, with the shared limiter's refusal turned into
+        the rate-limit envelope at once (no retry: a retry would queue again
+        behind the same backlog)."""
+        try:
+            return await self._download_send(url)
+        except SharedLimiterTimeoutError as e:
+            logger.warning(f"Download: shared limiter refusal: {e}")
+            raise UpstreamRateLimitedError(rate_limited_response(
+                source=RATE_LIMIT_SOURCE_SHARED_LIMITER,
+                message=(
+                    "Rate limited by this deployment's shared USPTO limiter. "
+                    "Retry this call once after retry_after_seconds."
+                ),
+            )) from e
+
+    async def _download_send(self, url: str) -> "httpx.Response":
+        """Exactly one download GET, gated by the shared cross-process rate
+        limiter (token + concurrency slot) — off unless
+        USPTO_SHARED_RATE_LIMIT_DIR is set."""
         async with httpx.AsyncClient(
             timeout=self.download_timeout,
             limits=self.download_limits,
@@ -1405,6 +1656,8 @@ class EnhancedPatentClient:
             response = await self._download_once(xml_url)
             response.raise_for_status()
             return response.text
+        except UpstreamRateLimitedError:
+            raise
         except Exception as e:
             raise ValueError(f"Failed to fetch XML from URL {xml_url}: {str(e)}")
 
@@ -1524,6 +1777,11 @@ class EnhancedPatentClient:
 
             return response
 
+        except UpstreamRateLimitedError as e:
+            error = dict(e.envelope)
+            if resolution is not None:
+                error.update(resolution.response_fields())
+            return error
         except AuthoredClientError as e:
             # Server-authored, sensitive-free, and the whole point is that the
             # caller reads it: 404 (not 500, which agents retry) with the text.
@@ -1583,40 +1841,10 @@ class EnhancedPatentClient:
         if not PDF_AVAILABLE:
             raise ValueError("pypdf not available")
 
-        import pypdf
-        import io
-
         status = status if status is not None else {}
-        pdf_reader = pypdf.PdfReader(io.BytesIO(pdf_content))
-        total_pages = len(pdf_reader.pages)
-        cap = pypdf_max_pages()
-        truncated = total_pages > cap
-        pages_to_extract = pdf_reader.pages[:cap] if truncated else pdf_reader.pages
-
-        text_parts: List[str] = []
-        pages_with_text = 0
-        for index, page in enumerate(pages_to_extract, start=1 + page_offset):
-            page_text = page.extract_text() or ""
-            if page_text.strip():
-                pages_with_text += 1
-                text_parts.append(f"=== PAGE {index} ===\n{page_text}")
-            else:
-                # Keep the header so page offsets stay aligned with the document.
-                text_parts.append(f"=== PAGE {index} ===\n{PYPDF_EMPTY_PAGE_PLACEHOLDER}")
-
-        status["page_count"] = total_pages
-        status["page_count_source"] = "pypdf"
-        status["page_offset"] = page_offset
-        status["pages_extracted"] = len(text_parts)
-        status["pages_with_text"] = pages_with_text
-        if truncated:
-            status["pages_truncated"] = total_pages - cap
-            status["truncation_note"] = (
-                f"Document has {total_pages} pages; the native text-layer (pypdf) tier extracted "
-                f"the first {cap} (PYPDF_MAX_PAGES limit). The text is incomplete."
-            )
-
-        return "\n\n".join(text_parts).strip()
+        text, parsed_status = await run_pdf_parse(_pypdf_extract_sync, pdf_content, page_offset, pypdf_max_pages())
+        status.update(parsed_status)
+        return text
 
     async def extract_with_docling(self, pdf_content: bytes, document_identifier: str) -> str:
         """Extract text via docling-serve REST API (true OCR, handles scanned PDFs).
@@ -1690,7 +1918,10 @@ class EnhancedPatentClient:
     ) -> Any:
         """Download the PDF the pypdf / OCR tiers work on. Returns the bytes,
         or an error dict shaped like a tool response (``base`` supplies the
-        document identity fields and any ``free_text_variants`` record)."""
+        document identity fields and any ``free_text_variants`` record).
+        Inside a call deadline (util/deadline.py) the download takes only what
+        is left of it; a 429 or a spent deadline propagates for the caller's
+        envelope."""
         if not pdf_option:
             return format_error_response("PDF not available for this document")
 
@@ -1701,10 +1932,14 @@ class EnhancedPatentClient:
         # A download failure blocks every extraction tier — label it as such
         # (audit F49: previously reported as extraction_method "failed")
         try:
-            response = await self._download_once(pdf_option.get('downloadUrl'))
+            response = await run_within(
+                current_deadline(), self._download_once(pdf_option.get('downloadUrl'))
+            )
             response.raise_for_status()
             self._check_download_size(response)
             return response.content
+        except (UpstreamRateLimitedError, DeadlineExceeded):
+            raise
         except Exception as e:
             return {
                 **base,
@@ -1765,7 +2000,9 @@ class EnhancedPatentClient:
         """Tier 0 (auto-optimize only): the free-text variants in preference
         order. Appends one record per variant tried to ``attempts`` (surfaced
         as ``free_text_variants``) and returns the first usable result-update
-        dict, or None to fall through to the PDF render tiers."""
+        dict, or None to fall through to the PDF render tiers. A USPTO 429 or
+        a spent call deadline is not a variant failure: it propagates, since
+        the next tier would only hit the same wall."""
         buckets = classify_download_options(target_doc.get('downloadOptionBag', []))
         plan = (
             ("docx", buckets["docx"], self._try_docx_variant),
@@ -1777,7 +2014,11 @@ class EnhancedPatentClient:
                 if progress_cb:
                     await progress_cb(15, 100, f"Trying free {label} variant...")
                 try:
-                    update = await runner(option, app_number, document_identifier)
+                    update = await run_within(
+                        current_deadline(), runner(option, app_number, document_identifier)
+                    )
+                except (UpstreamRateLimitedError, DeadlineExceeded):
+                    raise
                 except VariantMismatchError as e:
                     logger.warning(f"{label} variant rejected for {document_identifier}: {e}")
                     attempts.append({"variant": label, "outcome": "rejected", "reason": str(e)})
@@ -1874,7 +2115,8 @@ class EnhancedPatentClient:
         0 — a page_from=51 window used to emit `=== PAGE 1 ===` while
         `page_window` in the same response said 51-53.
 
-        Returns a result-update dict, or None to fall through."""
+        Returns a result-update dict, or None to fall through; raises
+        DeadlineExceeded when OCR stopped at the call's time limit."""
         if not self.mistral_api_key:
             return None
         if progress_cb:
@@ -1883,6 +2125,8 @@ class EnhancedPatentClient:
             pdf_content, page_count, app_number, document_identifier,
             page_offset=page_offset,
         )
+        if mistral_result.get("error") == DEADLINE_ERROR:
+            raise DeadlineExceeded("Mistral OCR stopped at the call's time limit")
         if not mistral_result.get("success"):
             logger.warning(
                 f"Mistral OCR failed for {document_identifier}: {mistral_result.get('error')} - falling back to Docling"
@@ -1909,16 +2153,20 @@ class EnhancedPatentClient:
 
     async def _try_docling_tier(
         self, pdf_content: bytes, page_count: int, document_identifier: str,
-        docling_client, progress_cb=None
+        docling_client, progress_cb=None,
     ):
         """Tier 3 (auto-optimize only): free Docling OCR via docling-serve.
 
-        No `page_offset` parameter: docling-serve returns one flat text
-        document with no `=== PAGE N ===` markers at all, so there are no page
-        headers on this branch to offset (the pypdf and Mistral branches both
-        emit them and both carry the offset). A page window still applies —
-        the bytes are sliced before they get here — it just cannot be snapped
-        to page boundaries afterwards.
+        No page headers to offset: docling-serve returns one flat text
+        document with no `=== PAGE N ===` markers at all (the pypdf and
+        Mistral branches both emit them and both carry the offset). A page
+        window still applies — the bytes are sliced before they get here — it
+        just cannot be snapped to page boundaries afterwards.
+
+        Inside a call deadline (util/deadline.py) the tier runs only on what
+        is left of the budget (and not at all under _DOCLING_MIN_SECONDS of
+        it): EasyOCR cannot finish a page in less. Running out raises
+        DeadlineExceeded.
 
         Returns a result-update dict, or None to fall through."""
         if not docling_client.is_available():
@@ -1931,10 +2179,26 @@ class EnhancedPatentClient:
                 "DOCLING_MAX_PAGES on the docling deployment."
             )
             return None
+        docling_text = await self._run_docling(pdf_content, page_count, document_identifier, progress_cb)
+        if docling_text is None:
+            return None
+        return _docling_update(docling_text)
+
+    async def _run_docling(
+        self, pdf_content: bytes, page_count: int, document_identifier: str, progress_cb=None
+    ) -> Optional[str]:
+        """The docling-serve run on what is left of the call's budget: the
+        accepted text, or None (failed or rejected as poor)."""
+        deadline = current_deadline()
+        if deadline is not None and deadline.remaining() < _DOCLING_MIN_SECONDS:
+            logger.info(f"Skipping Docling for {document_identifier}: the call's time limit is nearly spent")
+            raise DeadlineExceeded("no time left for Docling")
         try:
             if progress_cb:
                 await progress_cb(50, 100, f"Sending to Docling OCR ({page_count} pages — this may take a minute)...")
-            docling_text = await self.extract_with_docling(pdf_content, document_identifier)
+            docling_text = await run_within(
+                deadline, self.extract_with_docling(pdf_content, document_identifier)
+            )
             reject_reason = extraction_reject_reason(docling_text)
             if reject_reason:
                 logger.info(
@@ -1942,14 +2206,20 @@ class EnhancedPatentClient:
                     f"({reject_reason})"
                 )
                 return None
-            return {
-                "extracted_content": docling_text,
-                "extraction_method": "Docling OCR",
-                "auto_optimization": "Docling OCR used - PyPDF2 insufficient, no Mistral key",
-            }
+            return docling_text
+        except DeadlineExceeded:
+            raise
         except Exception as e:
             logger.warning(f"Docling extraction failed for {document_identifier}: {e}")
             return None
+
+    async def _ocr_tier_or_deadline(self, tier, *args, **kwargs):
+        """(update or None, deadline_hit): one OCR tier, with a spent call
+        deadline read as "fell through on time" rather than an error."""
+        try:
+            return await tier(*args, **kwargs), False
+        except DeadlineExceeded:
+            return None, True
 
     async def _run_pdf_tiers(
         self, extraction_result: Dict[str, Any], pdf_option: Optional[Dict[str, Any]], pdf_content: bytes,
@@ -1959,18 +2229,22 @@ class EnhancedPatentClient:
         """Tiers 1-3 over the downloaded PDF: pypdf (auto-optimize only)
         -> Mistral OCR -> Docling OCR, then the terminal "all failed"
         envelope. Split out of extract_document_content_hybrid when Tier 0
-        (the free-text variants) pushed that method past the complexity cap."""
+        (the free-text variants) pushed that method past the complexity cap.
+
+        Inside a call deadline both OCR tiers run on what is left of the
+        budget; when either stopped on it and nothing else produced text, the
+        terminal envelope is "Deadline exceeded", not "scanned image"."""
         # Never fabricate a page count: pageTotalQuantity used to default to
         # 0, which reads as "this document has no pages" rather than "the
         # metadata did not say". Recover it from the PDF itself, else null.
-        page_count, page_count_source = _resolve_page_count(pdf_option, pdf_content)
+        page_count, page_count_source = await _resolve_page_count_async(pdf_option, pdf_content)
         # The bytes handed to the tiers are a SLICE whenever a page window was
         # requested. Re-resolve the count from those bytes: a first-page window
         # (page_from=1, page_to=3) leaves page_offset at 0, so gating the
         # re-resolution on the offset alone let the Docling cap compare 3
         # extracted pages against the DOCUMENT's 128.
         if page_offset or window_total_pages is not None:
-            page_count, page_count_source = _resolve_page_count({}, pdf_content)
+            page_count, page_count_source = await _resolve_page_count_async({}, pdf_content)
             if window_total_pages:
                 extraction_result["document_page_count"] = window_total_pages
         # Downstream tiers need an int for their page budgets; when the
@@ -1991,7 +2265,8 @@ class EnhancedPatentClient:
                 extraction_result.update(update)
                 return extraction_result
 
-        update = await self._try_mistral_tier(
+        update, mistral_out_of_time = await self._ocr_tier_or_deadline(
+            self._try_mistral_tier,
             pdf_content, page_budget, app_number, document_identifier, auto_optimize,
             progress_cb, page_offset=page_offset,
         )
@@ -2011,13 +2286,19 @@ class EnhancedPatentClient:
             return extraction_result
 
         docling_client = self.docling_client
+        docling_out_of_time = False
         if auto_optimize:
-            update = await self._try_docling_tier(
-                pdf_content, page_budget, document_identifier, docling_client, progress_cb
+            update, docling_out_of_time = await self._ocr_tier_or_deadline(
+                self._try_docling_tier,
+                pdf_content, page_budget, document_identifier, docling_client, progress_cb,
             )
             if update is not None:
                 extraction_result.update(update)
                 return extraction_result
+
+        if mistral_out_of_time or docling_out_of_time:
+            extraction_result.update(_content_deadline_update())
+            return extraction_result
 
         # All methods failed
         extraction_result.update({
@@ -2066,6 +2347,10 @@ class EnhancedPatentClient:
             auto_optimize: Try the native text tiers first, fall back to OCR (default: True)
             page_from: First page to extract, 1-based inclusive (default 1)
             page_to: Last page to extract, 1-based inclusive (default: end of document)
+
+        Inside a call deadline (util/deadline.py, set by the tool) the variant
+        fetches, the PDF download and both OCR tiers take what is left of the
+        one budget; a spent budget answers "Deadline exceeded".
 
         A page window is applied by SLICING THE PDF before the extraction tiers
         run, so each tier's own page cap (PYPDF_MAX_PAGES, MISTRAL_OCR_MAX_PAGES)
@@ -2121,12 +2406,12 @@ class EnhancedPatentClient:
             window_markers: Dict[str, Any] = {}
             if window_requested:
                 try:
-                    sliced, first, last, total = slice_pdf_pages(pdf_content, page_from, page_to)
-                except ValueError as ve:
+                    sliced, first, last, total = await run_pdf_parse(slice_pdf_pages, pdf_content, page_from, page_to)
+                except (ValueError, asyncio.TimeoutError) as ve:
                     return {
                         **extraction_result,
                         "success": False,
-                        "error": str(ve),
+                        "error": str(ve) or "the PDF could not be paged within PFW_PDF_PARSE_TIMEOUT_S",
                         "extracted_content": "",
                         "extraction_method": "page_range_invalid",
                     }
@@ -2154,14 +2439,7 @@ class EnhancedPatentClient:
             return result
 
         except Exception as e:
-            return {
-                "success": False,
-                "application_number": app_number,
-                "document_identifier": document_identifier,
-                "error": str(e),
-                "extracted_content": "",
-                "extraction_method": "failed"
-            }
+            return _hybrid_failure(e, app_number, document_identifier)
 
     async def get_granted_patent_documents_download(
         self,
@@ -2224,79 +2502,10 @@ class EnhancedPatentClient:
                 )
 
                 if response.get("success") and response.get("count", 0) > 0:
-                    documents = response.get("documentBag", [])
-                    # How many versions the min()/max() selection below actually
-                    # saw, vs how many exist. A 12-amendment claims history was
-                    # decided from the 5 the fetch happened to return, and the
-                    # response said nothing about the other 7.
-                    versions_considered = len(documents)
-                    versions_available = response.get("matched_count")
-
-                    # For claims, handle original vs granted
-                    if doc_code == 'CLM':
-                        if include_original_claims:
-                            # Get oldest (originally filed) claims
-                            selected_doc = min(documents, key=lambda d: d.get("officialDate", ""))
-                        else:
-                            # Get newest (granted/final) claims
-                            selected_doc = max(documents, key=lambda d: d.get("officialDate", ""))
-                    else:
-                        # ABST/DRW/SPEC can carry several versions too: a
-                        # replacement-paragraphs amendment is coded SPEC just
-                        # like the original filing, and the API returns newest
-                        # first, so documents[0] can be a 2-page delta while
-                        # the 21-page original sits behind it (seen live on
-                        # 11/752,072). Prefer the complete document: most PDF
-                        # pages wins, earliest officialDate breaks ties.
-                        selected_doc = _select_complete_version(documents)
-
-                    # Extract key information
-                    component_name = doc_code.lower()
-                    if doc_code == 'ABST':
-                        component_name = 'abstract'
-                    elif doc_code == 'DRW':
-                        component_name = 'drawings'
-                    elif doc_code == 'SPEC':
-                        component_name = 'specification'
-                    elif doc_code == 'CLM':
-                        component_name = 'claims'
-
-                    download_options = selected_doc.get("downloadOptionBag", [])
-                    pdf_option = next((opt for opt in download_options if opt.get("mimeTypeIdentifier") == "PDF"), None)
-
-                    component_entry = {
-                        "document_identifier": selected_doc.get("documentIdentifier"),
-                        "document_code": selected_doc.get("documentCode"),
-                        "document_description": selected_doc.get("documentCodeDescriptionText"),
-                        "official_date": selected_doc.get("officialDate"),
-                        "page_count": pdf_option.get("pageTotalQuantity", 0) if pdf_option else 0,
-                        "direct_download_url": pdf_option.get("downloadUrl") if pdf_option else None,
-                        "proxy_download_url": f"{os.getenv('PFW_PROXY_BASE_URL', f'http://localhost:{proxy_port}')}/download/{app_number}/{selected_doc.get('documentIdentifier')}",
-                        "direction_category": selected_doc.get("directionCategory"),
-                        "versions_considered": versions_considered,
-                        "versions_available": versions_available,
-                        "versions_fetch_limit": GRANTED_COMPONENT_FETCH_LIMIT,
-                    }
-                    if doc_code != 'CLM' and versions_considered > 1:
-                        component_entry["version_selection_note"] = (
-                            f"{versions_considered} '{doc_code}' documents exist; chose the "
-                            f"most complete ({component_entry['page_count']} pages, "
-                            f"{component_entry['official_date']}) since amendment papers share "
-                            "this document code. Use PFW_get_application_documents("
-                            f"app_number=..., document_code='{doc_code}') for the full history."
-                        )
-                    if (
-                        isinstance(versions_available, int)
-                        and versions_available > versions_considered
-                    ):
-                        component_entry["selection_note"] = (
-                            f"This application has {versions_available} '{doc_code}' documents; "
-                            f"only the first {versions_considered} were fetched "
-                            f"(versions_fetch_limit={GRANTED_COMPONENT_FETCH_LIMIT}) and the "
-                            "earliest/latest was chosen from those. Use "
-                            f"PFW_get_application_documents(app_number=..., document_code='{doc_code}') "
-                            "to see the full version history."
-                        )
+                    component_name, component_entry = _granted_component_entry(
+                        doc_code, response.get("documentBag", []), response.get("matched_count"),
+                        include_original_claims, app_number, proxy_port,
+                    )
                     results["granted_patent_components"][component_name] = component_entry
 
                     results["total_pages"] += component_entry["page_count"]

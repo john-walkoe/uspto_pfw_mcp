@@ -270,8 +270,8 @@ comes back byte-identical.
 | Marker | Appears on | Carries |
 |--------|-----------|---------|
 | `_bounds` | any response slimmed or truncated to fit | `applied`, `reason` (`"size"` or `"window"`), `size_chars`, `size_limit`, `stages`, `slimmed_fields`, `items_returned`, `items_total`, `note` |
-| `_window` | paged text (`PFW_get_document_content_with_ocr`, `PFW_get_oa_text`) | `unit` (`"char"` or `"page"`), `offset`, `returned`, `total`, `has_more`, `next_offset`, `note`. Feed `next_offset` back as `char_offset` to continue |
-| `paging` | every search | `limit_requested`, `limit_applied`, `offset`, `returned`, `total`, `has_more`, `next_offset` |
+| `_window` | paged text (`PFW_get_document_content_with_ocr`, `PFW_get_oa_text`) | `unit` (always `"char"`, the unit of the counters below), `edges` (`"char"` or `"page"`: whether the window boundaries snapped to page markers), `offset`, `returned`, `total`, `has_more`, `next_offset`, `note`. Feed `next_offset` back as `char_offset` to continue |
+| `paging` | every search | `limit_requested`, `limit_applied`, `offset`, `returned`, `total`, `has_more`, `next_offset`. Rewritten to the rows actually returned when the size guard trims a page, so `next_offset` never skips a row |
 | `limit_clamped` | a search asking for more than `MAX_SEARCH_LIMIT` (100) | `requested`, `applied`, `note`. The call CLAMPS and runs; it does not 400. `limit < 1` is still a 400 |
 
 `PFW_get_guidance("limits")` prints the live budgets and the same contract.
@@ -320,8 +320,8 @@ Environment variables: `USPTO_MAX_RESPONSE_CHARS`, `USPTO_MAX_CONTENT_CHARS`,
 | `PFW_get_application_documents` (Get application documents)  | Get prosecution documents' doc_id from documentBag with advanced filtering (document_code, direction_category) | USPTO_API_KEY                                      |
 | `PFW_get_document_content_with_ocr` (PFW get document content with ocr) | 4-tier hybrid text extraction: USPTO free-text variants → pypdf native text layer → Mistral OCR → Docling OCR | USPTO_API_KEY (+ MISTRAL_API_KEY or DOCLING_SERVE_URL for scanned docs) |
 | `PFW_get_document_download` (PFW get document download)      | Secure browser-accessible download URLs                      | USPTO_API_KEY                                      |
-| `PFW_get_oa_rejections` (PFW get OA rejections)              | Search USPTO OA Rejections API v2 — rejection type indicators (§101/§102/§103/§112) by application/examiner/art unit | USPTO_API_KEY                                      |
-| `PFW_get_oa_text` (PFW get OA text)                          | Search USPTO OA Actions API v1 — full office action body text and section-specific excerpts | USPTO_API_KEY                                      |
+| `PFW_get_oa_rejections` (PFW get OA rejections)              | USPTO ODP Office Action API — rejection types (§101/§102/§103/§112) per non-final/final rejection, plus statement counts from each action's text | USPTO_API_KEY                                      |
+| `PFW_get_oa_text` (PFW get OA text)                          | USPTO ODP Office Action API — full office action text and section-specific excerpts | USPTO_API_KEY                                      |
 | `PFW_get_family` (PFW get family)                            | Normalized continuity family graph (nodes + edges with CON/CIP/DIV relation types, earliest ancestors) plus foreign priority claims. Optional depth-2 walk. | USPTO_API_KEY                                      |
 | `PFW_get_term_adjustment` (PFW get term adjustment)          | Patent Term Adjustment from the ODP /adjustment endpoint: total days, A/B/C and applicant delay, capped event history. No expiration date is computed. | USPTO_API_KEY                                      |
 | `PFW_get_guidance` (PFW get guidance)                        | **RECOMMENDED**: Context-efficient selective guidance sections (95-99% token reduction) | None                                               |
@@ -600,11 +600,9 @@ uspto_pfw_mcp/
 │       ├── api/
 │       │   ├── enhanced_client.py  # 4-tier extraction (free-text variants → pypdf → Mistral → Docling)
 │       │   ├── docling_client.py   # docling-serve REST client (self-hosted OCR via DOCLING_SERVE_URL)
-│       │   ├── oa_rejections_client.py  # USPTO OA Rejections API v2
-│       │   ├── oa_text_client.py   # USPTO OA Actions API v1
+│       │   ├── office_action_client.py  # USPTO ODP Office Action API (search + full text)
 │       │   ├── field_constants.py # Field constant definitions
-│       │   ├── helpers.py         # Field mapping & utilities
-│       │   └── ppubs/             # Patent publication client
+│       │   └── helpers.py         # Field mapping & utilities
 │       ├── models/
 │       │   ├── constants.py       # System constants
 │       │   └── search_params.py   # Search parameter models
@@ -959,8 +957,10 @@ each server's own in-process limiter can't see what the other 3 processes
 are doing — and USPTO's documented limits are per-key (burst=1, 4-15
 req/sec depending on call type, plus weekly quotas), not per-process. Point
 all 4 containers at one bind-mounted directory and they share a single
-cross-process token bucket + a bounded pool of in-flight-request slots,
-arbitrated via POSIX file locks (crash-safe — a dead process's lock is
+cross-process FIFO queue, a bounded pool of in-flight-request slots, a
+capacity-1 token bucket and a 429 cooldown file (`cooldown.json`: one 429
+on the key makes every process wait `max(5 s, Retry-After)` before its next
+send), arbitrated via POSIX file locks (crash-safe: a dead process's lock is
 released by the kernel). Single-MCP or STDIO deployments need nothing; the
 limiter is off unless the directory variable is set.
 
@@ -975,10 +975,18 @@ services:
     environment:
       USPTO_SHARED_RATE_LIMIT_DIR: /var/run/uspto-shared-rate-limit
       USPTO_SHARED_RATE_LIMIT_RPS: "4"       # default; total across ALL 4 MCPs
-      USPTO_SHARED_MAX_CONCURRENT: "2"       # default; shared in-flight slots
+      USPTO_SHARED_MAX_CONCURRENT: "1"       # default; shared in-flight slots (USPTO burst=1)
+      USPTO_SHARED_MAX_WAIT_SECONDS: "45"    # default; queue wait ceiling, then the
+                                             # rate-limit envelope (no retry)
 ```
 
-One token bucket and 2 concurrency slots are shared across every process
-mounting the directory — a heavier MCP naturally draws more of the budget
-under load, and a long PDF download occupies a slot for its full duration
-(not just connection setup), per USPTO's burst=1 guidance.
+One queue, one token bucket and one concurrency slot are shared across every
+process mounting the directory, served in arrival order. A PDF download
+through the proxy is buffered from USPTO under the slot and the slot is
+released before the first byte goes to the end user, so slot time depends on
+USPTO's transfer speed, not the user's connection. On a 429 every ODP call
+site records a shared cooldown, then retries ONCE after `max(5 s,
+Retry-After)` when that wait is at most 10 s and fits the call's budget;
+otherwise it answers with the rate-limit envelope (`retry_after_seconds =
+max(5, Retry-After)`). A call that waits past the ceiling answers at once
+with the same envelope (`rate_limit_source: "shared_uspto_limiter"`).

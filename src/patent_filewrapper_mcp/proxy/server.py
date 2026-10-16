@@ -8,20 +8,30 @@ import os
 import re
 import secrets
 import time
-from typing import Optional
+from typing import List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
-from ..api.enhanced_client import EnhancedPatentClient
-from ..api.helpers import generate_request_id, is_development
+from ..api.enhanced_client import EnhancedPatentClient, max_document_bytes
+from ..api.helpers import (
+    RATE_LIMIT_WAIT_FLOOR_SECONDS,
+    generate_request_id,
+    is_development,
+    retry_after_from,
+)
+from ..util.client_ip import resolve_client_ip, resolve_client_ip_from_scope
 from ..util.security_logger import security_logger
 from .fpd_document_store import get_fpd_store
 from .ptab_document_store import get_ptab_store
 from ..shared.safe_logger import get_safe_logger
-from ..shared.uspto_shared_rate_limiter import get_shared_limiter
+from ..shared.uspto_shared_rate_limiter import (
+    SharedLimiterTimeoutError,
+    get_shared_limiter,
+    note_429,
+)
 from ..shared.uspto_hosts import USPTO_KEY_EVENT_HOOKS
 
 logger = get_safe_logger(__name__)
@@ -134,7 +144,9 @@ class ProxyTokenDependency:
         token = request.headers.get("x-proxy-token", "")
         expected = _get_proxy_token()
         if not secrets.compare_digest(token, expected):
-            client_ip = request.client.host if request.client else "unknown"
+            # Resolved, not the raw peer: behind a reverse proxy the raw peer
+            # is the proxy's own address for every caller.
+            client_ip = resolve_client_ip(request)
             request_id = generate_request_id()
             logger.warning(
                 f"[{request_id}] Proxy token missing or invalid from {client_ip} "
@@ -211,8 +223,9 @@ class RequestSizeLimitMiddleware:
             return
 
         path = scope.get("path", "")
-        client = scope.get("client")
-        client_ip = client[0] if client else "unknown"
+        # Resolved, not the raw peer: behind a reverse proxy the raw peer is
+        # the proxy's own address for every caller.
+        client_ip = resolve_client_ip_from_scope(scope)
 
         content_length = None
         for name, value in scope.get("headers", []):
@@ -257,42 +270,79 @@ class RequestSizeLimitMiddleware:
             # If the response already started there is nothing safe to send;
             # the connection is torn down by the server.
 
-async def _limiter_acquire(limiter) -> None:
-    """No-op when the shared rate limiter is disabled. Extracted so callers
-    with an already-complex control flow (e.g. _open_upstream_pdf_stream)
-    don't pick up an extra branch toward their own cyclomatic complexity."""
-    if limiter is not None:
-        await limiter.__aenter__()
+async def _fetch_upstream_pdf(
+    client: httpx.AsyncClient, download_url: str, headers: dict, request_id: str,
+    source: str, max_bytes: int,
+) -> bytes:
+    """One upstream GET, body verified as a PDF and capped at `max_bytes`,
+    fully buffered. Raises httpx.HTTPStatusError on non-2xx (body pre-read
+    so callers may inspect it) and HTTPException(502) on a non-PDF body or
+    one over the cap."""
+    response = await client.send(
+        client.build_request("GET", download_url, headers=headers), stream=True
+    )
+    try:
+        if response.status_code >= 400:
+            await response.aread()
+        response.raise_for_status()
+        chunks: List[bytes] = []
+        total = 0
+        async for chunk in response.aiter_bytes(chunk_size=8192):
+            if not chunks and not chunk.startswith(b"%PDF-"):
+                logger.error(
+                    f"[{request_id}] Upstream {source} response failed PDF magic-byte check"
+                )
+                raise HTTPException(status_code=502, detail="Upstream document is not a PDF")
+            total += len(chunk)
+            if total > max_bytes:
+                logger.error(
+                    f"[{request_id}] Upstream {source} document exceeds the "
+                    f"{max_bytes}-byte cap; aborting"
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Upstream document exceeds the download size limit",
+                )
+            chunks.append(chunk)
+    finally:
+        await response.aclose()
+    body = b"".join(chunks)
+    if not body.startswith(b"%PDF-"):
+        # An empty body never reached the per-chunk check above.
+        logger.error(
+            f"[{request_id}] Upstream {source} response failed PDF magic-byte check"
+        )
+        raise HTTPException(status_code=502, detail="Upstream document is not a PDF")
+    return body
 
 
-async def _limiter_release(limiter) -> None:
-    """No-op when the shared rate limiter is disabled. See _limiter_acquire."""
-    if limiter is not None:
-        await limiter.__aexit__(None, None, None)
+async def _open_upstream_pdf_stream(
+    download_url: str, headers: dict, request_id: str, source: str,
+    max_bytes: Optional[int] = None,
+):
+    """Fetch an upstream USPTO PDF, verified as a PDF, and return an async
+    generator that serves it to the end user from memory.
 
+    The body is BUFFERED under the shared slot and the slot is released
+    before the first byte goes to the client. The slot used to be held for the whole
+    streamed transfer, so its hold time depended on the end user's
+    connection; now it depends on USPTO's transfer speed only. The byte cap
+    (PFW_MAX_DOCUMENT_BYTES, the same ceiling the extraction path applies)
+    bounds the buffer. `source` is PFW, PTAB or FPD: the proxy also serves
+    the PTAB and FPD documents those servers register with it, with the
+    headers they registered, under this same slot.
 
-async def _open_upstream_pdf_stream(download_url: str, headers: dict, request_id: str, source: str):
-    """Open an upstream USPTO PDF stream with the body verified as a PDF.
-
-    Prefetches the first chunk and checks the %PDF- magic bytes BEFORE any
-    response headers go to the client, so a non-PDF upstream body becomes a
-    clean 502 instead of being served as application/pdf (audit M4).
-
-    Returns an async generator yielding the validated body. Mid-transfer
-    upstream failures get a distinct log line instead of a silently truncated
-    file (audit F21). Raises httpx.HTTPStatusError on non-2xx (body pre-read
-    so callers may inspect it) and HTTPException(502) on magic-byte failure.
-
-    Shared cross-process rate limiter (token + concurrency slot) — off unless
-    USPTO_SHARED_RATE_LIMIT_DIR is set. A streamed PDF download legitimately
-    occupies one of the shared slots for its FULL duration (USPTO's burst=1
-    guidance), not just connection setup, so the limiter can't be a single
-    `async with` here — it's acquired manually below and released either on
-    an early-exit path or in stream_body()'s `finally`, since the generator
-    this function returns outlives the function call.
+    The %PDF- magic bytes are checked BEFORE any response headers go to the
+    client, so a non-PDF upstream body becomes a clean 502 instead of being
+    served as application/pdf (audit M4). Raises httpx.HTTPStatusError on
+    non-2xx (body pre-read so callers may inspect it; a 429 is also noted on
+    the shared key cooldown), HTTPException(502) on a non-PDF or over-cap
+    body, and HTTPException(503) carrying a Retry-After header when the
+    shared limiter would not give the fetch a slot inside its ceiling.
     """
+    cap = max_bytes if max_bytes is not None else max_document_bytes()
     # Bulkhead (audit F46): reuse the API client's download pool limits so
-    # proxy download traffic can't starve tool traffic of connections
+    # proxy download traffic can't starve tool traffic of connections.
     # `event_hooks` drops X-API-KEY on any hop that is not https on
     # uspto.gov: this URL 302s to signed storage, and httpx strips only
     # Authorization and Cookie across origins.
@@ -307,50 +357,34 @@ async def _open_upstream_pdf_stream(download_url: str, headers: dict, request_id
     client = httpx.AsyncClient(**client_kwargs)
 
     limiter = get_shared_limiter()
-    await _limiter_acquire(limiter)
     try:
-        response = await client.send(
-            client.build_request("GET", download_url, headers=headers), stream=True
-        )
-    except BaseException:
-        await _limiter_release(limiter)
-        await client.aclose()
-        raise
-    try:
-        if response.status_code >= 400:
-            await response.aread()
-        response.raise_for_status()
-        byte_iter = response.aiter_bytes(chunk_size=8192)
-        first_chunk = b""
-        async for chunk in byte_iter:
-            first_chunk = chunk
-            break
-        if not first_chunk.startswith(b"%PDF-"):
-            logger.error(
-                f"[{request_id}] Upstream {source} response failed PDF magic-byte check"
+        if limiter is not None:
+            async with limiter:
+                body = await _fetch_upstream_pdf(
+                    client, download_url, headers, request_id, source, cap
+                )
+        else:
+            body = await _fetch_upstream_pdf(
+                client, download_url, headers, request_id, source, cap
             )
-            raise HTTPException(status_code=502, detail="Upstream document is not a PDF")
-    except BaseException:
-        await _limiter_release(limiter)
-        await response.aclose()
-        await client.aclose()
+    except SharedLimiterTimeoutError as e:
+        logger.warning(f"[{request_id}] Download proxy: shared limiter refusal: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="USPTO request slots are busy; retry shortly",
+            headers={"Retry-After": str(int(RATE_LIMIT_WAIT_FLOOR_SECONDS))},
+        ) from e
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            note_429(retry_after_from(e.response))
         raise
+    finally:
+        await client.aclose()
 
     async def stream_body():
-        try:
-            yield first_chunk
-            async for chunk in byte_iter:
-                yield chunk
-        except Exception as exc:
-            logger.error(
-                f"[{request_id}] {source} PDF stream interrupted mid-transfer: "
-                f"{type(exc).__name__}"
-            )
-            raise
-        finally:
-            await response.aclose()
-            await client.aclose()
-            await _limiter_release(limiter)
+        # Served from memory: no upstream connection and no slot is open here.
+        for offset in range(0, len(body), 8192):
+            yield body[offset:offset + 8192]
 
     return stream_body()
 
@@ -482,6 +516,12 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
     @app.middleware("http")
     async def add_ip_access_control(request: Request, call_next):
         """Restrict access to localhost IPs (and any configured PROXY_ALLOWED_IPS networks)"""
+        # Deliberately the RAW transport peer, not resolve_client_ip(): this
+        # answers "is this peer even allowed to reach the proxy" (a reverse
+        # proxy, or a configured Docker network), which has
+        # to be the actual socket peer — resolving to a header-supplied
+        # address here would let an untrusted caller choose which IP gets
+        # checked against the allowlist.
         client_ip = request.client.host if request.client else "unknown"
 
         if not _ip_is_allowed(client_ip):
@@ -536,7 +576,9 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
         JSON responses with proper logging and request IDs.
         """
         request_id = generate_request_id()
-        client_ip = request.client.host if request.client else "unknown"
+        # Resolved, not the raw peer: behind a reverse proxy the raw peer
+        # is the proxy's own address for every caller.
+        client_ip = resolve_client_ip(request)
 
         logger.warning(
             f"[{request_id}] HTTP {exc.status_code}: {exc.detail} "
@@ -553,7 +595,10 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
                 "request_id": request_id,
                 "path": str(request.url.path),
                 "timestamp": import_time().strftime('%Y-%m-%dT%H:%M:%SZ', import_time().gmtime())
-            }
+            },
+            # Keep the exception's own headers (the download proxy's 503 on a
+            # shared-limiter refusal carries Retry-After).
+            headers=getattr(exc, "headers", None) or None,
         )
 
     @app.exception_handler(RequestValidationError)
@@ -565,7 +610,9 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
         and returns user-friendly error messages.
         """
         request_id = generate_request_id()
-        client_ip = request.client.host if request.client else "unknown"
+        # Resolved, not the raw peer: behind a reverse proxy the raw peer
+        # is the proxy's own address for every caller.
+        client_ip = resolve_client_ip(request)
 
         # Pydantic v2 puts the raw exception object in ctx['error'] — not
         # JSON-serializable, which turned every model-validator rejection
@@ -616,7 +663,9 @@ def create_proxy_app(shared_client: Optional[EnhancedPatentClient] = None) -> Fa
         development vs production environments.
         """
         request_id = generate_request_id()
-        client_ip = request.client.host if request.client else "unknown"
+        # Resolved, not the raw peer: behind a reverse proxy the raw peer
+        # is the proxy's own address for every caller.
+        client_ip = resolve_client_ip(request)
 
         logger.exception(
             f"[{request_id}] Unhandled exception: {str(exc)} "
